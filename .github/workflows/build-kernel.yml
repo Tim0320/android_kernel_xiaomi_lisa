@@ -32,17 +32,17 @@ jobs:
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             cpio kmod rsync python3 curl xz-utils
 
-      - name: Install AOSP clang 11
+      - name: Install stock-generation AOSP clang 11.0.2
         run: |
-          mkdir -p "${RUNNER_TEMP}/clang-r383902"
+          mkdir -p "${RUNNER_TEMP}/clang-r383902b1"
           curl -L --fail --retry 3 \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-release/clang-r383902.tar.gz" \
-            | tar -xzf - -C "${RUNNER_TEMP}/clang-r383902"
-          "${RUNNER_TEMP}/clang-r383902/bin/clang" --version
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r383902b1.tar.gz" \
+            | tar -xzf - -C "${RUNNER_TEMP}/clang-r383902b1"
+          "${RUNNER_TEMP}/clang-r383902b1/bin/clang" --version
 
       - name: Generate lisa QGKI config
         env:
-          PATH: ${{ runner.temp }}/clang-r383902/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         run: |
           make -j"$(nproc)" O=out \
             ARCH=arm64 \
@@ -59,7 +59,7 @@ jobs:
 
       - name: Build kernel, modules and device trees
         env:
-          PATH: ${{ runner.temp }}/clang-r383902/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         run: |
           set -o pipefail
           make -j"$(nproc)" O=out \
