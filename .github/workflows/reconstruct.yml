@@ -60,6 +60,7 @@ jobs:
           git checkout --orphan publish-snapshot
           git reset
           git add -A
+          git add -f .scmversion
           git commit -m "lisa: publish reconstructed HyperOS 5.4.289 QGKI snapshot"
 
           git remote remove origin || true
