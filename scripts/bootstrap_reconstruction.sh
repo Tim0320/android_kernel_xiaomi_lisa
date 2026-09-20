@@ -102,7 +102,12 @@ EOF
 
 grep -q 'source "drivers/misc/mi-memory/Kconfig"' drivers/misc/Kconfig ||     sed -i '/endmenu/i source "drivers/misc/mi-memory/Kconfig"' drivers/misc/Kconfig
 
-grep -q 'CONFIG_MI_MEMORY_SYSFS.*mi-memory/' drivers/misc/Makefile ||     printf '\nobj-$(CONFIG_MI_MEMORY_SYSFS) += mi-memory/\n' >> drivers/misc/Makefile
+# Always descend into mi-memory so mem_interface.o can be built into vmlinux
+# even when CONFIG_MI_MEMORY_SYSFS=m. This matches Xiaomi's source layout where
+# mi_memory.ko is modular but mem_interface.o is built-in.
+sed -i '/CONFIG_MI_MEMORY_SYSFS.*mi-memory\//d' drivers/misc/Makefile
+grep -qE '^[[:space:]]*obj-y[[:space:]]*\+=[[:space:]]*mi-memory/' drivers/misc/Makefile || \
+    printf '\nobj-y += mi-memory/\n' >> drivers/misc/Makefile
 echo "::endgroup::"
 
 echo "::group::Wire Xiaomi mi-memory into UFS core"
