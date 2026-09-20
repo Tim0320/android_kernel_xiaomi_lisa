@@ -72,8 +72,37 @@ new_ops = """static const struct proc_ops rawdata_proc_fops = {
 	.proc_release = single_release,
 };"""
 if old_ops not in text:
-    raise SystemExit("Goodix file_operations block not found")
+    raise SystemExit("Goodix rawdata file_operations block not found")
 text = text.replace(old_ops, new_ops, 1)
+
+proc_replacements = {
+"""static const struct file_operations goodix_lockdown_info_ops = {
+	.read = goodix_lockdown_info_read,
+};""":
+"""static const struct proc_ops goodix_lockdown_info_ops = {
+	.proc_read = goodix_lockdown_info_read,
+};""",
+
+"""static const struct file_operations goodix_fw_version_info_ops = {
+	.read = goodix_fw_version_info_read,
+};""":
+"""static const struct proc_ops goodix_fw_version_info_ops = {
+	.proc_read = goodix_fw_version_info_read,
+};""",
+
+"""static const struct file_operations goodix_selftest_ops = {
+	.read = goodix_selftest_read,
+	.write = goodix_selftest_write,
+};""":
+"""static const struct proc_ops goodix_selftest_ops = {
+	.proc_read = goodix_selftest_read,
+	.proc_write = goodix_selftest_write,
+};""",
+}
+for old, new in proc_replacements.items():
+    if old not in text:
+        raise SystemExit(f"Goodix procfs operations block not found: {old.splitlines()[0]}")
+    text = text.replace(old, new, 1)
 
 if "CONFIG_BOARD_XAIOMI_LISA" not in text:
     raise SystemExit("Goodix misspelled lisa board macro not found")
