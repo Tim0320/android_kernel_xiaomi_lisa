@@ -77,25 +77,39 @@ git clone --depth=1 --branch "$MI_MEMORY_REF" "$MI_MEMORY_REPO" "$WORK_ROOT/mi-m
 rm -rf drivers/misc/mi-memory
 cp -a "$WORK_ROOT/mi-memory/drivers/misc/mi-memory" drivers/misc/mi-memory
 
-# Use a second Xiaomi 5.4 donor for the ABI-sensitive interface.
-# This source family already matches the observed stock symbol names and
-# signatures more closely: u8 memblock_mem_size_in_gb(), ufshcd_read_desc(),
-# and hba-explicit UFS helper signatures.
-git clone --no-checkout --filter=blob:none "$MI_MEMORY_ABI_REPO" "$WORK_ROOT/mi-memory-abi"
-git -C "$WORK_ROOT/mi-memory-abi" fetch --depth=1 origin "$MI_MEMORY_ABI_COMMIT"
-git -C "$WORK_ROOT/mi-memory-abi" checkout --detach FETCH_HEAD
-cp "$WORK_ROOT/mi-memory-abi/drivers/misc/mi-memory/mem_interface.c" drivers/misc/mi-memory/mem_interface.c
-cp "$WORK_ROOT/mi-memory-abi/drivers/misc/mi-memory/mem_interface.h" drivers/misc/mi-memory/mem_interface.h
-
-# Keep the complete donor's users in sync with the integer ABI.
+# Keep the complete 5.4 donor implementation because its UFS helper calls
+# match the Lahaina/Yupik 4-argument ufshcd_read_string_desc API. Align only
+# the exported memory-size ABI with the stock lisa module evidence.
 python3 - <<'PY'
 from pathlib import Path
-path = Path("drivers/misc/mi-memory/mi_dram_info.c")
-text = path.read_text()
-text = text.replace("double ddr_size_in_GB = 0;", "u8 ddr_size_in_GB = 0;")
-text = text.replace('pr_err("memblock_mem_size %f\\n", ddr_size_in_GB);',
-                    'pr_err("memblock_mem_size %d\\n", ddr_size_in_GB);')
-path.write_text(text)
+
+patches = {
+    Path("drivers/misc/mi-memory/mem_interface.c"): [
+        ("double memblock_mem_size_in_gb(void)", "u8 memblock_mem_size_in_gb(void)"),
+        (
+            "return (double)((memblock_phys_mem_size() + memblock_reserved_size()) / (double)1024/1024/1024);",
+            "return (u8)((memblock_phys_mem_size() + memblock_reserved_size()) / 1024 / 1024 / 1024);",
+        ),
+    ],
+    Path("drivers/misc/mi-memory/mem_interface.h"): [
+        ("double memblock_mem_size_in_gb(void);", "u8 memblock_mem_size_in_gb(void);"),
+    ],
+    Path("drivers/misc/mi-memory/mi_dram_info.c"): [
+        ("double ddr_size_in_GB = 0;", "u8 ddr_size_in_GB = 0;"),
+        (
+            'pr_err("memblock_mem_size %f\\n", ddr_size_in_GB);',
+            'pr_err("memblock_mem_size %d\\n", ddr_size_in_GB);',
+        ),
+    ],
+}
+
+for path, replacements in patches.items():
+    text = path.read_text()
+    for old, new in replacements:
+        if old not in text:
+            raise SystemExit(f"expected donor pattern missing in {path}: {old}")
+        text = text.replace(old, new, 1)
+    path.write_text(text)
 PY
 
 # Stock HyperOS has mi_memory.ko importing get_ufs_* symbols from vmlinux.
