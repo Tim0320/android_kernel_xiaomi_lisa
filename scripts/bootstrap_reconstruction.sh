@@ -285,6 +285,26 @@ if old not in text:
     raise SystemExit("mi-memory mv procfs file_operations block not found")
 text = text.replace(old, new, 1)
 path.write_text(text)
+
+# Same 5.4.289 procfs API conversion for the memory-type node.
+path = Path("drivers/misc/mi-memory/mi_mem_type.c")
+text = path.read_text()
+old = """static const struct file_operations memory_type_proc_fops = {
+	.open		= memory_type_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};"""
+new = """static const struct proc_ops memory_type_proc_fops = {
+	.proc_open	= memory_type_proc_open,
+	.proc_read	= seq_read,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= single_release,
+};"""
+if old not in text:
+    raise SystemExit("mi-memory memory-type procfs file_operations block not found")
+text = text.replace(old, new, 1)
+path.write_text(text)
 PY
 
 # Stock HyperOS has mi_memory.ko importing get_ufs_* symbols from vmlinux.
