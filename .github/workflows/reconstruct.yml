@@ -29,6 +29,11 @@ jobs:
         with:
           fetch-depth: 1
 
+      - name: Validate reconstruction scripts
+        run: |
+          bash -n scripts/bootstrap_reconstruction.sh
+          bash -n scripts/check_reconstruction.sh
+
       - name: Install host tools
         run: |
           sudo apt-get update
