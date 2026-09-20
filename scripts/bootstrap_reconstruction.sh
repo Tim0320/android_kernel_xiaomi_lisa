@@ -112,17 +112,17 @@ cat > reconstruction/STATUS.md <<EOF
 # Xiaomi lisa HyperOS kernel reconstruction
 
 Target binary:
-- ROM: `$TARGET_ROM`
-- Kernel: `$TARGET_VERMAGIC`
-- Device: `$TARGET_DEVICE`
-- SoC: `$TARGET_SOC / $TARGET_PLATFORM`
+- ROM: \`$TARGET_ROM\`
+- Kernel: \`$TARGET_VERMAGIC\`
+- Device: \`$TARGET_DEVICE\`
+- SoC: \`$TARGET_SOC / $TARGET_PLATFORM\`
 
 Source construction:
-- MIUI device baseline: `$BASE_REPO @ $BASE_REF`
-- Android/Qualcomm 5.4.289 merge: `$STABLE_REPO @ $STABLE_COMMIT`
-- Xiaomi mi-memory donor: `$MI_MEMORY_REPO @ $MI_MEMORY_REF`
-- Xiaomi CNSS statistics donor: `$MI_CNSS_REPO @ $MI_CNSS_REF`
-- Historical device reference: `$MICODE_REPO @ $MICODE_REF`
+- MIUI device baseline: \`$BASE_REPO @ $BASE_REF\`
+- Android/Qualcomm 5.4.289 merge: \`$STABLE_REPO @ $STABLE_COMMIT\`
+- Xiaomi mi-memory donor: \`$MI_MEMORY_REPO @ $MI_MEMORY_REF\`
+- Xiaomi CNSS statistics donor: \`$MI_CNSS_REPO @ $MI_CNSS_REF\`
+- Historical device reference: \`$MICODE_REPO @ $MICODE_REF\`
 
 ## Validation state
 
@@ -130,7 +130,7 @@ This branch is a **reconstruction candidate**, not yet a claimed stock-equivalen
 
 Required before stock-equivalent status:
 1. Build with the stock-compatible clang/QGKI configuration.
-2. Compare `Module.symvers` CRCs with HyperOS stock modules.
+2. Compare \`Module.symvers\` CRCs with HyperOS stock modules.
 3. Validate all stock QGKI vendor modules load without unknown-symbol/version failures.
 4. Validate DTB/DTBO/vendor_boot compatibility.
 5. Boot-test on lisa and inspect early boot/module logs.
