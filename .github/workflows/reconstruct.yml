@@ -48,6 +48,15 @@ jobs:
           source reconstruction/manifest.env
           SRC="${RUNNER_TEMP}/lisa-reconstruction/kernel"
           cd "$SRC"
+
+          # Publish a source snapshot instead of donor histories. The generated
+          # tree keeps all kernel files/provenance documents while avoiding a
+          # multi-gigabyte push of unrelated upstream Git history.
+          git checkout --orphan publish-snapshot
+          git reset
+          git add -A
+          git commit -m "lisa: publish reconstructed HyperOS 5.4.289 QGKI snapshot"
+
           git remote remove origin || true
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           git push origin "HEAD:refs/heads/${TARGET_BRANCH}" --force
