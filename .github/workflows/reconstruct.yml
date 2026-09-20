@@ -1,0 +1,65 @@
+name: Reconstruct lisa 5.4.289 QGKI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - reconstruction/**
+      - scripts/bootstrap_reconstruction.sh
+      - scripts/check_reconstruction.sh
+      - .github/workflows/reconstruct.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lisa-5.4.289-reconstruction
+  cancel-in-progress: false
+
+jobs:
+  reconstruct:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout reconstruction metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install host tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y git rsync bc bison flex libssl-dev libelf-dev
+
+      - name: Reconstruct source tree
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          chmod +x scripts/bootstrap_reconstruction.sh scripts/check_reconstruction.sh
+          scripts/bootstrap_reconstruction.sh
+
+      - name: Push reconstructed source branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          source reconstruction/manifest.env
+          SRC="${RUNNER_TEMP}/lisa-reconstruction/kernel"
+          cd "$SRC"
+          git remote remove origin || true
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "HEAD:refs/heads/${TARGET_BRANCH}" --force
+
+      - name: Summary
+        run: |
+          source reconstruction/manifest.env
+          {
+            echo "## lisa reconstruction"
+            echo
+            echo "- Target: \`${TARGET_VERMAGIC}\`"
+            echo "- ROM: \`${TARGET_ROM}\`"
+            echo "- Branch: \`${TARGET_BRANCH}\`"
+            echo "- Status: source reconstruction checks passed and branch was pushed."
+          } >> "$GITHUB_STEP_SUMMARY"
