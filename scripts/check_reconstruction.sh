@@ -31,6 +31,9 @@ check "UFS hook call" grep -q 'set_ufs_hba_data(sdev);' drivers/scsi/ufs/ufshcd.
 check "VA macro has 5.4.289 mclk state" grep -q 'u32 mclk_freq;' techpack/audio/asoc/codecs/bolero/va-macro.c
 check "VA macro has 5.4.289 device state" grep -q 'bool dev_up;' techpack/audio/asoc/codecs/bolero/va-macro.c
 check "Goodix uses proc_ops" grep -q 'static const struct proc_ops rawdata_proc_fops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
+check "Goodix lockdown proc_ops" grep -q 'static const struct proc_ops goodix_lockdown_info_ops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
+check "Goodix firmware proc_ops" grep -q 'static const struct proc_ops goodix_fw_version_info_ops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
+check "Goodix selftest proc_ops" grep -q 'static const struct proc_ops goodix_selftest_ops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
 check "Goodix lisa macro spelling" sh -c "! grep -q 'CONFIG_BOARD_XAIOMI_LISA' drivers/input/touchscreen/gt9897t/goodix_ts_core.c"
 check "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
 check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
