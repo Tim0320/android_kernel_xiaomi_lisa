@@ -111,6 +111,74 @@ jobs:
           echo "kernelrelease=$release"
           test "$release" = "$TARGET_VERMAGIC"
 
+      - name: Probe UFS and touch ABI before full build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+
+          kbuild() {
+            make -j"$(nproc)" O=out \
+              ARCH=arm64 \
+              CC=clang LLVM=1 LLVM_IAS=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+              CLANG_TRIPLE=aarch64-linux-gnu- "$@"
+          }
+
+          kbuild prepare scripts
+          kbuild \
+            drivers/misc/mi-memory/mem_interface.o \
+            drivers/input/touchscreen/xiaomi/xiaomi_touch.o
+
+          crc_from_obj() {
+            local obj="$1"
+            local symbol="$2"
+            local raw
+            raw="$(nm "$obj" | awk -v sym="__crc_$symbol" '$3 == sym {print tolower($1); exit}')"
+            if [[ -z "$raw" ]]; then
+              echo "CRC_MISSING: $symbol in $obj"
+              return 1
+            fi
+            echo "0x${raw: -8}"
+          }
+
+          probe_fail=0
+          check_obj_crc() {
+            local obj="$1"
+            local symbol="$2"
+            local expected="$3"
+            local actual
+            actual="$(crc_from_obj "$obj" "$symbol")" || {
+              probe_fail=1
+              return
+            }
+            echo "$symbol: probe=$actual stock=$expected"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "CRC_MISMATCH: $symbol"
+              probe_fail=1
+            fi
+          }
+
+          UFS_OBJ=out/drivers/misc/mi-memory/mem_interface.o
+          TOUCH_OBJ=out/drivers/input/touchscreen/xiaomi/xiaomi_touch.o
+
+          check_obj_crc "$UFS_OBJ" get_ufs_data 0xfa507f92
+          check_obj_crc "$UFS_OBJ" get_ufs_hba_data 0xc40eabac
+          check_obj_crc "$UFS_OBJ" get_ufs_sdev_data 0xc5bbd8a8
+          check_obj_crc "$UFS_OBJ" memblock_mem_size_in_gb 0x84fd4cc1
+          check_obj_crc "$UFS_OBJ" ufs_get_string_desc 0x479d5ded
+          check_obj_crc "$UFS_OBJ" ufs_read_desc_param 0x16548413
+          check_obj_crc "$UFS_OBJ" ufshcd_read_desc 0xa93e3b58
+          check_obj_crc "$TOUCH_OBJ" last_touch_events_collect 0x9e978bfa
+          check_obj_crc "$TOUCH_OBJ" update_palm_sensor_value 0x49118811
+          check_obj_crc "$TOUCH_OBJ" xiaomitouch_register_modedata 0x1d883975
+
+          if [[ "$probe_fail" -ne 0 ]]; then
+            echo "Targeted ABI probe failed; skipping expensive full build."
+            exit 1
+          fi
+
       - name: Build kernel, modules and device trees
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
