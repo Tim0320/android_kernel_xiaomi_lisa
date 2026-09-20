@@ -129,6 +129,24 @@ jobs:
         run: |
           test -s out/arch/arm64/boot/Image
           test -s out/Module.symvers
+          test -s out/techpack/display/msm/msm_drm.ko
+          test -s out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko
+          test -s out/drivers/input/touchscreen/gt9897t/goodix_core.ko
+          test -s out/drivers/misc/mi-memory/mi_memory.ko
+          test -s out/drivers/net/wireless/mi_cnss_statistic/mi_cnss_statistic.ko
+
+          source reconstruction/manifest.env
+          for ko in \
+            out/techpack/display/msm/msm_drm.ko \
+            out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko \
+            out/drivers/input/touchscreen/gt9897t/goodix_core.ko \
+            out/drivers/misc/mi-memory/mi_memory.ko \
+            out/drivers/net/wireless/mi_cnss_statistic/mi_cnss_statistic.ko; do
+            actual_vermagic="$(modinfo -F vermagic "$ko" | awk '{print $1}')"
+            echo "$ko vermagic=$actual_vermagic"
+            test "$actual_vermagic" = "$TARGET_VERMAGIC"
+          done
+
           grep -q 'get_ufs_data' out/Module.symvers
           grep -q 'get_ufs_hba_data' out/Module.symvers
           grep -q 'get_ufs_sdev_data' out/Module.symvers
