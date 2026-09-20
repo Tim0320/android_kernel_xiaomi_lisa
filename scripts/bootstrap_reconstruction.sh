@@ -56,8 +56,18 @@ rm -f drivers/kernelsu
 rm -rf KernelSU
 echo "::endgroup::"
 
-if ! grep -q '^VERSION = 5
-    echo "Expected Linux 5.4.289 after stable merge." >&2
+if ! grep -q '^VERSION = 5$' Makefile; then
+    echo "Expected VERSION=5 after stable merge." >&2
+    head -n 8 Makefile >&2
+    exit 31
+fi
+if ! grep -q '^PATCHLEVEL = 4$' Makefile; then
+    echo "Expected PATCHLEVEL=4 after stable merge." >&2
+    head -n 8 Makefile >&2
+    exit 31
+fi
+if ! grep -q '^SUBLEVEL = 289$' Makefile; then
+    echo "Expected SUBLEVEL=289 after stable merge." >&2
     head -n 8 Makefile >&2
     exit 31
 fi
