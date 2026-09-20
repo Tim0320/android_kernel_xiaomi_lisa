@@ -103,6 +103,8 @@ jobs:
           grep -qx 'CONFIG_MI_THERMAL_INTERFACE=m' out/.config
           grep -qx 'CONFIG_USB_F_DTP=m' out/.config
           grep -qx 'CONFIG_QGKI_SYSTEM=y' out/.config
+          grep -qx 'CONFIG_DRM_MSM=y' out/.config
+          grep -qx 'CONFIG_DISPLAY_BUILD=y' out/.config
 
           source reconstruction/manifest.env
           release="$(make -s O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
@@ -129,7 +131,12 @@ jobs:
         run: |
           test -s out/arch/arm64/boot/Image
           test -s out/Module.symvers
-          test -s out/techpack/display/msm/msm_drm.ko
+          # lisa stock QGKI builds the MSM display stack into vmlinux
+          # (CONFIG_DRM_MSM=y / CONFIG_DISPLAY_BUILD=y), so msm_drm.ko is
+          # intentionally absent. Display ABI is validated through exported
+          # symbol CRCs in Module.symvers below.
+          grep -qx 'CONFIG_DRM_MSM=y' out/.config
+          grep -qx 'CONFIG_DISPLAY_BUILD=y' out/.config
           test -s out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko
           test -s out/drivers/input/touchscreen/gt9897t/goodix_core.ko
           test -s out/drivers/misc/mi-memory/mi_memory.ko
@@ -138,7 +145,6 @@ jobs:
           source reconstruction/manifest.env
           abi_fail=0
           for ko in \
-            out/techpack/display/msm/msm_drm.ko \
             out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko \
             out/drivers/input/touchscreen/gt9897t/goodix_core.ko \
             out/drivers/misc/mi-memory/mi_memory.ko \
@@ -226,7 +232,6 @@ jobs:
             out/Module.symvers
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dts/vendor/qcom/**/*.dtb
-            out/techpack/display/msm/msm_drm.ko
             out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko
             out/drivers/input/touchscreen/gt9897t/goodix_core.ko
             out/drivers/input/touchscreen/gt9897t/goodix_ts_gesture.ko
