@@ -26,6 +26,9 @@ check "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
 check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
 check "MI thermal interface is module" grep -q '^CONFIG_MI_THERMAL_INTERFACE=m' "$CFG"
 check "USB DTP is module" grep -q '^CONFIG_USB_F_DTP=m' "$CFG"
+check "official lisa DTP ABI header" test -s include/linux/usb/f_dtp.h
+check "DTP send-file ioctl ABI" grep -q '^#define DTP_SEND_FILE' include/linux/usb/f_dtp.h
+check "DTP compat ABI" grep -q '^#define COMPAT_DTP_SEND_FILE' include/linux/usb/f_dtp.h
 check "QGKI system enabled" grep -q '^CONFIG_QGKI_SYSTEM=y' "$CFG"
 check "localversion auto enabled" grep -q '^CONFIG_LOCALVERSION_AUTO=y' "$CFG"
 check "stock SCM suffix" sh -c "test \"$(cat .scmversion 2>/dev/null)\" = '-g5987d69e25da'"
