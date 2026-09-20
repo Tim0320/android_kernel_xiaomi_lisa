@@ -109,6 +109,21 @@ if "CONFIG_BOARD_XAIOMI_LISA" not in text:
 text = text.replace("CONFIG_BOARD_XAIOMI_LISA", "CONFIG_BOARD_XIAOMI_LISA")
 
 path.write_text(text)
+
+# The MIUI TFA98xx source has whitespace that Clang 11 diagnoses as
+# -Wmisleading-indentation under the QGKI -Werror build. Keep the original
+# one-shot reset semantics, but make the scope explicit.
+path = Path("techpack/audio/asoc/codecs/tfa98xx/src/tfa98xx.c")
+text = path.read_text()
+old = """    if (0 == tfa98xx_device_count)
+    	tfa98xx_ext_reset(tfa98xx);"""
+new = """    if (0 == tfa98xx_device_count) {
+    	tfa98xx_ext_reset(tfa98xx);
+    }"""
+if old not in text:
+    raise SystemExit("TFA98xx reset indentation block not found")
+text = text.replace(old, new, 1)
+path.write_text(text)
 PY
 echo "::endgroup::"
 
@@ -182,6 +197,9 @@ for path, replacements in patches.items():
 # calls get_ufs_hba_data() and the exported hba-aware ufs_get_string_desc().
 path = Path("drivers/misc/mi-memory/mi_ufs_info.c")
 text = path.read_text()
+if "DEVICE_DESC_PARAM_FEAT_SUP" not in text:
+    raise SystemExit("mi-memory donor UFS feature field name not found")
+text = text.replace("DEVICE_DESC_PARAM_FEAT_SUP", "DEVICE_DESC_PARAM_UFS_FEAT")
 start = text.index("static ssize_t dump_string_desc_serial_show(")
 end = text.index("static DEVICE_ATTR_RO(dump_string_desc_serial);", start)
 serial_fn = """static ssize_t dump_string_desc_serial_show(struct device *dev,
