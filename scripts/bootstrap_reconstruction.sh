@@ -74,6 +74,52 @@ grep -q 'source "drivers/misc/mi-memory/Kconfig"' drivers/misc/Kconfig ||     se
 grep -q 'CONFIG_MI_MEMORY_SYSFS.*mi-memory/' drivers/misc/Makefile ||     printf '\nobj-$(CONFIG_MI_MEMORY_SYSFS) += mi-memory/\n' >> drivers/misc/Makefile
 echo "::endgroup::"
 
+echo "::group::Wire Xiaomi mi-memory into UFS core"
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path("drivers/scsi/ufs/ufshcd.c")
+text = path.read_text()
+
+decl = """#ifdef CONFIG_MI_MEMORY_SYSFS
+extern void set_ufs_hba_data(struct scsi_device *sdev);
+#endif
+
+"""
+needle = "/**\n * ufshcd_slave_configure - adjust SCSI device configurations"
+if "extern void set_ufs_hba_data" not in text:
+    if needle not in text:
+        raise SystemExit("ufshcd_slave_configure declaration point not found")
+    text = text.replace(needle, decl + needle, 1)
+
+hook = """#ifdef CONFIG_MI_MEMORY_SYSFS
+	if (sdev->lun == 0)
+		set_ufs_hba_data(sdev);
+#endif
+
+"""
+ret_needle = """	if (ufshcd_is_rpm_autosuspend_allowed(hba))
+		sdev->rpm_autosuspend = 1;
+
+	return 0;
+}"""
+if "set_ufs_hba_data(sdev);" not in text:
+    if ret_needle not in text:
+        raise SystemExit("ufshcd_slave_configure body point not found")
+    text = text.replace(
+        ret_needle,
+        """	if (ufshcd_is_rpm_autosuspend_allowed(hba))
+		sdev->rpm_autosuspend = 1;
+
+""" + hook + """	return 0;
+}""",
+        1,
+    )
+
+path.write_text(text)
+PY
+echo "::endgroup::"
+
 echo "::group::Import Xiaomi CNSS statistics"
 git clone --depth=1 --branch "$MI_CNSS_REF" "$MI_CNSS_REPO" "$WORK_ROOT/mi-cnss"
 rm -rf drivers/net/wireless/mi_cnss_statistic
