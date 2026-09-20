@@ -136,34 +136,46 @@ jobs:
           test -s out/drivers/net/wireless/mi_cnss_statistic/mi_cnss_statistic.ko
 
           source reconstruction/manifest.env
+          abi_fail=0
           for ko in \
             out/techpack/display/msm/msm_drm.ko \
             out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko \
             out/drivers/input/touchscreen/gt9897t/goodix_core.ko \
             out/drivers/misc/mi-memory/mi_memory.ko \
             out/drivers/net/wireless/mi_cnss_statistic/mi_cnss_statistic.ko; do
-            actual_vermagic="$(modinfo -F vermagic "$ko" | awk '{print $1}')"
-            echo "$ko vermagic=$actual_vermagic"
-            test "$actual_vermagic" = "$TARGET_VERMAGIC"
+            actual_vermagic="$(strings -a "$ko" | sed -n 's/^vermagic=//p' | head -n1 | awk '{print $1}')"
+            echo "$ko vermagic=$actual_vermagic stock=$TARGET_VERMAGIC"
+            if [[ "$actual_vermagic" != "$TARGET_VERMAGIC" ]]; then
+              echo "VERMAGIC_MISMATCH: $ko"
+              abi_fail=1
+            fi
           done
 
-          grep -q 'get_ufs_data' out/Module.symvers
-          grep -q 'get_ufs_hba_data' out/Module.symvers
-          grep -q 'get_ufs_sdev_data' out/Module.symvers
-          grep -q 'memblock_mem_size_in_gb' out/Module.symvers
-          grep -q 'cnss_statistic_wow_wakeup' out/Module.symvers
-          grep -q 'wow_suspend_type' out/Module.symvers
-          grep -q 'ufs_get_string_desc' out/Module.symvers
-          grep -q 'ufs_read_desc_param' out/Module.symvers
-          grep -q 'ufshcd_read_desc' out/Module.symvers
+          for symbol in \
+            get_ufs_data get_ufs_hba_data get_ufs_sdev_data memblock_mem_size_in_gb \
+            cnss_statistic_wow_wakeup wow_suspend_type \
+            ufs_get_string_desc ufs_read_desc_param ufshcd_read_desc; do
+            if ! awk -v sym="$symbol" '$2 == sym {found=1} END {exit !found}' out/Module.symvers; then
+              echo "MISSING_SYMBOL: $symbol"
+              abi_fail=1
+            fi
+          done
 
           check_crc() {
             local symbol="$1"
             local expected="$2"
             local actual
             actual="$(awk -v sym="$symbol" '$2 == sym {print tolower($1); exit}' out/Module.symvers)"
+            if [[ -z "$actual" ]]; then
+              echo "$symbol: rebuilt=MISSING stock=$expected"
+              abi_fail=1
+              return
+            fi
             echo "$symbol: rebuilt=$actual stock=$expected"
-            test "$actual" = "$expected"
+            if [[ "$actual" != "$expected" ]]; then
+              echo "CRC_MISMATCH: $symbol"
+              abi_fail=1
+            fi
           }
 
           check_crc get_ufs_data 0xfa507f92
@@ -183,6 +195,11 @@ jobs:
           check_crc last_touch_events_collect 0x9e978bfa
           check_crc update_palm_sensor_value 0x49118811
           check_crc xiaomitouch_register_modedata 0x1d883975
+
+          if [[ "$abi_fail" -ne 0 ]]; then
+            echo "ABI validation failed"
+            exit 1
+          fi
 
           {
             echo "## Build outputs"
