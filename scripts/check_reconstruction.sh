@@ -23,7 +23,7 @@ check "Xiaomi touchfeature" grep -q '^CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE=m' 
 check "QCA6750 CNSS" grep -q '^CONFIG_CNSS_QCA6750=y' "$CFG"
 
 check "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
-check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
+check "MI hardware id is built-in" grep -q '^CONFIG_MI_HARDWARE_ID=y' "$CFG"
 check "MI thermal interface is module" grep -q '^CONFIG_MI_THERMAL_INTERFACE=m' "$CFG"
 check "USB DTP is module" grep -q '^CONFIG_USB_F_DTP=m' "$CFG"
 check "official lisa DTP ABI header" test -s include/linux/usb/f_dtp.h
