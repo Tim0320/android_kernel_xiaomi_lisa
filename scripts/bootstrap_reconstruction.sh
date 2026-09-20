@@ -124,6 +124,46 @@ if old not in text:
     raise SystemExit("TFA98xx reset indentation block not found")
 text = text.replace(old, new, 1)
 path.write_text(text)
+
+# Restore the coherent 5.4.289 WCD937x EAR POST_PMD hunk. The merge can keep
+# the newer PRE_PMD status-mask logic while dropping the matching closing
+# brace/cleanup sequence, which makes following functions parse as nested.
+path = Path("techpack/audio/asoc/codecs/wcd937x/wcd937x.c")
+text = path.read_text()
+old = """		else {
+			snd_soc_component_update_bits(component,
+					WCD937X_DIGITAL_PDM_WD_CTL0,
+					0x17, 0x00);
+		break;
+	};"""
+new = """		else {
+			snd_soc_component_update_bits(component,
+					WCD937X_DIGITAL_PDM_WD_CTL0,
+					0x17, 0x00);
+			clear_bit(WCD_EAR_EN, &wcd937x->status_mask);
+		}
+		usleep_range(10000, 10010);
+		/* disable EAR CnP FSM */
+		snd_soc_component_update_bits(component,
+					WCD937X_EAR_EAR_EN_REG,
+					0x02, 0x00);
+		/* toggle EAR PA to let PA control registers take effect */
+		snd_soc_component_update_bits(component,
+					WCD937X_ANA_EAR,
+					0x80, 0x80);
+		snd_soc_component_update_bits(component,
+					WCD937X_ANA_EAR,
+					0x80, 0x00);
+		/* enable EAR CnP FSM */
+		snd_soc_component_update_bits(component,
+					WCD937X_EAR_EAR_EN_REG,
+					0x02, 0x02);
+		break;
+	};"""
+if old not in text:
+    raise SystemExit("WCD937x broken EAR POST_PMD merge block not found")
+text = text.replace(old, new, 1)
+path.write_text(text)
 PY
 echo "::endgroup::"
 
@@ -224,6 +264,26 @@ serial_fn = """static ssize_t dump_string_desc_serial_show(struct device *dev,
 }
 """
 text = text[:start] + serial_fn + text[end:]
+path.write_text(text)
+
+# Linux 5.4.289 proc_create() expects struct proc_ops.
+path = Path("drivers/misc/mi-memory/mv.c")
+text = path.read_text()
+old = """static const struct file_operations mv_proc_fops = {
+	.open		= mv_proc_open,
+	.read		= seq_read,
+	.llseek		= seq_lseek,
+	.release	= single_release,
+};"""
+new = """static const struct proc_ops mv_proc_fops = {
+	.proc_open	= mv_proc_open,
+	.proc_read	= seq_read,
+	.proc_lseek	= seq_lseek,
+	.proc_release	= single_release,
+};"""
+if old not in text:
+    raise SystemExit("mi-memory mv procfs file_operations block not found")
+text = text.replace(old, new, 1)
 path.write_text(text)
 PY
 
