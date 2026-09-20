@@ -77,7 +77,24 @@ jobs:
             vendor/lisa_QGKI.config \
             vendor/debugfs.config
 
-          grep -E '^(CONFIG_LOCALVERSION|CONFIG_MODVERSIONS|CONFIG_MI_MEMORY_SYSFS|CONFIG_MI_CNSS_STATISTIC|CONFIG_PINCTRL_SM7325|CONFIG_ARCH_YUPIK)=' out/.config || true
+          grep -E '^(CONFIG_LOCALVERSION|CONFIG_LOCALVERSION_AUTO|CONFIG_MODVERSIONS|CONFIG_MI_MEMORY_SYSFS|CONFIG_MI_CNSS_STATISTIC|CONFIG_MI_HARDWARE_ID|CONFIG_MI_THERMAL_INTERFACE|CONFIG_USB_F_DTP|CONFIG_QGKI_SYSTEM|CONFIG_PINCTRL_SM7325|CONFIG_ARCH_YUPIK)=' out/.config || true
+
+          grep -qx 'CONFIG_LOCALVERSION="-qgki"' out/.config
+          grep -qx 'CONFIG_LOCALVERSION_AUTO=y' out/.config
+          grep -qx 'CONFIG_MODVERSIONS=y' out/.config
+          grep -qx 'CONFIG_MI_MEMORY_SYSFS=m' out/.config
+          grep -qx 'CONFIG_MI_HARDWARE_ID=m' out/.config
+          grep -qx 'CONFIG_MI_THERMAL_INTERFACE=m' out/.config
+          grep -qx 'CONFIG_USB_F_DTP=m' out/.config
+          grep -qx 'CONFIG_QGKI_SYSTEM=y' out/.config
+
+          source reconstruction/manifest.env
+          release="$(make -s O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- kernelrelease)"
+          echo "kernelrelease=$release"
+          test "$release" = "$TARGET_VERMAGIC"
 
       - name: Build kernel, modules and device trees
         env:
@@ -101,6 +118,29 @@ jobs:
           grep -q 'get_ufs_sdev_data' out/Module.symvers
           grep -q 'memblock_mem_size_in_gb' out/Module.symvers
           grep -q 'cnss_statistic_wow_wakeup' out/Module.symvers
+          grep -q 'wow_suspend_type' out/Module.symvers
+          grep -q 'ufs_get_string_desc' out/Module.symvers
+          grep -q 'ufs_read_desc_param' out/Module.symvers
+          grep -q 'ufshcd_read_desc' out/Module.symvers
+
+          check_crc() {
+            local symbol="$1"
+            local expected="$2"
+            local actual
+            actual="$(awk -v sym="$symbol" '$2 == sym {print tolower($1); exit}' out/Module.symvers)"
+            echo "$symbol: rebuilt=$actual stock=$expected"
+            test "$actual" = "$expected"
+          }
+
+          check_crc get_ufs_data 0xfa507f92
+          check_crc get_ufs_hba_data 0xc40eabac
+          check_crc get_ufs_sdev_data 0xc5bbd8a8
+          check_crc memblock_mem_size_in_gb 0x84fd4cc1
+          check_crc ufs_get_string_desc 0x479d5ded
+          check_crc ufs_read_desc_param 0x16548413
+          check_crc ufshcd_read_desc 0xa93e3b58
+          check_crc cnss_statistic_wow_wakeup 0x0fc3f432
+          check_crc wow_suspend_type 0x635b9cbb
 
           {
             echo "## Build outputs"
