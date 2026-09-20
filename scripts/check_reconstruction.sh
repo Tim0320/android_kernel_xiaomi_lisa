@@ -29,6 +29,15 @@ check "memblock_mem_size_in_gb provider" grep -q 'memblock_mem_size_in_gb' drive
 check "UFS hook declaration" grep -q 'extern void set_ufs_hba_data' drivers/scsi/ufs/ufshcd.c
 check "UFS hook call" grep -q 'set_ufs_hba_data(sdev);' drivers/scsi/ufs/ufshcd.c
 check "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
+check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
+check "MI thermal interface is module" grep -q '^CONFIG_MI_THERMAL_INTERFACE=m' "$CFG"
+check "USB DTP is module" grep -q '^CONFIG_USB_F_DTP=m' "$CFG"
+check "QGKI system enabled" grep -q '^CONFIG_QGKI_SYSTEM=y' "$CFG"
+check "localversion auto enabled" grep -q '^CONFIG_LOCALVERSION_AUTO=y' "$CFG"
+check "stock SCM suffix" sh -c "test \"$(cat .scmversion 2>/dev/null)\" = '-g5987d69e25da'"
+check "stock serial path avoids ufs_get_serial" sh -c "! grep -q 'ufs_get_serial' drivers/misc/mi-memory/mi_ufs_info.c"
+check "stock serial path uses hba getter" grep -q 'get_ufs_hba_data' drivers/misc/mi-memory/mi_ufs_info.c
+check "stock serial path uses string descriptor helper" grep -q 'ufs_get_string_desc' drivers/misc/mi-memory/mi_ufs_info.c
 check "MI CNSS source" test -f drivers/net/wireless/mi_cnss_statistic/genl.c
 check "CNSS wakeup export" grep -q 'cnss_statistic_wow_wakeup' drivers/net/wireless/mi_cnss_statistic/genl.c
 check "MI CNSS config" grep -q '^CONFIG_MI_CNSS_STATISTIC=m' "$CFG"
