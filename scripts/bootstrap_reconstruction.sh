@@ -17,39 +17,22 @@ git config user.name "lisa-reconstruction"
 git config user.email "actions@users.noreply.github.com"
 echo "::endgroup::"
 
-echo "::group::Merge Qualcomm/Android 5.4.289 downstream"
+echo "::group::Merge Android 11 common 5.4.289"
 git remote add stable "$STABLE_REPO"
 git fetch --filter=blob:none stable "$STABLE_COMMIT"
 BASE_SHA="$(git rev-parse HEAD)"
 if ! git merge --no-edit --no-ff -X ours "$STABLE_COMMIT"; then
     mapfile -t unresolved < <(git diff --name-only --diff-filter=U)
-    printf 'Stable merge unresolved files:\n%s\n' "${unresolved[*]}" >&2
-
-    # Known Qualcomm audio conflict: the MIUI lisa-capable baseline intentionally
-    # removed msm-pcm-routing-auto.c. Preserve that deletion instead of
-    # resurrecting the obsolete routing implementation from the stable donor.
-    for path in "${unresolved[@]}"; do
-        case "$path" in
-            techpack/audio/asoc/msm-pcm-routing-auto.c)
-                git rm -f -- "$path"
-                ;;
-            *)
-                echo "Unhandled stable merge conflict: $path" >&2
-                exit 30
-                ;;
-        esac
-    done
-
-    git commit --no-edit
+    printf 'Android common 5.4.289 merge unresolved files:\n%s\n' "${unresolved[*]}" >&2
+    exit 30
 fi
 printf '%s\n' "$BASE_SHA" > "$WORK_ROOT/base-before-stable.txt"
 echo "::endgroup::"
 
-echo "::group::Repair known semantic merge mismatches"
-# va-macro gained dev_up/mclk_freq handling as a coherent 5.4.289 update.
-# A hunk-level merge can leave new uses with the old struct definition, so
-# take this common Qualcomm audio file atomically from the 5.4.289 source.
-git checkout "$STABLE_COMMIT" -- techpack/audio/asoc/codecs/bolero/va-macro.c
+echo "::group::Repair MIUI sources for the 5.4.289 common API"
+# Keep Xiaomi/Qualcomm vendor subtrees from the MIUI base. The common-only
+# 5.4.289 donor intentionally has no techpack/audio, qcacld/fw-api, Goodix,
+# or lisa config files, so only API compatibility repairs belong here.
 
 # The lisa Goodix source predates the proc_ops backport in the 5.4.289 common
 # core and also carries a misspelled board macro around DT local variables.
@@ -125,45 +108,6 @@ if old not in text:
 text = text.replace(old, new, 1)
 path.write_text(text)
 
-# Restore the coherent 5.4.289 WCD937x EAR POST_PMD hunk. The merge can keep
-# the newer PRE_PMD status-mask logic while dropping the matching closing
-# brace/cleanup sequence, which makes following functions parse as nested.
-path = Path("techpack/audio/asoc/codecs/wcd937x/wcd937x.c")
-text = path.read_text()
-old = """		else {
-			snd_soc_component_update_bits(component,
-					WCD937X_DIGITAL_PDM_WD_CTL0,
-					0x17, 0x00);
-		break;
-	};"""
-new = """		else {
-			snd_soc_component_update_bits(component,
-					WCD937X_DIGITAL_PDM_WD_CTL0,
-					0x17, 0x00);
-			clear_bit(WCD_EAR_EN, &wcd937x->status_mask);
-		}
-		usleep_range(10000, 10010);
-		/* disable EAR CnP FSM */
-		snd_soc_component_update_bits(component,
-					WCD937X_EAR_EAR_EN_REG,
-					0x02, 0x00);
-		/* toggle EAR PA to let PA control registers take effect */
-		snd_soc_component_update_bits(component,
-					WCD937X_ANA_EAR,
-					0x80, 0x80);
-		snd_soc_component_update_bits(component,
-					WCD937X_ANA_EAR,
-					0x80, 0x00);
-		/* enable EAR CnP FSM */
-		snd_soc_component_update_bits(component,
-					WCD937X_EAR_EAR_EN_REG,
-					0x02, 0x02);
-		break;
-	};"""
-if old not in text:
-    raise SystemExit("WCD937x broken EAR POST_PMD merge block not found")
-text = text.replace(old, new, 1)
-path.write_text(text)
 PY
 echo "::endgroup::"
 
