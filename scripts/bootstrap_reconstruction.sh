@@ -130,6 +130,39 @@ if old not in text:
 text = text.replace(old, new, 1)
 path.write_text(text)
 
+# Android common 5.4.289 renamed the upstream GLINK command constants from
+# RPM_CMD_* to GLINK_CMD_*. The Xiaomi/Qualcomm downstream driver carries a
+# newer implementation and command set, so a hunk merge can update call sites
+# without replacing the downstream RPM_CMD_* definitions. Keep the downstream
+# ABI/values and provide exact-name aliases for the common call sites.
+path = Path("drivers/rpmsg/qcom_glink_native.c")
+text = path.read_text()
+marker = """#define RPM_CMD_SIGNALS			15
+
+#define GLINK_FEATURE_INTENTLESS	BIT(1)"""
+aliases = """#define RPM_CMD_SIGNALS			15
+
+#define GLINK_CMD_VERSION		RPM_CMD_VERSION
+#define GLINK_CMD_VERSION_ACK		RPM_CMD_VERSION_ACK
+#define GLINK_CMD_OPEN			RPM_CMD_OPEN
+#define GLINK_CMD_CLOSE			RPM_CMD_CLOSE
+#define GLINK_CMD_OPEN_ACK		RPM_CMD_OPEN_ACK
+#define GLINK_CMD_INTENT		RPM_CMD_INTENT
+#define GLINK_CMD_RX_DONE		RPM_CMD_RX_DONE
+#define GLINK_CMD_RX_INTENT_REQ		RPM_CMD_RX_INTENT_REQ
+#define GLINK_CMD_RX_INTENT_REQ_ACK	RPM_CMD_RX_INTENT_REQ_ACK
+#define GLINK_CMD_TX_DATA		RPM_CMD_TX_DATA
+#define GLINK_CMD_CLOSE_ACK		RPM_CMD_CLOSE_ACK
+#define GLINK_CMD_TX_DATA_CONT		RPM_CMD_TX_DATA_CONT
+#define GLINK_CMD_READ_NOTIF		RPM_CMD_READ_NOTIF
+#define GLINK_CMD_RX_DONE_W_REUSE	RPM_CMD_RX_DONE_W_REUSE
+
+#define GLINK_FEATURE_INTENTLESS	BIT(1)"""
+if marker not in text:
+    raise SystemExit("GLINK downstream command definition block not found")
+text = text.replace(marker, aliases, 1)
+path.write_text(text)
+
 PY
 echo "::endgroup::"
 
