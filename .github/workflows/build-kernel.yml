@@ -209,3 +209,9 @@ jobs:
             out/Module.symvers
             out/arch/arm64/boot/Image
             out/arch/arm64/boot/dts/vendor/qcom/**/*.dtb
+            out/techpack/display/msm/msm_drm.ko
+            out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko
+            out/drivers/input/touchscreen/gt9897t/goodix_core.ko
+            out/drivers/input/touchscreen/gt9897t/goodix_ts_gesture.ko
+            out/drivers/misc/mi-memory/mi_memory.ko
+            out/drivers/net/wireless/mi_cnss_statistic/mi_cnss_statistic.ko
