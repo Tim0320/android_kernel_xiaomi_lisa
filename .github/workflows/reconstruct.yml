@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: lisa-5.4.289-reconstruction
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   reconstruct:
