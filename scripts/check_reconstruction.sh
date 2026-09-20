@@ -38,6 +38,54 @@ check "Goodix lisa macro spelling" sh -c "! grep -q 'CONFIG_BOARD_XAIOMI_LISA' d
 check "MIUI audio ext clock preserved" sh -c "! grep -q 'afe_set_lpass_clk_cfg_ext_mclk' techpack/audio/asoc/codecs/audio-ext-clk-up.c"
 check "MIUI WLAN mgmt SRNG TLV not imported" sh -c "! grep -q 'WMI_MGMT_SRNG_REAP_EVENTID' drivers/staging/fw-api/fw/wmi_tlv_defs.h"
 check "MIUI WLAN MLO TID-map TLV not imported" sh -c "! grep -q 'WMI_MLO_PEER_TID_TO_LINK_MAP_EVENTID' drivers/staging/fw-api/fw/wmi_tlv_defs.h"
+check "GLINK VERSION alias" grep -q '^#define GLINK_CMD_VERSION[[:space:]]*RPM_CMD_VERSIONcheck "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
+check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
+check "MI thermal interface is module" grep -q '^CONFIG_MI_THERMAL_INTERFACE=m' "$CFG"
+check "USB DTP is module" grep -q '^CONFIG_USB_F_DTP=m' "$CFG"
+check "QGKI system enabled" grep -q '^CONFIG_QGKI_SYSTEM=y' "$CFG"
+check "localversion auto enabled" grep -q '^CONFIG_LOCALVERSION_AUTO=y' "$CFG"
+check "stock SCM suffix" sh -c "test \"$(cat .scmversion 2>/dev/null)\" = '-g5987d69e25da'"
+check "stock serial path avoids ufs_get_serial" sh -c "! grep -q 'ufs_get_serial' drivers/misc/mi-memory/mi_ufs_info.c"
+check "stock serial path uses hba getter" grep -q 'get_ufs_hba_data' drivers/misc/mi-memory/mi_ufs_info.c
+check "stock serial path uses string descriptor helper" grep -q 'ufs_get_string_desc' drivers/misc/mi-memory/mi_ufs_info.c
+check "MI CNSS source" test -f drivers/net/wireless/mi_cnss_statistic/genl.c
+check "CNSS wakeup export" grep -q 'cnss_statistic_wow_wakeup' drivers/net/wireless/mi_cnss_statistic/genl.c
+check "MI CNSS config" grep -q '^CONFIG_MI_CNSS_STATISTIC=m' "$CFG"
+
+exit "$fail"
+ drivers/rpmsg/qcom_glink_native.c
+check "GLINK OPEN alias" grep -q '^#define GLINK_CMD_OPEN[[:space:]]*RPM_CMD_OPENcheck "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
+check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
+check "MI thermal interface is module" grep -q '^CONFIG_MI_THERMAL_INTERFACE=m' "$CFG"
+check "USB DTP is module" grep -q '^CONFIG_USB_F_DTP=m' "$CFG"
+check "QGKI system enabled" grep -q '^CONFIG_QGKI_SYSTEM=y' "$CFG"
+check "localversion auto enabled" grep -q '^CONFIG_LOCALVERSION_AUTO=y' "$CFG"
+check "stock SCM suffix" sh -c "test \"$(cat .scmversion 2>/dev/null)\" = '-g5987d69e25da'"
+check "stock serial path avoids ufs_get_serial" sh -c "! grep -q 'ufs_get_serial' drivers/misc/mi-memory/mi_ufs_info.c"
+check "stock serial path uses hba getter" grep -q 'get_ufs_hba_data' drivers/misc/mi-memory/mi_ufs_info.c
+check "stock serial path uses string descriptor helper" grep -q 'ufs_get_string_desc' drivers/misc/mi-memory/mi_ufs_info.c
+check "MI CNSS source" test -f drivers/net/wireless/mi_cnss_statistic/genl.c
+check "CNSS wakeup export" grep -q 'cnss_statistic_wow_wakeup' drivers/net/wireless/mi_cnss_statistic/genl.c
+check "MI CNSS config" grep -q '^CONFIG_MI_CNSS_STATISTIC=m' "$CFG"
+
+exit "$fail"
+ drivers/rpmsg/qcom_glink_native.c
+check "GLINK READ_NOTIFY alias" grep -q '^#define GLINK_CMD_READ_NOTIF[[:space:]]*RPM_CMD_READ_NOTIFcheck "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
+check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
+check "MI thermal interface is module" grep -q '^CONFIG_MI_THERMAL_INTERFACE=m' "$CFG"
+check "USB DTP is module" grep -q '^CONFIG_USB_F_DTP=m' "$CFG"
+check "QGKI system enabled" grep -q '^CONFIG_QGKI_SYSTEM=y' "$CFG"
+check "localversion auto enabled" grep -q '^CONFIG_LOCALVERSION_AUTO=y' "$CFG"
+check "stock SCM suffix" sh -c "test \"$(cat .scmversion 2>/dev/null)\" = '-g5987d69e25da'"
+check "stock serial path avoids ufs_get_serial" sh -c "! grep -q 'ufs_get_serial' drivers/misc/mi-memory/mi_ufs_info.c"
+check "stock serial path uses hba getter" grep -q 'get_ufs_hba_data' drivers/misc/mi-memory/mi_ufs_info.c
+check "stock serial path uses string descriptor helper" grep -q 'ufs_get_string_desc' drivers/misc/mi-memory/mi_ufs_info.c
+check "MI CNSS source" test -f drivers/net/wireless/mi_cnss_statistic/genl.c
+check "CNSS wakeup export" grep -q 'cnss_statistic_wow_wakeup' drivers/net/wireless/mi_cnss_statistic/genl.c
+check "MI CNSS config" grep -q '^CONFIG_MI_CNSS_STATISTIC=m' "$CFG"
+
+exit "$fail"
+ drivers/rpmsg/qcom_glink_native.c
 check "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
 check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
 check "MI thermal interface is module" grep -q '^CONFIG_MI_THERMAL_INTERFACE=m' "$CFG"
