@@ -1,0 +1,105 @@
+name: Build lisa reconstructed kernel
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows:
+      - Reconstruct lisa 5.4.289 QGKI
+    types:
+      - completed
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout reconstructed kernel
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            cpio kmod rsync python3 curl xz-utils
+
+      - name: Install AOSP clang 11
+        run: |
+          mkdir -p "${RUNNER_TEMP}/clang-r383902"
+          curl -L --fail --retry 3 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-release/clang-r383902.tar.gz" \
+            | tar -xzf - -C "${RUNNER_TEMP}/clang-r383902"
+          "${RUNNER_TEMP}/clang-r383902/bin/clang" --version
+
+      - name: Generate lisa QGKI config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 \
+            CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            vendor/lahaina-qgki_defconfig \
+            vendor/xiaomi_QGKI.config \
+            vendor/lisa_QGKI.config \
+            vendor/debugfs.config
+
+          grep -E '^(CONFIG_LOCALVERSION|CONFIG_MODVERSIONS|CONFIG_MI_MEMORY_SYSFS|CONFIG_MI_CNSS_STATISTIC|CONFIG_PINCTRL_SM7325|CONFIG_ARCH_YUPIK)=' out/.config || true
+
+      - name: Build kernel, modules and device trees
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 \
+            CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            Image modules dtbs 2>&1 | tee build.log
+
+      - name: Validate build outputs
+        run: |
+          test -s out/arch/arm64/boot/Image
+          test -s out/Module.symvers
+          grep -q 'get_ufs_data' out/Module.symvers
+          grep -q 'get_ufs_hba_data' out/Module.symvers
+          grep -q 'get_ufs_sdev_data' out/Module.symvers
+          grep -q 'memblock_mem_size_in_gb' out/Module.symvers
+          grep -q 'cnss_statistic_wow_wakeup' out/Module.symvers
+
+          {
+            echo "## Build outputs"
+            echo
+            echo "- Kernel: `$(make -s kernelversion)`"
+            echo "- Image: `out/arch/arm64/boot/Image`"
+            echo "- Module.symvers: generated"
+            echo "- Xiaomi mi-memory exported symbols: present"
+            echo "- MI CNSS exported symbol: present"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload ABI and build evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-5.4.289-build-evidence
+          if-no-files-found: warn
+          retention-days: 14
+          path: |
+            build.log
+            out/.config
+            out/Module.symvers
+            out/arch/arm64/boot/Image
+            out/arch/arm64/boot/dts/vendor/qcom/**/*.dtb
