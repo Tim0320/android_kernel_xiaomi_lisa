@@ -28,6 +28,10 @@ check "get_ufs_sdev_data provider" grep -q 'get_ufs_sdev_data' drivers/misc/mi-m
 check "memblock_mem_size_in_gb provider" grep -q 'memblock_mem_size_in_gb' drivers/misc/mi-memory/mem_interface.c
 check "UFS hook declaration" grep -q 'extern void set_ufs_hba_data' drivers/scsi/ufs/ufshcd.c
 check "UFS hook call" grep -q 'set_ufs_hba_data(sdev);' drivers/scsi/ufs/ufshcd.c
+check "VA macro has 5.4.289 mclk state" grep -q 'u32 mclk_freq;' techpack/audio/asoc/codecs/bolero/va-macro.c
+check "VA macro has 5.4.289 device state" grep -q 'bool dev_up;' techpack/audio/asoc/codecs/bolero/va-macro.c
+check "Goodix uses proc_ops" grep -q 'static const struct proc_ops rawdata_proc_fops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
+check "Goodix lisa macro spelling" sh -c "! grep -q 'CONFIG_BOARD_XAIOMI_LISA' drivers/input/touchscreen/gt9897t/goodix_ts_core.c"
 check "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
 check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
 check "MI thermal interface is module" grep -q '^CONFIG_MI_THERMAL_INTERFACE=m' "$CFG"
