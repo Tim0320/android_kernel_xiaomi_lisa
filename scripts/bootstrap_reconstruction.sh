@@ -325,6 +325,9 @@ echo "::endgroup::"
 "$META_ROOT/scripts/check_reconstruction.sh" || exit 40
 
 git add -A
+# .scmversion is ignored by the kernel tree by design, but this reconstruction
+# must carry the shipping SCM suffix into a fresh Git checkout.
+git add -f .scmversion
 git commit -m "lisa: reconstruct HyperOS 5.4.289 QGKI baseline"
 
 echo "Prepared source tree: $SRC"
