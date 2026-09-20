@@ -110,6 +110,36 @@ for path, replacements in patches.items():
             raise SystemExit(f"expected donor pattern missing in {path}: {old}")
         text = text.replace(old, new, 1)
     path.write_text(text)
+
+# Stock mi_memory.ko does not import ufs_get_serial(). Its serial sysfs path
+# calls get_ufs_hba_data() and the exported hba-aware ufs_get_string_desc().
+path = Path("drivers/misc/mi-memory/mi_ufs_info.c")
+text = path.read_text()
+start = text.index("static ssize_t dump_string_desc_serial_show(")
+end = text.index("static DEVICE_ATTR_RO(dump_string_desc_serial);", start)
+serial_fn = """static ssize_t dump_string_desc_serial_show(struct device *dev,
+    struct device_attribute *attr, char *buf)
+{
+    u8 ser_number[128] = { 0 };
+    int i = 0, count = 0;
+    struct ufs_hba *hba = get_ufs_hba_data();
+
+    ufs_get_string_desc(hba, &ser_number, sizeof(ser_number),
+                        DEVICE_DESC_PARAM_SN, SD_RAW);
+
+    count += snprintf((buf + count), PAGE_SIZE, "serial:");
+
+    for (i = 2; i < ser_number[QUERY_DESC_LENGTH_OFFSET]; i += 2)
+        count += snprintf((buf + count), PAGE_SIZE, "%02x%02x",
+                          ser_number[i], ser_number[i + 1]);
+
+    count += snprintf((buf + count), PAGE_SIZE, "\\n");
+
+    return count;
+}
+"""
+text = text[:start] + serial_fn + text[end:]
+path.write_text(text)
 PY
 
 # Stock HyperOS has mi_memory.ko importing get_ufs_* symbols from vmlinux.
@@ -203,10 +233,19 @@ set_cfg() {
 }
 
 set_cfg CONFIG_LOCALVERSION 'CONFIG_LOCALVERSION="-qgki"'
+set_cfg CONFIG_LOCALVERSION_AUTO 'CONFIG_LOCALVERSION_AUTO=y'
 set_cfg CONFIG_MI_MEMORY_SYSFS 'CONFIG_MI_MEMORY_SYSFS=m'
 set_cfg CONFIG_MI_CNSS_STATISTIC 'CONFIG_MI_CNSS_STATISTIC=m'
+set_cfg CONFIG_MI_HARDWARE_ID 'CONFIG_MI_HARDWARE_ID=m'
+set_cfg CONFIG_MI_THERMAL_INTERFACE 'CONFIG_MI_THERMAL_INTERFACE=m'
+set_cfg CONFIG_USB_F_DTP 'CONFIG_USB_F_DTP=m'
+set_cfg CONFIG_QGKI_SYSTEM 'CONFIG_QGKI_SYSTEM=y'
 set_cfg CONFIG_ARCH_YUPIK 'CONFIG_ARCH_YUPIK=y'
 set_cfg CONFIG_PINCTRL_SM7325 'CONFIG_PINCTRL_SM7325=y'
+
+# Preserve stock CONFIG_LOCALVERSION_AUTO=y semantics while forcing the
+# shipping SCM suffix instead of the reconstruction repository commit hash.
+printf -- '-%s\n' "$TARGET_GIT_SUFFIX" > .scmversion
 echo "::endgroup::"
 
 echo "::group::Copy reconstruction provenance"
