@@ -36,12 +36,24 @@ jobs:
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
             cpio kmod rsync python3 curl xz-utils
 
+      - name: Cache stock-generation AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
       - name: Install stock-generation AOSP clang 11.0.2
         run: |
           set -euo pipefail
           DEST="${RUNNER_TEMP}/clang-r383902b1"
           ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
           mkdir -p "$DEST"
+
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            echo "Using cached clang-r383902b1"
+            "$DEST/bin/clang" --version | tee clang-version.txt
+            exit 0
+          fi
 
           urls=(
             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"
