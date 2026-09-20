@@ -193,6 +193,17 @@ if ! grep -q '^SUBLEVEL = 289$' Makefile; then
     exit 31
 fi
 
+echo "::group::Restore official lisa DTP userspace ABI header"
+# The MIUI donor contains Xiaomi's DTP gadget/host drivers but is missing their
+# shared public ABI header. Restore it from Xiaomi's official lisa-r-oss tree
+# instead of reconstructing ioctl structs/macros by hand.
+git clone --filter=blob:none --no-checkout --depth=1 --branch "$MICODE_REF" \
+    "$MICODE_REPO" "$WORK_ROOT/micode"
+mkdir -p include/linux/usb
+git -C "$WORK_ROOT/micode" show HEAD:include/linux/usb/f_dtp.h > include/linux/usb/f_dtp.h
+test -s include/linux/usb/f_dtp.h
+echo "::endgroup::"
+
 echo "::group::Import Xiaomi mi-memory"
 git clone --depth=1 --branch "$MI_MEMORY_REF" "$MI_MEMORY_REPO" "$WORK_ROOT/mi-memory"
 rm -rf drivers/misc/mi-memory
