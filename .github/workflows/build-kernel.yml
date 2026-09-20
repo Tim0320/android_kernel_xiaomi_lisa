@@ -141,6 +141,14 @@ jobs:
           check_crc ufshcd_read_desc 0xa93e3b58
           check_crc cnss_statistic_wow_wakeup 0x0fc3f432
           check_crc wow_suspend_type 0x635b9cbb
+          check_crc module_layout 0xba39cbb8
+          check_crc dsi_bridge_interface_enable 0x43bda09c
+          check_crc mi_disp_register_client 0xa292ba4e
+          check_crc mi_disp_unregister_client 0x26ae4476
+          check_crc mi_disp_set_fod_queue_work 0xb762dd7b
+          check_crc last_touch_events_collect 0x9e978bfa
+          check_crc update_palm_sensor_value 0x49118811
+          check_crc xiaomitouch_register_modedata 0x1d883975
 
           {
             echo "## Build outputs"
