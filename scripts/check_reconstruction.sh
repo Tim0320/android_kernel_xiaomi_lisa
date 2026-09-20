@@ -34,6 +34,8 @@ check "Goodix uses proc_ops" grep -q 'static const struct proc_ops rawdata_proc_
 check "Goodix lockdown proc_ops" grep -q 'static const struct proc_ops goodix_lockdown_info_ops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
 check "Goodix firmware proc_ops" grep -q 'static const struct proc_ops goodix_fw_version_info_ops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
 check "Goodix selftest proc_ops" grep -q 'static const struct proc_ops goodix_selftest_ops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
+check "mi-memory mv proc_ops" grep -q 'static const struct proc_ops mv_proc_fops' drivers/misc/mi-memory/mv.c
+check "mi-memory type proc_ops" grep -q 'static const struct proc_ops memory_type_proc_fops' drivers/misc/mi-memory/mi_mem_type.c
 check "Goodix lisa macro spelling" sh -c "! grep -q 'CONFIG_BOARD_XAIOMI_LISA' drivers/input/touchscreen/gt9897t/goodix_ts_core.c"
 check "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
 check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
