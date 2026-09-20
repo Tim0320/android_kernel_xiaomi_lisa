@@ -24,7 +24,29 @@ BASE_SHA="$(git rev-parse HEAD)"
 if ! git merge --no-edit --no-ff -X ours "$STABLE_COMMIT"; then
     mapfile -t unresolved < <(git diff --name-only --diff-filter=U)
     printf 'Android common 5.4.289 merge unresolved files:\n%s\n' "${unresolved[*]}" >&2
-    exit 30
+
+    # The MIUI downstream tree relocates DT bindings under
+    # arch/arm64/boot/dts/vendor/bindings. Android common 5.4.289 converts
+    # these two legacy .txt bindings to YAML. Keep the downstream location
+    # while accepting the common documentation conversion.
+    for path in "${unresolved[@]}"; do
+        case "$path" in
+            arch/arm64/boot/dts/vendor/bindings/clock/adi,axi-clkgen.yaml|\
+            arch/arm64/boot/dts/vendor/bindings/gpu/samsung-rotator.yaml)
+                git checkout --theirs -- "$path"
+                git add -- "$path"
+                ;;
+            arch/arm64/boot/dts/vendor/bindings/clock/axi-clkgen.txt|\
+            arch/arm64/boot/dts/vendor/bindings/gpu/samsung-rotator.txt)
+                git rm -f -- "$path"
+                ;;
+            *)
+                echo "Unhandled Android common merge conflict: $path" >&2
+                exit 30
+                ;;
+        esac
+    done
+    git commit --no-edit
 fi
 printf '%s\n' "$BASE_SHA" > "$WORK_ROOT/base-before-stable.txt"
 echo "::endgroup::"
