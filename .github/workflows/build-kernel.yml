@@ -171,7 +171,9 @@ jobs:
           name: lisa-5.4.289-build-evidence
           if-no-files-found: warn
           retention-days: 14
+          include-hidden-files: true
           path: |
+            clang-version.txt
             build.log
             out/.config
             out/Module.symvers
