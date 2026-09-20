@@ -45,6 +45,44 @@ fi
 printf '%s\n' "$BASE_SHA" > "$WORK_ROOT/base-before-stable.txt"
 echo "::endgroup::"
 
+echo "::group::Repair known semantic merge mismatches"
+# va-macro gained dev_up/mclk_freq handling as a coherent 5.4.289 update.
+# A hunk-level merge can leave new uses with the old struct definition, so
+# take this common Qualcomm audio file atomically from the 5.4.289 source.
+git checkout "$STABLE_COMMIT" -- techpack/audio/asoc/codecs/bolero/va-macro.c
+
+# The lisa Goodix source predates the proc_ops backport in the 5.4.289 common
+# core and also carries a misspelled board macro around DT local variables.
+python3 - <<'PY'
+from pathlib import Path
+
+path = Path("drivers/input/touchscreen/gt9897t/goodix_ts_core.c")
+text = path.read_text()
+
+old_ops = """static const struct file_operations rawdata_proc_fops = {
+	.open = rawdata_proc_open,
+	.read = seq_read,
+	.llseek = seq_lseek,
+	.release = single_release,
+};"""
+new_ops = """static const struct proc_ops rawdata_proc_fops = {
+	.proc_open = rawdata_proc_open,
+	.proc_read = seq_read,
+	.proc_lseek = seq_lseek,
+	.proc_release = single_release,
+};"""
+if old_ops not in text:
+    raise SystemExit("Goodix file_operations block not found")
+text = text.replace(old_ops, new_ops, 1)
+
+if "CONFIG_BOARD_XAIOMI_LISA" not in text:
+    raise SystemExit("Goodix misspelled lisa board macro not found")
+text = text.replace("CONFIG_BOARD_XAIOMI_LISA", "CONFIG_BOARD_XIAOMI_LISA")
+
+path.write_text(text)
+PY
+echo "::endgroup::"
+
 echo "::group::Remove non-stock KernelSU integration"
 # The MIUI donor tracks KernelSU as an optional third-party submodule through
 # drivers/kernelsu -> ../KernelSU/kernel. Stock HyperOS lisa does not require
