@@ -26,6 +26,8 @@ check "get_ufs_data provider" grep -q 'get_ufs_data' drivers/misc/mi-memory/mem_
 check "get_ufs_hba_data provider" grep -q 'get_ufs_hba_data' drivers/misc/mi-memory/mem_interface.c
 check "get_ufs_sdev_data provider" grep -q 'get_ufs_sdev_data' drivers/misc/mi-memory/mem_interface.c
 check "memblock_mem_size_in_gb provider" grep -q 'memblock_mem_size_in_gb' drivers/misc/mi-memory/mem_interface.c
+check "UFS hook declaration" grep -q 'extern void set_ufs_hba_data' drivers/scsi/ufs/ufshcd.c
+check "UFS hook call" grep -q 'set_ufs_hba_data(sdev);' drivers/scsi/ufs/ufshcd.c
 check "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
 check "MI CNSS source" test -f drivers/net/wireless/mi_cnss_statistic/genl.c
 check "CNSS wakeup export" grep -q 'cnss_statistic_wow_wakeup' drivers/net/wireless/mi_cnss_statistic/genl.c
