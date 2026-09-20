@@ -34,11 +34,33 @@ jobs:
 
       - name: Install stock-generation AOSP clang 11.0.2
         run: |
-          mkdir -p "${RUNNER_TEMP}/clang-r383902b1"
-          curl -L --fail --retry 3 \
-            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/master/clang-r383902b1.tar.gz" \
-            | tar -xzf - -C "${RUNNER_TEMP}/clang-r383902b1"
-          "${RUNNER_TEMP}/clang-r383902b1/bin/clang" --version
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+
+          urls=(
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r46/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-qpr2-release/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/4c6fbc28d3b078a5308894fc175f962bb26a5718/clang-r383902b1.tar.gz"
+          )
+
+          ok=0
+          for url in "${urls[@]}"; do
+            echo "Trying $url"
+            rm -f "$ARCHIVE"
+            if curl -L --fail --retry 5 --retry-all-errors --connect-timeout 30 \
+                "$url" -o "$ARCHIVE" && tar -tzf "$ARCHIVE" >/dev/null; then
+              ok=1
+              break
+            fi
+          done
+
+          test "$ok" -eq 1
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
 
       - name: Generate lisa QGKI config
         env:
