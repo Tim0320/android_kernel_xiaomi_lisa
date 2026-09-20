@@ -22,9 +22,25 @@ git remote add stable "$STABLE_REPO"
 git fetch --filter=blob:none stable "$STABLE_COMMIT"
 BASE_SHA="$(git rev-parse HEAD)"
 if ! git merge --no-edit --no-ff -X ours "$STABLE_COMMIT"; then
-    echo "Stable merge left unresolved conflicts:" >&2
-    git diff --name-only --diff-filter=U >&2 || true
-    exit 30
+    mapfile -t unresolved < <(git diff --name-only --diff-filter=U)
+    printf 'Stable merge unresolved files:\n%s\n' "${unresolved[*]}" >&2
+
+    # Known Qualcomm audio conflict: the MIUI lisa-capable baseline intentionally
+    # removed msm-pcm-routing-auto.c. Preserve that deletion instead of
+    # resurrecting the obsolete routing implementation from the stable donor.
+    for path in "${unresolved[@]}"; do
+        case "$path" in
+            techpack/audio/asoc/msm-pcm-routing-auto.c)
+                git rm -f -- "$path"
+                ;;
+            *)
+                echo "Unhandled stable merge conflict: $path" >&2
+                exit 30
+                ;;
+        esac
+    done
+
+    git commit --no-edit
 fi
 printf '%s\n' "$BASE_SHA" > "$WORK_ROOT/base-before-stable.txt"
 echo "::endgroup::"
