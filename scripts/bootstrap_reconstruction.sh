@@ -51,6 +51,19 @@ fi
 printf '%s\n' "$BASE_SHA" > "$WORK_ROOT/base-before-stable.txt"
 echo "::endgroup::"
 
+echo "::group::Overlay MIUI UFS ABI candidate"
+# Keep the proven lisa-capable base, but test the older Lahaina MIUI UFS
+# implementation independently. This isolates the ABI-sensitive UFS layout
+# from the device-specific lisa DTS/config/audio/touch sources.
+git clone --filter=blob:none --single-branch --depth=1 --branch "$UFS_ABI_REF" \
+    "$UFS_ABI_REPO" "$WORK_ROOT/ufs-abi"
+rm -rf drivers/scsi/ufs
+cp -a "$WORK_ROOT/ufs-abi/drivers/scsi/ufs" drivers/scsi/ufs
+test -f drivers/scsi/ufs/ufshcd.h
+grep -q 'unsigned long lrb_in_use;' drivers/scsi/ufs/ufshcd.h
+grep -q 'unsigned long tm_slots_in_use;' drivers/scsi/ufs/ufshcd.h
+echo "::endgroup::"
+
 echo "::group::Repair MIUI sources for the 5.4.289 common API"
 # Keep Xiaomi/Qualcomm vendor subtrees from the MIUI base. The common-only
 # 5.4.289 donor intentionally has no techpack/audio, qcacld/fw-api, Goodix,
@@ -113,6 +126,23 @@ if "CONFIG_BOARD_XAIOMI_LISA" not in text:
     raise SystemExit("Goodix misspelled lisa board macro not found")
 text = text.replace("CONFIG_BOARD_XAIOMI_LISA", "CONFIG_BOARD_XIAOMI_LISA")
 
+path.write_text(text)
+
+# Stock lisa vendor-module CRC evidence shows that xiaomitouch_register_modedata
+# was built against the MIUI touch interface variant carrying the super-
+# resolution callback. Restoring this public struct member changes the
+# genksyms ABI without inventing a new runtime dependency.
+path = Path("drivers/input/touchscreen/xiaomi/xiaomi_touch.h")
+text = path.read_text()
+needle = """\tchar (*touch_vendor_read)(void);
+\tint long_mode_len;"""
+replacement = """\tchar (*touch_vendor_read)(void);
+\tint (*get_touch_super_resolution_factor)(void);
+\tint long_mode_len;"""
+if "get_touch_super_resolution_factor" not in text:
+    if needle not in text:
+        raise SystemExit("Xiaomi touch ABI insertion point not found")
+    text = text.replace(needle, replacement, 1)
 path.write_text(text)
 
 # The MIUI TFA98xx source has whitespace that Clang 11 diagnoses as
