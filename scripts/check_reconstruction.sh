@@ -28,8 +28,6 @@ check "get_ufs_sdev_data provider" grep -q 'get_ufs_sdev_data' drivers/misc/mi-m
 check "memblock_mem_size_in_gb provider" grep -q 'memblock_mem_size_in_gb' drivers/misc/mi-memory/mem_interface.c
 check "UFS hook declaration" grep -q 'extern void set_ufs_hba_data' drivers/scsi/ufs/ufshcd.c
 check "UFS hook call" grep -q 'set_ufs_hba_data(sdev);' drivers/scsi/ufs/ufshcd.c
-check "VA macro has 5.4.289 mclk state" grep -q 'u32 mclk_freq;' techpack/audio/asoc/codecs/bolero/va-macro.c
-check "VA macro has 5.4.289 device state" grep -q 'bool dev_up;' techpack/audio/asoc/codecs/bolero/va-macro.c
 check "Goodix uses proc_ops" grep -q 'static const struct proc_ops rawdata_proc_fops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
 check "Goodix lockdown proc_ops" grep -q 'static const struct proc_ops goodix_lockdown_info_ops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
 check "Goodix firmware proc_ops" grep -q 'static const struct proc_ops goodix_fw_version_info_ops' drivers/input/touchscreen/gt9897t/goodix_ts_core.c
@@ -37,6 +35,9 @@ check "Goodix selftest proc_ops" grep -q 'static const struct proc_ops goodix_se
 check "mi-memory mv proc_ops" grep -q 'static const struct proc_ops mv_proc_fops' drivers/misc/mi-memory/mv.c
 check "mi-memory type proc_ops" grep -q 'static const struct proc_ops memory_type_proc_fops' drivers/misc/mi-memory/mi_mem_type.c
 check "Goodix lisa macro spelling" sh -c "! grep -q 'CONFIG_BOARD_XAIOMI_LISA' drivers/input/touchscreen/gt9897t/goodix_ts_core.c"
+check "MIUI audio ext clock preserved" sh -c "! grep -q 'afe_set_lpass_clk_cfg_ext_mclk' techpack/audio/asoc/codecs/audio-ext-clk-up.c"
+check "MIUI WLAN mgmt SRNG TLV not imported" sh -c "! grep -q 'WMI_MGMT_SRNG_REAP_EVENTID' drivers/staging/fw-api/fw/wmi_tlv_defs.h"
+check "MIUI WLAN MLO TID-map TLV not imported" sh -c "! grep -q 'WMI_MLO_PEER_TID_TO_LINK_MAP_EVENTID' drivers/staging/fw-api/fw/wmi_tlv_defs.h"
 check "MI memory config" grep -q '^CONFIG_MI_MEMORY_SYSFS=m' "$CFG"
 check "MI hardware id is module" grep -q '^CONFIG_MI_HARDWARE_ID=m' "$CFG"
 check "MI thermal interface is module" grep -q '^CONFIG_MI_THERMAL_INTERFACE=m' "$CFG"
