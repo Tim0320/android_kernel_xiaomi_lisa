@@ -638,6 +638,52 @@ A 736/736 modversion result is necessary but not sufficient to call the kernel r
 
 The next audit intersects the 736 real `msm_drm.ko` imports with the previously generated 1,533 current-tree `.symtypes` files. This produces a ranked list of structural type dependencies actually reachable from the stock module's imported kernel APIs. Runtime record-layout comparison will then be limited to those high-impact types instead of the entire kernel.
 
+## Runtime type-root scope for stock QGKI msm_drm
+
+The 736 exact stock QGKI `msm_drm.ko` imports were intersected with the existing 1,533 current-tree genksyms `.symtypes` files.
+
+Coverage:
+
+- real stock imports: **736**
+- imports with mapped type roots: **664**
+- imports without mapped type roots: **72**
+- direct structural types: **207**
+- transitive structural types: **207**
+
+Highest-frequency structural dependencies are:
+
+- `struct device`: 77 imports
+- `struct drm_device`: 60
+- `struct device_node`: 43
+- `struct drm_atomic_state`: 25
+- `struct drm_connector`: 19
+- `struct clk`: 18
+- `struct drm_dp_mst_topology_mgr`: 16
+- `struct drm_gem_object`: 15
+- `struct drm_crtc`: 14
+- `struct file`: 14
+- `struct drm_display_mode`: 13
+- `struct drm_framebuffer`: 12
+- `struct regulator`: 12
+- `struct drm_modeset_acquire_ctx`: 11
+- `struct drm_dp_mst_port`: 10
+- `struct drm_file`: 10
+- `struct dma_buf`: 9
+- `struct drm_dp_aux`: 9
+- `struct iommu_domain`: 9
+- `struct kobject`: 9
+- `struct dma_fence`: 8
+- `struct drm_plane`: 8
+- `struct page`: 8
+- `struct platform_device`: 8
+- `struct task_struct`: 7
+- `struct inode`: 5
+- `struct vm_area_struct`: 5
+
+Presence in an imported function signature does not by itself prove that the module dereferences the structure. Opaque pointer types such as `proc_dir_entry` must not be treated as runtime-layout requirements merely because they appear in genksyms type graphs.
+
+The next gate therefore compares real Clang record layouts for the high-frequency public structures under the exact stock IKHEADERS/config environment versus the current runtime build environment. Incomplete/opaque public types are classified separately rather than counted as layout mismatches.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
