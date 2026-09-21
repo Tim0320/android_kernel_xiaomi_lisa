@@ -1,0 +1,323 @@
+name: Fingerprint Lisa stock kernel-header lineage
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/stock-kheaders-lineage-fingerprint.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-stock-kheaders-lineage
+  cancel-in-progress: true
+
+jobs:
+  fingerprint:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: current-reconstruction
+            repo: https://github.com/Tim0320/android_kernel_xiaomi_lisa.git
+            ref: reconstruction/5.4.289-qgki
+
+          - label: cannedshroud-lisa
+            repo: https://github.com/CannedShroud/kernel_xiaomi_lisa.git
+            ref: main
+
+          - label: endcredits-asb-2024-10
+            repo: https://github.com/EndCredits/android_kernel_xiaomi_sm8350-miui.git
+            ref: ASB-2024-10-05
+
+          - label: yzzzr-hyper14
+            repo: https://github.com/YZzZr/android_kernel_xiaomi_sm8350-miui.git
+            ref: hyper-14
+
+          - label: jiuge-new-rebase
+            repo: https://github.com/JiuGeFaCai/android_kernel_xiaomi_sm8350-miui.git
+            ref: new-rebase
+
+          - label: micode-lisa-r
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: lisa-r-oss
+
+          - label: micode-redwood-s
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: redwood-s-oss
+
+          - label: micode-taoyao-s
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: taoyao-s-oss
+
+          - label: lahaina-16900-exact
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 203d4a97455e95f81738823edbb34b17c55fec43
+
+          - label: lahaina-17700-exact
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 21af954d9156c3da3a3a47fef5dbf23526691ba5
+
+          - label: lahaina-18400.02-exact
+            repo: https://github.com/Wcoom/kernel_xiaomi_haydn.git
+            ref: cc27e795a125d4c26bc843c34a6e6574fb5a836e
+
+          - label: lineage-lisa-qgki-289
+            repo: https://github.com/xiaomi-lisa-resources/android_kernel_xiaomi_lisa.git
+            ref: 6fd7609f90995c774f78ba1887618c3a642ad84e
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y git unzip python3
+
+      - name: Download exact stock IKHEADERS artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip"             -o stock-kheaders-artifact.zip
+          unzip -q stock-kheaders-artifact.zip -d stock-artifact
+          test -d stock-artifact/stock-kheaders
+          test -s stock-artifact/stock-kheaders-files.txt
+          echo "STOCK_HEADER_FILES=$(wc -l < stock-artifact/stock-kheaders-files.txt)"
+
+      - name: Fetch candidate source
+        run: |
+          set -euo pipefail
+          mkdir candidate
+          git -C candidate init
+          git -C candidate remote add origin "${{ matrix.repo }}"
+          git -C candidate fetch --depth=1 origin "${{ matrix.ref }}"
+          git -C candidate checkout --detach FETCH_HEAD
+          echo "LABEL=${{ matrix.label }}"
+          echo "CANDIDATE_HEAD=$(git -C candidate rev-parse HEAD)"
+          sed -n '1,6p' candidate/Makefile || true
+
+      - name: Score exact stock-header identity
+        run: |
+          set -euo pipefail
+
+          python3 -             stock-artifact/stock-kheaders             candidate             "${{ matrix.label }}"             header-lineage.txt             critical-header-diffs.txt <<'PY'
+          import hashlib
+          import sys
+          from pathlib import Path
+
+          stock_root = Path(sys.argv[1])
+          cand_root = Path(sys.argv[2])
+          label = sys.argv[3]
+          report = Path(sys.argv[4])
+          diff_report = Path(sys.argv[5])
+
+          critical = [
+              "include/linux/device.h",
+              "include/linux/fs.h",
+              "include/linux/mm_types.h",
+              "include/linux/of.h",
+              "include/linux/module.h",
+              "include/linux/skbuff.h",
+              "include/linux/netdevice.h",
+              "include/linux/blkdev.h",
+              "include/linux/bio.h",
+              "include/linux/pci.h",
+              "include/linux/regmap.h",
+              "include/linux/mmc/host.h",
+              "include/linux/regulator/consumer.h",
+              "include/linux/regulator/driver.h",
+              "include/net/sock.h",
+              "include/net/net_namespace.h",
+              "include/scsi/scsi_device.h",
+              "include/scsi/scsi_host.h",
+              "include/drm/drm_device.h",
+          ]
+
+          def sha(path):
+              h = hashlib.sha256()
+              with path.open("rb") as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          stock_files = sorted(p for p in stock_root.rglob("*") if p.is_file())
+          total = len(stock_files)
+          comparable = 0
+          exact = 0
+          missing = 0
+          different = 0
+
+          by_top = {}
+          exact_paths = []
+          different_paths = []
+          missing_paths = []
+
+          for sp in stock_files:
+              rel = sp.relative_to(stock_root).as_posix()
+              cp = cand_root / rel
+              top = rel.split("/", 1)[0]
+              row = by_top.setdefault(top, [0, 0, 0, 0])
+              row[0] += 1
+
+              if not cp.is_file():
+                  missing += 1
+                  row[3] += 1
+                  missing_paths.append(rel)
+                  continue
+
+              comparable += 1
+              row[1] += 1
+              if sha(sp) == sha(cp):
+                  exact += 1
+                  row[2] += 1
+                  exact_paths.append(rel)
+              else:
+                  different += 1
+                  different_paths.append(rel)
+
+          critical_rows = []
+          critical_exact = 0
+          critical_present = 0
+
+          for rel in critical:
+              sp = stock_root / rel
+              cp = cand_root / rel
+              if not sp.is_file():
+                  critical_rows.append((rel, "STOCK_MISSING", "-", "-", "-"))
+                  continue
+              if not cp.is_file():
+                  critical_rows.append((rel, "CANDIDATE_MISSING", sha(sp), "-", "-"))
+                  continue
+
+              critical_present += 1
+              ss = sha(sp)
+              cs = sha(cp)
+              same = ss == cs
+              if same:
+                  critical_exact += 1
+              critical_rows.append((rel, "MATCH" if same else "DIFF", ss, cs, "1" if same else "0"))
+
+          exact_total_rate = exact / total if total else 0.0
+          exact_comparable_rate = exact / comparable if comparable else 0.0
+          critical_rate = critical_exact / critical_present if critical_present else 0.0
+
+          print(f"HEADER_LABEL={label}")
+          print(f"HEADER_STOCK_TOTAL={total}")
+          print(f"HEADER_CANDIDATE_PRESENT={comparable}")
+          print(f"HEADER_EXACT={exact}")
+          print(f"HEADER_DIFFERENT={different}")
+          print(f"HEADER_MISSING={missing}")
+          print(f"HEADER_EXACT_TOTAL_RATE={exact_total_rate:.6f}")
+          print(f"HEADER_EXACT_COMPARABLE_RATE={exact_comparable_rate:.6f}")
+          print(f"HEADER_CRITICAL_PRESENT={critical_present}")
+          print(f"HEADER_CRITICAL_EXACT={critical_exact}")
+          print(f"HEADER_CRITICAL_EXACT_RATE={critical_rate:.6f}")
+
+          print("HEADER_CRITICAL_RESULTS:")
+          for rel, status, ss, cs, same in critical_rows:
+              print(
+                  f"HEADER_CRITICAL\t{rel}\t{status}\t"
+                  f"stock={ss}\tcandidate={cs}\texact={same}"
+              )
+
+          print("HEADER_TOP_LEVEL_RESULTS:")
+          for top, vals in sorted(by_top.items()):
+              t, present, ex, miss = vals
+              rate = ex / present if present else 0.0
+              print(
+                  f"HEADER_TOP\t{top}\tstock={t}\tpresent={present}\t"
+                  f"exact={ex}\tmissing={miss}\texact_present_rate={rate:.6f}"
+              )
+
+          lines = [
+              f"# Stock header lineage: {label}",
+              "",
+              f"stock_total={total}",
+              f"candidate_present={comparable}",
+              f"exact={exact}",
+              f"different={different}",
+              f"missing={missing}",
+              f"exact_total_rate={exact_total_rate:.6f}",
+              f"exact_comparable_rate={exact_comparable_rate:.6f}",
+              f"critical_present={critical_present}",
+              f"critical_exact={critical_exact}",
+              f"critical_exact_rate={critical_rate:.6f}",
+              "",
+              "## Critical headers",
+              "path\tstatus\tstock_sha256\tcandidate_sha256\texact",
+          ]
+          lines += ["\t".join(row) for row in critical_rows]
+          lines += [
+              "",
+              "## Top-level",
+              "top\tstock\tpresent\texact\tmissing\texact_present_rate",
+          ]
+          for top, vals in sorted(by_top.items()):
+              t, present, ex, miss = vals
+              rate = ex / present if present else 0.0
+              lines.append(f"{top}\t{t}\t{present}\t{ex}\t{miss}\t{rate:.6f}")
+          lines += [
+              "",
+              "## Exact paths sample",
+              *exact_paths[:300],
+              "",
+              "## Different paths sample",
+              *different_paths[:300],
+              "",
+              "## Missing paths sample",
+              *missing_paths[:300],
+          ]
+          report.write_text("\n".join(lines) + "\n")
+
+          # Produce focused line-change counts without storing huge full diffs.
+          import difflib
+          dlines = [
+              f"# Critical header diff summary: {label}",
+              "",
+              "path\tadded\tremoved\tchanged_blocks",
+          ]
+          for rel in critical:
+              sp = stock_root / rel
+              cp = cand_root / rel
+              if not sp.is_file() or not cp.is_file():
+                  continue
+              a = cp.read_text(errors="replace").splitlines()
+              b = sp.read_text(errors="replace").splitlines()
+              added = removed = blocks = 0
+              for group in difflib.SequenceMatcher(a=a, b=b, autojunk=False).get_opcodes():
+                  tag, i1, i2, j1, j2 = group
+                  if tag == "equal":
+                      continue
+                  blocks += 1
+                  if tag in ("delete", "replace"):
+                      removed += i2 - i1
+                  if tag in ("insert", "replace"):
+                      added += j2 - j1
+              dlines.append(f"{rel}\t{added}\t{removed}\t{blocks}")
+          diff_report.write_text("\n".join(dlines) + "\n")
+          PY
+
+          test -s header-lineage.txt
+          cat header-lineage.txt
+          echo
+          cat critical-header-diffs.txt
+
+      - name: Upload header-lineage evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: header-lineage-${{ matrix.label }}
+          retention-days: 10
+          if-no-files-found: warn
+          path: |
+            header-lineage.txt
+            critical-header-diffs.txt
