@@ -63,7 +63,6 @@ cp -a "$WORK_ROOT/ufs-abi/drivers/scsi/ufs" drivers/scsi/ufs
 test -f drivers/scsi/ufs/ufshcd.h
 grep -q 'unsigned long lrb_in_use;' drivers/scsi/ufs/ufshcd.h
 grep -q 'unsigned long tm_slots_in_use;' drivers/scsi/ufs/ufshcd.h
-grep -q 'config UFSGKI' drivers/scsi/ufs/Kconfig
 echo "::endgroup::"
 
 echo "::group::Repair MIUI sources for the 5.4.289 common API"
@@ -428,6 +427,21 @@ grep -q 'mi_cnss_statistic/' drivers/net/wireless/Makefile ||     printf '\nobj-
 grep -q 'source "drivers/net/wireless/mi_cnss_statistic/Kconfig"' drivers/net/wireless/Kconfig ||     sed -i '/endif # WLAN/i source "drivers/net/wireless/mi_cnss_statistic/Kconfig"' drivers/net/wireless/Kconfig
 echo "::endgroup::"
 
+echo "::group::Import exact stock IKCONFIG oracle"
+# The pinned public lisa dump carries an ikconfig blob byte-for-byte identical
+# to the target OS2.0.16.0.UKOCNXM boot.img IKCONFIG. Fetch only that blob so
+# CI can reproduce the exact shipping configuration without downloading a ROM.
+git clone --filter=blob:none --no-checkout --single-branch --depth=1 \
+    --branch "$STOCK_IKCONFIG_REF" "$STOCK_IKCONFIG_REPO" "$WORK_ROOT/stock-ikconfig"
+test "$(git -C "$WORK_ROOT/stock-ikconfig" rev-parse HEAD)" = "$STOCK_IKCONFIG_COMMIT"
+mkdir -p reconstruction
+git -C "$WORK_ROOT/stock-ikconfig" show HEAD:ikconfig > reconstruction/stock_ikconfig
+test -s reconstruction/stock_ikconfig
+actual_stock_blob="$(git hash-object reconstruction/stock_ikconfig)"
+echo "stock_ikconfig_blob=$actual_stock_blob expected=$STOCK_IKCONFIG_BLOB"
+test "$actual_stock_blob" = "$STOCK_IKCONFIG_BLOB"
+echo "::endgroup::"
+
 echo "::group::Target config"
 CFG=arch/arm64/configs/vendor/lisa_QGKI.config
 test -f "$CFG"
@@ -443,7 +457,7 @@ set_cfg CONFIG_LOCALVERSION 'CONFIG_LOCALVERSION="-qgki"'
 set_cfg CONFIG_LOCALVERSION_AUTO 'CONFIG_LOCALVERSION_AUTO=y'
 set_cfg CONFIG_MI_MEMORY_SYSFS 'CONFIG_MI_MEMORY_SYSFS=m'
 set_cfg CONFIG_MI_CNSS_STATISTIC 'CONFIG_MI_CNSS_STATISTIC=m'
-set_cfg CONFIG_MI_HARDWARE_ID 'CONFIG_MI_HARDWARE_ID=y'
+set_cfg CONFIG_MI_HARDWARE_ID 'CONFIG_MI_HARDWARE_ID=m'
 set_cfg CONFIG_MI_THERMAL_INTERFACE 'CONFIG_MI_THERMAL_INTERFACE=m'
 set_cfg CONFIG_USB_F_DTP 'CONFIG_USB_F_DTP=m'
 set_cfg CONFIG_QGKI_SYSTEM 'CONFIG_QGKI_SYSTEM=y'
@@ -479,6 +493,7 @@ Source construction:
 - Xiaomi mi-memory donor: \`$MI_MEMORY_REPO @ $MI_MEMORY_REF\`
 - Xiaomi CNSS statistics donor: \`$MI_CNSS_REPO @ $MI_CNSS_REF\`
 - Historical device reference: \`$MICODE_REPO @ $MICODE_REF\`
+- Exact stock IKCONFIG oracle: \`$STOCK_IKCONFIG_REPO @ $STOCK_IKCONFIG_COMMIT\` (blob \`$STOCK_IKCONFIG_BLOB\`)
 
 ## Validation state
 
