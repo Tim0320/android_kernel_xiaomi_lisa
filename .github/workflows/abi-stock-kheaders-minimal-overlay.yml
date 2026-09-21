@@ -1,0 +1,443 @@
+name: Minimize Lisa stock IKHEADERS ABI overlay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-stock-kheaders-minimal-overlay.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-stock-kheaders-minimal-overlay
+  cancel-in-progress: true
+
+jobs:
+  minimize:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout reconstructed kernel
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            cpio kmod rsync python3 curl xz-utils unzip
+
+      - name: Cache stock-generation AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install stock-generation AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+          curl -L --fail --retry 5 --retry-all-errors \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
+
+      - name: Download exact stock IKHEADERS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders-artifact.zip
+          unzip -q stock-kheaders-artifact.zip -d stock-artifact
+          test -d stock-artifact/stock-kheaders
+
+      - name: Generate reconstructed build environment
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          source reconstruction/manifest.env
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+
+      - name: Overlay full stock headers and build ABI targets to capture dependencies
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+
+          python3 - stock-artifact/stock-kheaders . out <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          stock = Path(sys.argv[1])
+          src_root = Path(sys.argv[2])
+          out_root = Path(sys.argv[3])
+
+          def generated(rel):
+              s = rel.as_posix()
+              return (
+                  s.startswith("include/generated/")
+                  or s.startswith("include/config/")
+                  or s.startswith("arch/arm64/include/generated/")
+              )
+
+          for src in sorted(p for p in stock.rglob("*.h") if p.is_file()):
+              rel = src.relative_to(stock)
+              target = (out_root if generated(rel) else src_root) / rel
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(src, target)
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+          old = '    $(call cmd_gensymtypes_c,true,$@) >/dev/null;                           \\\n'
+          new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
+          if old not in s:
+              raise SystemExit("direct genksyms rule not found")
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+          targets=(
+            kernel/module.symtypes
+            drivers/base/core.symtypes
+            drivers/base/platform.symtypes
+            drivers/base/power/runtime.symtypes
+            drivers/of/base.symtypes
+            drivers/of/address.symtypes
+            drivers/clk/clk.symtypes
+            drivers/clk/clkdev.symtypes
+            drivers/iommu/iommu.symtypes
+            drivers/regulator/core.symtypes
+            kernel/kthread.symtypes
+            kernel/irq/irqdomain.symtypes
+            fs/sysfs/group.symtypes
+            lib/kobject.symtypes
+            mm/page_alloc.symtypes
+            kernel/dma/direct.symtypes
+            kernel/dma/mapping.symtypes
+            drivers/dma-buf/dma-buf.symtypes
+          )
+
+          for t in "${targets[@]}"; do
+            make -j"$(nproc)" O=out \
+              ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+              CLANG_TRIPLE=aarch64-linux-gnu- "$t"
+          done
+
+          find out -name '*.cmd' -type f | sort > all-cmd-files.txt
+          echo "CMD_FILE_COUNT=$(wc -l < all-cmd-files.txt)"
+
+      - name: Derive source-header dependency closure
+        run: |
+          set -euo pipefail
+
+          python3 - out stock-artifact/stock-kheaders abi-source-header-closure.txt <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          out = Path(sys.argv[1])
+          stock = Path(sys.argv[2])
+          report = Path(sys.argv[3])
+
+          roots = [
+              "kernel/module",
+              "drivers/base/core",
+              "drivers/base/platform",
+              "drivers/base/power/runtime",
+              "drivers/of/base",
+              "drivers/of/address",
+              "drivers/clk/clk",
+              "drivers/clk/clkdev",
+              "drivers/iommu/iommu",
+              "drivers/regulator/core",
+              "kernel/kthread",
+              "kernel/irq/irqdomain",
+              "fs/sysfs/group",
+              "lib/kobject",
+              "mm/page_alloc",
+              "kernel/dma/direct",
+              "kernel/dma/mapping",
+              "drivers/dma-buf/dma-buf",
+          ]
+
+          # Kbuild .cmd files record full prerequisite closures for compiled
+          # objects. Parse only command files corresponding to the 18 ABI roots
+          # and normalize absolute srctree paths back to repository-relative
+          # header paths.
+          selected_cmd = []
+          for root in roots:
+              parent = out / Path(root).parent
+              stem = Path(root).name
+              selected_cmd.extend(parent.glob(f".{stem}*.cmd"))
+
+          path_re = re.compile(r"(?:^|\s)([^\s\\]+\.h)(?:\s|\\|$)")
+          candidates = set()
+
+          for cmd in selected_cmd:
+              text = cmd.read_text(errors="replace")
+              # Also catch paths split by Make continuation backslashes.
+              flat = text.replace("\\\n", " ")
+              for token in re.findall(r"[^\s]+\.h", flat):
+                  token = token.strip("'\"")
+                  # Absolute source tree path.
+                  marker = "/android_kernel_xiaomi_lisa/android_kernel_xiaomi_lisa/"
+                  if marker in token:
+                      token = token.split(marker, 1)[1]
+                  if token.startswith("out/"):
+                      continue
+                  if token.startswith("./"):
+                      token = token[2:]
+                  if token.startswith(("include/", "arch/arm64/include/")):
+                      if (stock / token).is_file():
+                          candidates.add(token)
+
+          # Some .cmd files can be absent for pure .symtypes targets. Add all
+          # stock source headers referenced textually by generated .symtypes so
+          # the closure remains conservative.
+          include_re = re.compile(r"(?:include|arch/arm64/include)/[A-Za-z0-9_./+-]+\.h")
+          for symtypes in out.rglob("*.symtypes"):
+              text = symtypes.read_text(errors="replace")
+              for token in include_re.findall(text):
+                  if (stock / token).is_file():
+                      candidates.add(token)
+
+          report.write_text("\n".join(sorted(candidates)) + "\n")
+          print(f"ABI_SOURCE_HEADER_CLOSURE={len(candidates)}")
+          for rel in sorted(candidates)[:160]:
+              print(f"ABI_SOURCE_HEADER\t{rel}")
+          PY
+
+          test -s abi-source-header-closure.txt
+          echo "ABI_SOURCE_HEADER_CLOSURE_FILE=$(wc -l < abi-source-header-closure.txt)"
+
+      - name: Reset source headers and rebuild with minimal stock overlay
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+
+          # Restore tracked source files after the full-overlay dependency pass.
+          git reset --hard HEAD
+
+          # Recreate the donor-generated build environment from scratch.
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+
+          python3 - stock-artifact/stock-kheaders . out abi-source-header-closure.txt <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          stock = Path(sys.argv[1])
+          src_root = Path(sys.argv[2])
+          out_root = Path(sys.argv[3])
+          closure = Path(sys.argv[4])
+
+          def generated(rel):
+              s = rel.as_posix()
+              return (
+                  s.startswith("include/generated/")
+                  or s.startswith("include/config/")
+                  or s.startswith("arch/arm64/include/generated/")
+              )
+
+          generated_count = 0
+          for src in sorted(p for p in stock.rglob("*.h") if p.is_file()):
+              rel = src.relative_to(stock)
+              if generated(rel):
+                  target = out_root / rel
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(src, target)
+                  generated_count += 1
+
+          source_count = 0
+          for raw in closure.read_text().splitlines():
+              rel = raw.strip()
+              if not rel:
+                  continue
+              src = stock / rel
+              if not src.is_file():
+                  raise SystemExit(f"missing stock closure header: {rel}")
+              target = src_root / rel
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(src, target)
+              source_count += 1
+
+          print(f"MINIMAL_STOCK_GENERATED_HEADERS={generated_count}")
+          print(f"MINIMAL_STOCK_SOURCE_HEADERS={source_count}")
+          PY
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+          old = '    $(call cmd_gensymtypes_c,true,$@) >/dev/null;                           \\\n'
+          new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
+          if old not in s:
+              raise SystemExit("direct genksyms rule not found")
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+          targets=(
+            kernel/module.symtypes
+            drivers/base/core.symtypes
+            drivers/base/platform.symtypes
+            drivers/base/power/runtime.symtypes
+            drivers/of/base.symtypes
+            drivers/of/address.symtypes
+            drivers/clk/clk.symtypes
+            drivers/clk/clkdev.symtypes
+            drivers/iommu/iommu.symtypes
+            drivers/regulator/core.symtypes
+            kernel/kthread.symtypes
+            kernel/irq/irqdomain.symtypes
+            fs/sysfs/group.symtypes
+            lib/kobject.symtypes
+            mm/page_alloc.symtypes
+            kernel/dma/direct.symtypes
+            kernel/dma/mapping.symtypes
+            drivers/dma-buf/dma-buf.symtypes
+          )
+
+          for t in "${targets[@]}"; do
+            make -j"$(nproc)" O=out \
+              ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+              CLANG_TRIPLE=aarch64-linux-gnu- "$t"
+          done
+
+          find out -name '*.symversions' -type f -print0 | xargs -0 cat > minimal.symversions
+          test -s minimal.symversions
+
+      - name: Score minimal overlay against exact stock core ABI
+        run: |
+          set -euo pipefail
+          score=0
+          present=0
+          total=0
+
+          check() {
+            local symbol="$1" expected="$2"
+            local actual
+            total=$((total + 1))
+            actual="$(sed -n "s/^__crc_${symbol} = \(0x[0-9a-fA-F]*\);/\1/p" minimal.symversions | head -n1)"
+            actual="${actual,,}"
+            [[ -n "$actual" ]] && present=$((present + 1)) || true
+            [[ "$actual" == "$expected" ]] && score=$((score + 1)) || true
+            echo "MINIMAL_ABI\t$symbol\tcandidate=${actual:-MISSING}\tstock=$expected"
+          }
+
+          check module_layout 0xba39cbb8
+          check device_register 0xcf9bcdee
+          check device_unregister 0x4678e0d9
+          check dev_driver_string 0x22a8544f
+          check device_create 0xbebfb31d
+          check __platform_driver_register 0x8a28799a
+          check platform_driver_unregister 0xb1643fd1
+          check platform_get_irq 0xbcc683a6
+          check platform_get_resource 0x0b50f5aa
+          check platform_get_resource_byname 0x67870233
+          check __pm_runtime_resume 0xd7ceaec5
+          check pm_runtime_enable 0x69233960
+          check of_find_property 0x7bfb6ef3
+          check of_get_property 0x3f86cb17
+          check of_parse_phandle 0x5d8562ca
+          check of_address_to_resource 0x6f7055af
+          check of_device_is_compatible 0xb56ea40d
+          check clk_get 0xf8127647
+          check clk_register 0xab9a55da
+          check iommu_attach_device 0x0c54e55f
+          check iommu_map 0xa106c11d
+          check iommu_unmap 0xe1da4443
+          check regulator_get 0xf7c6097c
+          check regulator_enable 0x691df2d6
+          check regulator_set_voltage 0x54cdbf0a
+          check kthread_create_on_node 0x947eb746
+          check kthread_stop 0x97198f13
+          check irq_domain_remove 0x160aa18c
+          check irq_find_mapping 0x6fb78324
+          check sysfs_create_group 0x0965d890
+          check kobject_create_and_add 0x93a00376
+          check __free_pages 0x419e8d31
+          check adjust_managed_page_count 0xcf0c4b39
+          check dma_direct_map_page 0x803f2855
+          check dma_direct_map_sg 0x9e7457c3
+          check dma_alloc_attrs 0x1c3c2bb3
+          check dma_buf_attach 0x995856d1
+          check dma_buf_map_attachment 0x3d20e038
+
+          echo "MINIMAL_ABI_PRESENT=$present/$total"
+          echo "MINIMAL_ABI_SCORE=$score/$total"
+
+      - name: Upload minimal-overlay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-kheaders-minimal-overlay
+          retention-days: 10
+          if-no-files-found: warn
+          path: |
+            abi-source-header-closure.txt
+            minimal.symversions
+            all-cmd-files.txt
+            out/**/*.symtypes
+            out/**/*.symversions
