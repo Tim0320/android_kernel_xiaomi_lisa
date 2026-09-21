@@ -89,6 +89,34 @@ Interpretation: the mismatch is not a uniform whole-tree offset and is not prima
 
 The next diagnostic therefore targets **genksyms type dependency roots**, not individual CRCs.
 
+## Genksyms root-type dependency ranking
+
+A diagnostic build with `KBUILD_SYMTYPES=1` produced **1,533** `.symtypes` files. Of the 13,257 overlapping stock/current exports, **12,432** were mapped to genksyms type roots. Only **1 mismatching symbol** lacked a root mapping.
+
+Highest-impact structural roots:
+
+| Type root | Total dependent exports | Match | Mismatch | Mismatch rate |
+| --- | ---: | ---: | ---: | ---: |
+| `struct device` | 938 | 12 | 926 | 98.72% |
+| `struct sk_buff` | 537 | 18 | 519 | 96.65% |
+| `struct sock` | 375 | 10 | 365 | 97.33% |
+| `struct net_device` | 348 | 0 | 348 | 100% |
+| `struct net` | 239 | 0 | 239 | 100% |
+| `struct inode` | 238 | 0 | 238 | 100% |
+| `struct device_node` | 236 | 0 | 236 | 100% |
+| `struct file` | 220 | 0 | 220 | 100% |
+| `struct pci_dev` | 190 | 0 | 190 | 100% |
+| `struct page` | 164 | 0 | 164 | 100% |
+| `struct drm_device` | 158 | 2 | 156 | 98.73% |
+| `struct dentry` | 128 | 0 | 128 | 100% |
+| `struct request_queue` | 112 | 0 | 112 | 100% |
+| `struct module` | 68 | 2 | 66 | 97.06% |
+| `struct ufs_hba` | 45 | 0 | 45 | 100% |
+
+This confirms that the 9,158 CRC mismatches are highly correlated through a relatively small number of shared type graphs. `struct device` alone participates in 926 mismatching exports.
+
+A new high-value lead is present in the exact stock configuration: **`CONFIG_IKHEADERS=y`**. Linux embeds the build-time header archive as `kernel_headers_data ... kernel_headers_data_end` in the kernel image. Recovering that archive from the exact stock Image may expose the actual Xiaomi/Qualcomm headers used to build HyperOS, allowing direct comparison of the dominant root types instead of inferring them from public forks.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
