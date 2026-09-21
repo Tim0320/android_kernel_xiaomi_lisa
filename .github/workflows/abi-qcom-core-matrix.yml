@@ -1,0 +1,210 @@
+name: Probe Qualcomm QGKI core ABI candidates
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-qcom-core-matrix.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: qcom-lahaina-qssi14
+            repo: https://github.com/fangkuaixiaoqiao/android_kernel_msm-5.4.git
+            ref: msm-5.4-LA.UM.9.14.r1-25000.02-LAHAINA.QSSI14.0
+          - label: nothing-sm7325-s
+            repo: https://github.com/NothingOSS/android_kernel_msm-5.4_nothing_sm7325.git
+            ref: sm7325/s
+          - label: nothing-sm7325-u
+            repo: https://github.com/StudioKeys/android_kernel_msm-5.4_nothing_sm7325.git
+            ref: sm7325/u/mr
+          - label: nothing-sm7325-v
+            repo: https://github.com/Toesoe/android_kernel_msm-5.4_nothing_sm7325.git
+            ref: sm7325/v/mr
+          - label: oneplus-sm8350
+            repo: https://github.com/dev-sm8350/kernel_oneplus_sm8350.git
+            ref: 15.2
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git curl
+
+      - name: Cache AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+          curl -L --fail --retry 5 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+
+      - name: Clone candidate
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --single-branch --depth=1 \
+            --branch "${{ matrix.ref }}" "${{ matrix.repo }}" kernel
+          cd kernel
+          echo "candidate=${{ matrix.label }}"
+          echo "head=$(git rev-parse HEAD)"
+          sed -i '/source "drivers\/kernelsu\/Kconfig"/d' drivers/Kconfig 2>/dev/null || true
+          sed -i '/kernelsu\//d' drivers/Makefile 2>/dev/null || true
+          rm -f drivers/kernelsu
+          rm -rf KernelSU
+
+      - name: Apply exact lisa stock IKCONFIG
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          mkdir -p out
+          curl -L --fail --retry 5 \
+            https://raw.githubusercontent.com/Jiovanni-dump/xiaomi_lisa_dump/2dbe7b5569ed49cc2c6649a7b313d4a092755034/ikconfig \
+            -o out/.config
+          test "$(git hash-object out/.config)" = "3343d7b7b3874e065ce4805eac61c0160c40b0a3"
+          timeout 240s make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            olddefconfig </dev/null
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            prepare scripts
+
+      - name: Build core ABI objects
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set +e
+          cd kernel
+          targets=(
+            kernel/module.o
+            drivers/base/core.o
+            drivers/base/platform.o
+            drivers/base/power/runtime.o
+            drivers/of/base.o
+            drivers/of/address.o
+            drivers/clk/clk.o
+            drivers/iommu/iommu.o
+            drivers/regulator/core.o
+            kernel/kthread.o
+            kernel/irq/irqdomain.o
+            fs/sysfs/group.o
+            fs/kernfs/dir.o
+            lib/kobject.o
+            mm/page_alloc.o
+            kernel/dma/direct.o
+            kernel/dma/mapping.o
+            drivers/dma-buf/dma-buf.o
+          )
+          for t in "${targets[@]}"; do
+            echo "=== build $t ==="
+            make -j"$(nproc)" O=out KBUILD_SYMTYPES=1 \
+              ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+              CLANG_TRIPLE=aarch64-linux-gnu- "$t" || true
+          done
+          exit 0
+
+      - name: Score core CRC fingerprint
+        run: |
+          set -euo pipefail
+          cd kernel
+          find out -name '*.symversions' -type f -print0 | xargs -0 cat > /tmp/all.symversions || true
+          label="${{ matrix.label }}"
+          score=0
+          total=0
+
+          check() {
+            local symbol="$1" expected="$2"
+            local actual
+            total=$((total+1))
+            actual="$(sed -n "s/^__crc_${symbol} = \(0x[0-9a-fA-F]*\);/\1/p" /tmp/all.symversions | head -n1)"
+            actual="${actual,,}"
+            echo "$label: $symbol candidate=${actual:-MISSING} stock=$expected"
+            [[ "$actual" == "$expected" ]] && score=$((score+1)) || true
+          }
+
+          check module_layout 0xba39cbb8
+          check device_register 0xcf9bcdee
+          check device_unregister 0x4678e0d9
+          check dev_driver_string 0x22a8544f
+          check device_create 0xbebfb31d
+          check __platform_driver_register 0x8a28799a
+          check platform_driver_unregister 0xb1643fd1
+          check platform_get_irq 0xbcc683a6
+          check platform_get_resource 0x0b50f5aa
+          check platform_get_resource_byname 0x67870233
+          check __pm_runtime_resume 0xd7ceaec5
+          check pm_runtime_enable 0x69233960
+          check of_find_property 0x7bfb6ef3
+          check of_get_property 0x3f86cb17
+          check of_parse_phandle 0x5d8562ca
+          check of_address_to_resource 0x6f7055af
+          check of_device_is_compatible 0xb56ea40d
+          check clk_get 0xf8127647
+          check clk_register 0xab9a55da
+          check iommu_attach_device 0x0c54e55f
+          check iommu_map 0xa106c11d
+          check iommu_unmap 0xe1da4443
+          check regulator_get 0xf7c6097c
+          check regulator_enable 0x691df2d6
+          check regulator_set_voltage 0x54cdbf0a
+          check kthread_create_on_node 0x947eb746
+          check kthread_stop 0x97198f13
+          check irq_domain_remove 0x160aa18c
+          check irq_find_mapping 0x6fb78324
+          check sysfs_create_group 0x0965d890
+          check kobject_create_and_add 0x93a00376
+          check __free_pages 0x419e8d31
+          check adjust_managed_page_count 0xcf0c4b39
+          check dma_direct_map_page 0x803f2855
+          check dma_direct_map_sg 0x9e7457c3
+          check dma_alloc_attrs 0x1c3c2bb3
+          check dma_buf_attach 0x995856d1
+          check dma_buf_map_attachment 0x3d20e038
+
+          echo "CORE_ABI_SCORE=$score/$total"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qcom-core-${{ matrix.label }}
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            kernel/out/.config
+            kernel/out/kernel/module.symtypes
+            kernel/out/**/*.symversions
