@@ -196,100 +196,123 @@ jobs:
           test -s stock-vendor-boot-modules.txt
           sed -n '1,200p' stock-vendor-boot-modules.txt
 
-      - name: Extract all stock module versioned imports
+          find vendor-root -type f \( -name 'modules.load*' -o -name 'modules.dep*' \) -print | sort \
+            > stock-vendor-boot-load-files.txt
+          : > stock-vendor-boot-load-plan.txt
+          while IFS= read -r loadfile; do
+            [[ -n "$loadfile" ]] || continue
+            {
+              echo "===== $loadfile ====="
+              cat "$loadfile"
+              echo
+            } >> stock-vendor-boot-load-plan.txt
+          done < stock-vendor-boot-load-files.txt
+
+          echo "STOCK_VENDOR_BOOT_LOAD_FILES=$(wc -l < stock-vendor-boot-load-files.txt)"
+          sed -n '1,260p' stock-vendor-boot-load-plan.txt
+
+      - name: Extract per-module stock ABI cohorts and versioned imports
         run: |
           set -euo pipefail
 
-          python3 - stock-vendor-boot-modules.txt stock-vendor-boot-imports.tsv stock-vendor-boot-module-summary.tsv <<'PY'
+          python3 - stock-vendor-boot-modules.txt stock-vendor-boot-module-imports.tsv stock-vendor-boot-module-summary.tsv stock-vendor-boot-cohorts.txt <<'PY'
           import collections
           import sys
           from pathlib import Path
           from elftools.elf.elffile import ELFFile
 
-          module_list, imports_out, summary_out = map(Path, sys.argv[1:])
-
-          by_symbol = collections.defaultdict(lambda: {"crcs": set(), "modules": set()})
-          summary = []
+          module_list, imports_out, summary_out, cohorts_out = map(Path, sys.argv[1:])
 
           modules = [Path(x) for x in module_list.read_text().splitlines() if x.strip()]
-          parsed = 0
-          versioned_modules = 0
-          total_entries = 0
+          per_module = []
+          all_entries = []
+          cohort_counts = collections.Counter()
 
           for path in modules:
+              machine = "ERROR"
+              vermagic = "-"
+              status = "OK"
+              entries = []
+
               try:
                   with path.open("rb") as f:
                       elf = ELFFile(f)
                       machine = elf["e_machine"]
+
+                      modinfo = elf.get_section_by_name(".modinfo")
+                      if modinfo is not None:
+                          for field in modinfo.data().split(b"\0"):
+                              if field.startswith(b"vermagic="):
+                                  vermagic = field.split(b"=", 1)[1].decode("utf-8", "replace")
+                                  break
+
                       sec = elf.get_section_by_name("__versions")
                       if sec is None:
-                          summary.append((str(path), machine, 0, "NO___versions"))
-                          continue
-                      data = sec.data()
+                          status = "NO___versions"
+                      else:
+                          data = sec.data()
+                          if len(data) % 64 != 0:
+                              status = f"BAD_SECTION_SIZE_{len(data)}"
+                          else:
+                              for off in range(0, len(data), 64):
+                                  chunk = data[off:off + 64]
+                                  crc = int.from_bytes(chunk[:8], "little") & 0xffffffff
+                                  name = chunk[8:].split(b"\0", 1)[0].decode("ascii", "replace")
+                                  if name:
+                                      entries.append((name, crc))
               except Exception as exc:
-                  summary.append((str(path), "ERROR", 0, repr(exc)))
-                  continue
+                  status = f"ERROR:{exc!r}"
 
-              parsed += 1
-              if len(data) % 64 != 0:
-                  summary.append((str(path), machine, 0, f"BAD_SECTION_SIZE_{len(data)}"))
-                  continue
+              layout_crc = None
+              for name, crc in entries:
+                  if name == "module_layout":
+                      layout_crc = crc
+                      break
 
-              count = 0
-              for off in range(0, len(data), 64):
-                  chunk = data[off:off + 64]
-                  crc = int.from_bytes(chunk[:8], "little") & 0xffffffff
-                  name = chunk[8:].split(b"\0", 1)[0].decode("ascii", "replace")
-                  if not name:
-                      continue
-                  by_symbol[name]["crcs"].add(crc)
-                  by_symbol[name]["modules"].add(str(path))
-                  count += 1
-                  total_entries += 1
+              layout_text = f"0x{layout_crc:08x}" if layout_crc is not None else "MISSING"
+              cohort = (vermagic, layout_text)
+              cohort_counts[cohort] += 1
 
-              if count:
-                  versioned_modules += 1
-              summary.append((str(path), machine, count, "OK"))
-
-          conflicts = {
-              sym: info for sym, info in by_symbol.items() if len(info["crcs"]) != 1
-          }
-
-          lines = []
-          for sym in sorted(by_symbol):
-              info = by_symbol[sym]
-              crcs = sorted(info["crcs"])
-              crc_text = ",".join(f"0x{x:08x}" for x in crcs)
-              mods = sorted(info["modules"])
-              lines.append(
-                  f"{sym}\t{crc_text}\t{len(mods)}\t" + ";".join(mods)
+              per_module.append(
+                  (str(path), machine, vermagic, layout_text, len(entries), status)
               )
 
-          imports_out.write_text("\n".join(lines) + "\n")
+              for name, crc in entries:
+                  all_entries.append(
+                      (str(path), vermagic, layout_text, name, f"0x{crc:08x}")
+                  )
+
+          imports_out.write_text(
+              "\n".join("\t".join(row) for row in all_entries) + "\n"
+          )
           summary_out.write_text(
               "\n".join(
-                  f"{p}\t{m}\t{n}\t{status}" for p, m, n, status in summary
+                  f"{p}\t{machine}\t{vermagic}\t{layout}\t{count}\t{status}"
+                  for p, machine, vermagic, layout, count, status in per_module
               ) + "\n"
           )
 
+          cohort_lines = []
+          for (vermagic, layout), count in sorted(
+              cohort_counts.items(), key=lambda kv: (-kv[1], kv[0])
+          ):
+              cohort_lines.append(
+                  f"{count}\tmodule_layout={layout}\tvermagic={vermagic}"
+              )
+          cohorts_out.write_text("\n".join(cohort_lines) + "\n")
+
           print(f"STOCK_VENDOR_BOOT_MODULE_FILES={len(modules)}")
-          print(f"STOCK_VENDOR_BOOT_ELF_PARSED={parsed}")
-          print(f"STOCK_VENDOR_BOOT_VERSIONED_MODULES={versioned_modules}")
-          print(f"STOCK_VENDOR_BOOT_VERSION_ENTRIES={total_entries}")
-          print(f"STOCK_VENDOR_BOOT_UNIQUE_IMPORTS={len(by_symbol)}")
-          print(f"STOCK_VENDOR_BOOT_CRC_CONFLICTS={len(conflicts)}")
+          print(f"STOCK_VENDOR_BOOT_VERSION_ENTRIES={len(all_entries)}")
+          print(f"STOCK_VENDOR_BOOT_ABI_COHORTS={len(cohort_counts)}")
+          for line in cohort_lines:
+              print(f"STOCK_VENDOR_BOOT_COHORT\t{line}")
 
-          if conflicts:
-              for sym, info in sorted(conflicts.items()):
-                  print(
-                      f"STOCK_IMPORT_CRC_CONFLICT\t{sym}\t"
-                      + ",".join(f"0x{x:08x}" for x in sorted(info["crcs"]))
-                  )
-              raise SystemExit("conflicting CRCs for same stock import symbol")
-
-          if not by_symbol:
+          if not all_entries:
               raise SystemExit("no versioned imports recovered")
           PY
+
+          cat stock-vendor-boot-cohorts.txt
+          sed -n '1,120p' stock-vendor-boot-module-summary.tsv
 
       - name: Download current 99.48 percent build evidence
         env:
@@ -315,28 +338,38 @@ jobs:
           cp "$current_symvers" current.Module.symvers
           cp "$current_compare" current-full-stock-compare.txt
 
-      - name: Compare actual stock vendor_boot imports with current build
+      - name: Compare each stock module against exact stock Image and current build
         run: |
           set -euo pipefail
 
-          python3 - stock-vendor-boot-imports.tsv current.Module.symvers current-full-stock-compare.txt vendor-module-abi-audit.txt <<'PY'
+          python3 - stock-vendor-boot-module-imports.tsv current.Module.symvers current-full-stock-compare.txt vendor-module-abi-audit.txt <<'PY'
           import sys
-          from collections import Counter
+          from collections import Counter, defaultdict
           from pathlib import Path
 
           imports_path, symvers_path, full_compare_path, out_path = map(Path, sys.argv[1:])
 
-          required = {}
-          modules_by_symbol = {}
-          for raw in imports_path.read_text(errors="replace").splitlines():
-              if not raw.strip():
-                  continue
-              sym, crc_text, module_count, modules = raw.split("\t", 3)
-              crcs = crc_text.split(",")
-              if len(crcs) != 1:
-                  raise SystemExit(f"unexpected multi-CRC import: {sym} {crc_text}")
-              required[sym] = int(crcs[0], 16)
-              modules_by_symbol[sym] = modules.split(";") if modules else []
+          # Recover the exact stock Image export oracle from the prior full compare.
+          stock_kernel = {}
+          remaining69 = set()
+
+          for raw in full_compare_path.read_text(errors="replace").splitlines():
+              if raw.startswith("MATCH\t"):
+                  p = raw.split("\t")
+                  if len(p) >= 3:
+                      stock_kernel[p[1]] = int(p[2], 16)
+              elif raw.startswith("MISMATCH\t"):
+                  p = raw.split("\t")
+                  if len(p) >= 3:
+                      stock_kernel[p[1]] = int(p[2].split("=", 1)[1], 16)
+                      remaining69.add(p[1])
+              elif raw.startswith("STOCK_ONLY\t"):
+                  p = raw.split("\t")
+                  if len(p) >= 3:
+                      stock_kernel[p[1]] = int(p[2], 16)
+
+          if len(stock_kernel) != 13360:
+              raise SystemExit(f"expected 13360 stock kernel exports, got {len(stock_kernel)}")
 
           current = {}
           owner = {}
@@ -350,103 +383,197 @@ jobs:
               except ValueError:
                   pass
 
-          remaining69 = set()
-          for raw in full_compare_path.read_text(errors="replace").splitlines():
-              if raw.startswith("MISMATCH\t"):
-                  remaining69.add(raw.split("\t")[1])
+          modules = defaultdict(lambda: {
+              "vermagic": "-",
+              "layout": "MISSING",
+              "entries": [],
+          })
 
-          match = []
-          mismatch = []
-          missing = []
+          for raw in imports_path.read_text(errors="replace").splitlines():
+              if not raw.strip():
+                  continue
+              module, vermagic, layout, symbol, crc_text = raw.split("\t", 4)
+              modules[module]["vermagic"] = vermagic
+              modules[module]["layout"] = layout
+              modules[module]["entries"].append((symbol, int(crc_text, 16)))
 
-          impacted_modules = Counter()
-          for sym in sorted(required):
-              exp = required[sym]
-              got = current.get(sym)
-              if got is None:
-                  missing.append(sym)
-                  for mod in modules_by_symbol[sym]:
-                      impacted_modules[mod] += 1
-              elif got == exp:
-                  match.append(sym)
-              else:
-                  mismatch.append(sym)
-                  for mod in modules_by_symbol[sym]:
-                      impacted_modules[mod] += 1
+          TARGET_LAYOUT = "0xba39cbb8"
+          report = []
+          cohort_stats = defaultdict(lambda: Counter())
+          current_compatible_modules = []
+          stock_image_compatible_modules = []
+          qgki_modules = []
+          qgki_remaining69 = set()
 
-          critical = sorted((set(mismatch) | set(missing)) & remaining69)
-          used69 = sorted(set(required) & remaining69)
+          for module in sorted(modules):
+              info = modules[module]
+              kernel_entries = [
+                  (sym, crc) for sym, crc in info["entries"] if sym in stock_kernel
+              ]
+              module_only_entries = len(info["entries"]) - len(kernel_entries)
 
-          total = len(required)
-          compatible = len(match)
+              stock_match = []
+              stock_mismatch = []
+              current_match = []
+              current_mismatch = []
+              current_missing = []
 
-          print(f"STOCK_VENDOR_BOOT_REQUIRED_IMPORTS={total}")
-          print(f"CURRENT_REQUIRED_IMPORT_PRESENT={len(match)+len(mismatch)}")
-          print(f"CURRENT_REQUIRED_IMPORT_MATCHES={len(match)}")
-          print(f"CURRENT_REQUIRED_IMPORT_MISMATCHES={len(mismatch)}")
-          print(f"CURRENT_REQUIRED_IMPORT_MISSING={len(missing)}")
-          if total:
-              print(f"CURRENT_REQUIRED_ABI_MATCH_RATE={compatible/total:.6f}")
+              for sym, expected in kernel_entries:
+                  if stock_kernel[sym] == expected:
+                      stock_match.append(sym)
+                  else:
+                      stock_mismatch.append(sym)
 
-          print(f"REMAINING69_USED_BY_VENDOR_BOOT={len(used69)}")
-          print(f"REMAINING69_CRITICAL_MISMATCH_OR_MISSING={len(critical)}")
+                  got = current.get(sym)
+                  if got is None:
+                      current_missing.append(sym)
+                  elif got == expected:
+                      current_match.append(sym)
+                  else:
+                      current_mismatch.append(sym)
 
-          for sym in used69:
-              exp = required[sym]
-              got = current.get(sym)
-              status = "MATCH" if got == exp else ("MISMATCH" if got is not None else "MISSING")
+              stock_ok = not stock_mismatch
+              current_ok = not current_mismatch and not current_missing
+
+              if stock_ok:
+                  stock_image_compatible_modules.append(module)
+              if current_ok:
+                  current_compatible_modules.append(module)
+
+              cohort = info["layout"]
+              cohort_stats[cohort]["modules"] += 1
+              cohort_stats[cohort]["kernel_imports"] += len(kernel_entries)
+              cohort_stats[cohort]["stock_match"] += len(stock_match)
+              cohort_stats[cohort]["stock_mismatch"] += len(stock_mismatch)
+              cohort_stats[cohort]["current_match"] += len(current_match)
+              cohort_stats[cohort]["current_mismatch"] += len(current_mismatch)
+              cohort_stats[cohort]["current_missing"] += len(current_missing)
+
+              if info["layout"] == TARGET_LAYOUT:
+                  qgki_modules.append(module)
+                  for sym, _ in kernel_entries:
+                      if sym in remaining69:
+                          qgki_remaining69.add(sym)
+
+              report.append(
+                  (
+                      module,
+                      info["vermagic"],
+                      info["layout"],
+                      len(info["entries"]),
+                      len(kernel_entries),
+                      module_only_entries,
+                      len(stock_match),
+                      len(stock_mismatch),
+                      len(current_match),
+                      len(current_mismatch),
+                      len(current_missing),
+                      stock_ok,
+                      current_ok,
+                      sorted(stock_mismatch),
+                      sorted(current_mismatch),
+                      sorted(current_missing),
+                  )
+              )
+
+          print(f"STOCK_KERNEL_EXPORT_ORACLE={len(stock_kernel)}")
+          print(f"STOCK_VENDOR_BOOT_MODULES_AUDITED={len(modules)}")
+          print(f"STOCK_IMAGE_COMPATIBLE_MODULES={len(stock_image_compatible_modules)}")
+          print(f"CURRENT_BUILD_COMPATIBLE_MODULES={len(current_compatible_modules)}")
+          print(f"QGKI_TARGET_LAYOUT={TARGET_LAYOUT}")
+          print(f"QGKI_COHORT_MODULES={len(qgki_modules)}")
+          print(f"QGKI_REMAINING69_USED={len(qgki_remaining69)}")
+
+          for layout, stats in sorted(cohort_stats.items()):
               print(
-                  f"REMAINING69_VENDOR_IMPORT\t{status}\t{sym}\t"
-                  f"stock=0x{exp:08x}\tcurrent="
-                  + (f"0x{got:08x}" if got is not None else "MISSING")
+                  f"MODULE_ABI_COHORT\t{layout}\t"
+                  f"modules={stats['modules']}\t"
+                  f"kernel_imports={stats['kernel_imports']}\t"
+                  f"stock_match={stats['stock_match']}\t"
+                  f"stock_mismatch={stats['stock_mismatch']}\t"
+                  f"current_match={stats['current_match']}\t"
+                  f"current_mismatch={stats['current_mismatch']}\t"
+                  f"current_missing={stats['current_missing']}"
+              )
+
+          for row in report:
+              (
+                  module, vermagic, layout, total_entries, kernel_imports, module_only,
+                  stock_match_n, stock_mismatch_n,
+                  current_match_n, current_mismatch_n, current_missing_n,
+                  stock_ok, current_ok,
+                  stock_mismatch, current_mismatch, current_missing,
+              ) = row
+
+              print(
+                  f"MODULE_ABI\t{module}\tlayout={layout}\t"
+                  f"kernel_imports={kernel_imports}\t"
+                  f"stock={stock_match_n}/{kernel_imports}\t"
+                  f"current={current_match_n}/{kernel_imports}\t"
+                  f"current_mismatch={current_mismatch_n}\t"
+                  f"current_missing={current_missing_n}\t"
+                  f"stock_ok={int(stock_ok)}\tcurrent_ok={int(current_ok)}"
               )
 
           lines = [
-              "# Stock vendor_boot module ABI audit",
-              f"required_unique_imports={total}",
-              f"matches={len(match)}",
-              f"mismatches={len(mismatch)}",
-              f"missing={len(missing)}",
-              f"match_rate={(compatible/total if total else 0):.6f}",
-              f"remaining69_used={len(used69)}",
-              f"remaining69_critical={len(critical)}",
+              "# Stock vendor_boot per-module ABI audit",
+              f"stock_kernel_exports={len(stock_kernel)}",
+              f"modules_audited={len(modules)}",
+              f"stock_image_compatible_modules={len(stock_image_compatible_modules)}",
+              f"current_build_compatible_modules={len(current_compatible_modules)}",
+              f"qgki_target_layout={TARGET_LAYOUT}",
+              f"qgki_cohort_modules={len(qgki_modules)}",
+              f"qgki_remaining69_used={len(qgki_remaining69)}",
               "",
-              "## MISMATCH",
+              "## COHORTS",
           ]
 
-          for sym in mismatch:
+          for layout, stats in sorted(cohort_stats.items()):
               lines.append(
-                  f"MISMATCH\t{sym}\tstock=0x{required[sym]:08x}\t"
-                  f"current=0x{current[sym]:08x}\towner={owner.get(sym, '-')}"
-                  f"\tmodules={';'.join(modules_by_symbol[sym])}"
+                  f"{layout}\tmodules={stats['modules']}\t"
+                  f"kernel_imports={stats['kernel_imports']}\t"
+                  f"stock_match={stats['stock_match']}\t"
+                  f"stock_mismatch={stats['stock_mismatch']}\t"
+                  f"current_match={stats['current_match']}\t"
+                  f"current_mismatch={stats['current_mismatch']}\t"
+                  f"current_missing={stats['current_missing']}"
               )
 
-          lines += ["", "## MISSING"]
-          for sym in missing:
+          lines += ["", "## MODULES"]
+          for row in report:
+              (
+                  module, vermagic, layout, total_entries, kernel_imports, module_only,
+                  stock_match_n, stock_mismatch_n,
+                  current_match_n, current_mismatch_n, current_missing_n,
+                  stock_ok, current_ok,
+                  stock_mismatch, current_mismatch, current_missing,
+              ) = row
               lines.append(
-                  f"MISSING\t{sym}\tstock=0x{required[sym]:08x}\t"
-                  f"modules={';'.join(modules_by_symbol[sym])}"
+                  f"{module}\tvermagic={vermagic}\tlayout={layout}\t"
+                  f"total_versions={total_entries}\tkernel_imports={kernel_imports}\t"
+                  f"module_only={module_only}\t"
+                  f"stock_match={stock_match_n}\tstock_mismatch={stock_mismatch_n}\t"
+                  f"current_match={current_match_n}\tcurrent_mismatch={current_mismatch_n}\t"
+                  f"current_missing={current_missing_n}\t"
+                  f"stock_ok={int(stock_ok)}\tcurrent_ok={int(current_ok)}"
               )
+              if stock_mismatch:
+                  lines.append("  STOCK_MISMATCH " + " ".join(stock_mismatch))
+              if current_mismatch:
+                  lines.append("  CURRENT_MISMATCH " + " ".join(current_mismatch))
+              if current_missing:
+                  lines.append("  CURRENT_MISSING " + " ".join(current_missing))
 
-          lines += ["", "## REMAINING69_USED_BY_VENDOR_BOOT"]
-          for sym in used69:
-              exp = required[sym]
-              got = current.get(sym)
-              status = "MATCH" if got == exp else ("MISMATCH" if got is not None else "MISSING")
-              lines.append(
-                  f"{status}\t{sym}\tstock=0x{exp:08x}\t"
-                  f"current={(f'0x{got:08x}' if got is not None else 'MISSING')}\t"
-                  f"modules={';'.join(modules_by_symbol[sym])}"
-              )
+          lines += ["", "## QGKI_COHORT"]
+          lines += qgki_modules
 
-          lines += ["", "## MOST_IMPACTED_MODULES"]
-          for mod, count in impacted_modules.most_common():
-              lines.append(f"{count}\t{mod}")
+          lines += ["", "## QGKI_REMAINING69_USED"]
+          lines += sorted(qgki_remaining69)
 
           Path(out_path).write_text("\n".join(lines) + "\n")
           PY
 
-          sed -n '1,260p' vendor-module-abi-audit.txt
+          sed -n '1,360p' vendor-module-abi-audit.txt
 
       - name: Upload stock module ABI evidence
         if: always()
@@ -458,8 +585,11 @@ jobs:
           path: |
             vendor-ramdisks/vendor-boot-layout.txt
             stock-vendor-boot-modules.txt
-            stock-vendor-boot-imports.tsv
+            stock-vendor-boot-load-files.txt
+            stock-vendor-boot-load-plan.txt
+            stock-vendor-boot-module-imports.tsv
             stock-vendor-boot-module-summary.tsv
+            stock-vendor-boot-cohorts.txt
             current.Module.symvers
             current-full-stock-compare.txt
             vendor-module-abi-audit.txt
