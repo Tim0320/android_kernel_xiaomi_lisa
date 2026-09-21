@@ -43,6 +43,52 @@ The exact stock Image was compared against the `vmlinux` rows of Build #53 `Modu
 
 The stock-name coverage is **13,257 / 13,360 = 99.23%**, so the dominant problem is not missing exported functionality. The dominant gap is ABI/type-signature divergence among symbols that exist in both kernels.
 
+## ABI mismatch subsystem classification
+
+Build #53 vmlinux exports were mapped back to the reconstructed source locations of their `EXPORT_SYMBOL*` definitions. Of the 13,257 overlapping stock/current symbols, **13,024** were mapped to source locations; **160 matching** and **73 mismatching** symbols were not mapped by the simple export-site scanner.
+
+Top-level results:
+
+| Area | Total mapped | Match | Mismatch | Match rate |
+| --- | ---: | ---: | ---: | ---: |
+| drivers | 6,266 | 1,505 | 4,761 | 24.02% |
+| net | 2,269 | 394 | 1,875 | 17.36% |
+| kernel | 1,141 | 731 | 410 | 64.07% |
+| fs | 979 | 129 | 850 | 13.18% |
+| lib | 653 | 564 | 89 | 86.37% |
+| sound | 375 | 47 | 328 | 12.53% |
+| mm | 363 | 136 | 227 | 37.47% |
+| crypto | 298 | 90 | 208 | 30.20% |
+| block | 283 | 32 | 251 | 11.31% |
+| techpack | 183 | 173 | 10 | 94.54% |
+| arch | 107 | 91 | 16 | 85.05% |
+
+Strong low-match clusters include:
+
+- `drivers/base`: 37 / 475 = **7.79%**
+- `drivers/of`: 3 / 121 = **2.48%**
+- `drivers/regulator`: 3 / 104 = **2.88%**
+- `drivers/mmc`: 1 / 181 = **0.55%**
+- `sound/soc`: 4 / 167 = **2.40%**
+- `fs/buffer.c`: 1 / 58 = **1.72%**
+- `fs/inode.c`: 2 / 55 = **3.64%**
+- `fs/jbd2`: 1 / 51 = **1.96%**
+- `mm/filemap.c`: 0 / 50 = **0%**
+- `block/blk-mq.c`: 0 / 42 = **0%**
+- `block/bio.c`: 0 / 32 = **0%**
+
+Strong high-match controls include:
+
+- `kernel/rcu`: 45 / 45 = **100%**
+- `lib/xarray.c`: 32 / 32 = **100%**
+- `drivers/virt`: 53 / 54 = **98.15%**
+- `techpack`: 173 / 183 = **94.54%**
+- `kernel/time`: 110 / 124 = **88.71%**
+
+Interpretation: the mismatch is not a uniform whole-tree offset and is not primarily missing functionality. The pattern is consistent with a small set of shared ABI/type-definition generations (for example device, OF, VFS, page/filemap, block/bio, networking and regulator-related type graphs) contaminating thousands of exported CRCs, while several relatively independent subsystems remain close to stock.
+
+The next diagnostic therefore targets **genksyms type dependency roots**, not individual CRCs.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
