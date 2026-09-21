@@ -24,6 +24,7 @@ jobs:
         mode:
           - control
           - stock-source-headers
+          - stock-generated-headers
           - stock-all-headers
 
     runs-on: ubuntu-24.04
@@ -194,6 +195,66 @@ jobs:
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             prepare scripts
+
+      - name: Overlay exact stock generated/config headers only
+        if: matrix.mode == 'stock-generated-headers'
+        run: |
+          set -euo pipefail
+
+          python3 - stock-artifact/stock-kheaders out stock-generated-overlay-manifest.txt <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          stock = Path(sys.argv[1])
+          out_root = Path(sys.argv[2])
+          manifest = Path(sys.argv[3])
+
+          copied = []
+          skipped = []
+
+          def is_generated(rel):
+              text = rel.as_posix()
+              return (
+                  text.startswith("include/generated/")
+                  or text.startswith("include/config/")
+                  or text.startswith("arch/arm64/include/generated/")
+              )
+
+          for src in sorted(p for p in stock.rglob("*.h") if p.is_file()):
+              rel = src.relative_to(stock)
+              if not is_generated(rel):
+                  skipped.append(rel.as_posix())
+                  continue
+              target = out_root / rel
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(src, target)
+              copied.append(rel.as_posix())
+
+          manifest.write_text(
+              "\n".join(
+                  [
+                      f"generated_headers={len(copied)}",
+                      f"source_headers_skipped={len(skipped)}",
+                      "",
+                      "## GENERATED_TO_OUT",
+                      *copied,
+                  ]
+              )
+              + "\n"
+          )
+          print(f"STOCK_GENERATED_ONLY_HEADERS_OVERLAID={len(copied)}")
+          print(f"STOCK_GENERATED_ONLY_SOURCE_SKIPPED={len(skipped)}")
+          PY
+
+          test -s stock-generated-overlay-manifest.txt
+          test ! -d include/config
+          test ! -d arch/arm64/include/generated
+          test ! -f .config
+          echo "SOURCE_TREE_CLEAN_FOR_GENERATED_ONLY=1"
+
+          test -f out/include/generated/autoconf.h
+          echo "GENERATED_ONLY_AUTOCONF_SHA=$(sha256sum out/include/generated/autoconf.h | awk '{print $1}')"
 
       - name: Overlay complete exact stock IKHEADERS after prepare
         if: matrix.mode == 'stock-all-headers'
@@ -441,5 +502,6 @@ jobs:
             all.symversions
             stock-overlay-manifest.txt
             stock-all-overlay-manifest.txt
+            stock-generated-overlay-manifest.txt
             out/**/*.symtypes
             out/**/*.symversions
