@@ -91,16 +91,16 @@ jobs:
           text = path.read_text()
 
           old = """extern struct proc_dir_entry *proc_create_data(const char *, umode_t,
-					       struct proc_dir_entry *,
-					       const struct proc_ops *,
-					       void *);
-"""
+          					       struct proc_dir_entry *,
+          					       const struct proc_ops *,
+          					       void *);
+          """
           new = """extern struct proc_dir_entry *proc_create_data_proc_ops(const char *, umode_t,
-							struct proc_dir_entry *,
-							const struct proc_ops *,
-							void *);
-#define proc_create_data proc_create_data_proc_ops
-"""
+          							struct proc_dir_entry *,
+          							const struct proc_ops *,
+          							void *);
+          #define proc_create_data proc_create_data_proc_ops
+          """
           if old not in text:
               raise SystemExit("current proc_create_data prototype block not found")
           text = text.replace(old, new, 1)
@@ -113,24 +113,24 @@ jobs:
           text = path.read_text()
 
           old = """	const struct inode_operations *proc_iops;
-	union {
-		const struct proc_ops *proc_ops;
-		const struct file_operations *proc_dir_ops;
-	};
-	const struct dentry_operations *proc_dops;
-"""
+          	union {
+          		const struct proc_ops *proc_ops;
+          		const struct file_operations *proc_dir_ops;
+          	};
+          	const struct dentry_operations *proc_dops;
+          """
           new = """	const struct inode_operations *proc_iops;
-#ifdef __GENKSYMS__
-	const struct file_operations *proc_fops;
-#else
-	union {
-		const struct proc_ops *proc_ops;
-		const struct file_operations *proc_dir_ops;
-	};
-	struct proc_ops legacy_proc_ops;
-#endif
-	const struct dentry_operations *proc_dops;
-"""
+          #ifdef __GENKSYMS__
+          	const struct file_operations *proc_fops;
+          #else
+          	union {
+          		const struct proc_ops *proc_ops;
+          		const struct file_operations *proc_dir_ops;
+          	};
+          	struct proc_ops legacy_proc_ops;
+          #endif
+          	const struct dentry_operations *proc_dops;
+          """
           if old not in text:
               raise SystemExit("proc_dir_entry operations field block not found")
           text = text.replace(old, new, 1)
@@ -142,90 +142,90 @@ jobs:
           text = path.read_text()
 
           old = """struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
-		struct proc_dir_entry *parent,
-		const struct proc_ops *proc_ops, void *data)
-{
-	struct proc_dir_entry *p;
+          		struct proc_dir_entry *parent,
+          		const struct proc_ops *proc_ops, void *data)
+          {
+          	struct proc_dir_entry *p;
 
-	p = proc_create_reg(name, mode, &parent, data);
-	if (!p)
-		return NULL;
-	p->proc_ops = proc_ops;
-	return proc_register(parent, p);
-}
-EXPORT_SYMBOL(proc_create_data);
- 
-struct proc_dir_entry *proc_create(const char *name, umode_t mode,
-				   struct proc_dir_entry *parent,
-				   const struct proc_ops *proc_ops)
-{
-	return proc_create_data(name, mode, parent, proc_ops, NULL);
-}
-EXPORT_SYMBOL(proc_create);
-"""
+          	p = proc_create_reg(name, mode, &parent, data);
+          	if (!p)
+          		return NULL;
+          	p->proc_ops = proc_ops;
+          	return proc_register(parent, p);
+          }
+          EXPORT_SYMBOL(proc_create_data);
+           
+          struct proc_dir_entry *proc_create(const char *name, umode_t mode,
+          				   struct proc_dir_entry *parent,
+          				   const struct proc_ops *proc_ops)
+          {
+          	return proc_create_data(name, mode, parent, proc_ops, NULL);
+          }
+          EXPORT_SYMBOL(proc_create);
+          """
           new = """struct proc_dir_entry *proc_create_data_proc_ops(const char *name, umode_t mode,
-		struct proc_dir_entry *parent,
-		const struct proc_ops *proc_ops, void *data)
-{
-	struct proc_dir_entry *p;
+          		struct proc_dir_entry *parent,
+          		const struct proc_ops *proc_ops, void *data)
+          {
+          	struct proc_dir_entry *p;
 
-	p = proc_create_reg(name, mode, &parent, data);
-	if (!p)
-		return NULL;
-	p->proc_ops = proc_ops;
-	return proc_register(parent, p);
-}
-EXPORT_SYMBOL(proc_create_data_proc_ops);
+          	p = proc_create_reg(name, mode, &parent, data);
+          	if (!p)
+          		return NULL;
+          	p->proc_ops = proc_ops;
+          	return proc_register(parent, p);
+          }
+          EXPORT_SYMBOL(proc_create_data_proc_ops);
 
-struct proc_dir_entry *proc_create(const char *name, umode_t mode,
-				   struct proc_dir_entry *parent,
-				   const struct proc_ops *proc_ops)
-{
-	return proc_create_data_proc_ops(name, mode, parent, proc_ops, NULL);
-}
-EXPORT_SYMBOL(proc_create);
+          struct proc_dir_entry *proc_create(const char *name, umode_t mode,
+          				   struct proc_dir_entry *parent,
+          				   const struct proc_ops *proc_ops)
+          {
+          	return proc_create_data_proc_ops(name, mode, parent, proc_ops, NULL);
+          }
+          EXPORT_SYMBOL(proc_create);
 
-#undef proc_create_data
+          #undef proc_create_data
 
-/*
- * Stock lisa QGKI compatibility entry point.
- *
- * HyperOS msm_drm.ko was built against the pre-proc_ops ABI. Preserve that
- * exported ABI while translating the legacy file_operations callbacks into
- * the current proc_ops dispatcher used internally by this reconstructed tree.
- */
-struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
-		struct proc_dir_entry *parent,
-		const struct file_operations *proc_fops, void *data)
-{
-	struct proc_dir_entry *p;
-	struct proc_ops *ops;
+          /*
+           * Stock lisa QGKI compatibility entry point.
+           *
+           * HyperOS msm_drm.ko was built against the pre-proc_ops ABI. Preserve that
+           * exported ABI while translating the legacy file_operations callbacks into
+           * the current proc_ops dispatcher used internally by this reconstructed tree.
+           */
+          struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
+          		struct proc_dir_entry *parent,
+          		const struct file_operations *proc_fops, void *data)
+          {
+          	struct proc_dir_entry *p;
+          	struct proc_ops *ops;
 
-	p = proc_create_reg(name, mode, &parent, data);
-	if (!p)
-		return NULL;
+          	p = proc_create_reg(name, mode, &parent, data);
+          	if (!p)
+          		return NULL;
 
-	ops = &p->legacy_proc_ops;
-	if (proc_fops) {
-		ops->proc_open = proc_fops->open;
-		ops->proc_read = proc_fops->read;
-		ops->proc_write = proc_fops->write;
-		ops->proc_lseek = proc_fops->llseek;
-		ops->proc_release = proc_fops->release;
-		ops->proc_poll = proc_fops->poll;
-		ops->proc_ioctl = proc_fops->unlocked_ioctl;
-#ifdef CONFIG_COMPAT
-		ops->proc_compat_ioctl = proc_fops->compat_ioctl;
-#endif
-		ops->proc_mmap = proc_fops->mmap;
-		ops->proc_get_unmapped_area = proc_fops->get_unmapped_area;
-	}
+          	ops = &p->legacy_proc_ops;
+          	if (proc_fops) {
+          		ops->proc_open = proc_fops->open;
+          		ops->proc_read = proc_fops->read;
+          		ops->proc_write = proc_fops->write;
+          		ops->proc_lseek = proc_fops->llseek;
+          		ops->proc_release = proc_fops->release;
+          		ops->proc_poll = proc_fops->poll;
+          		ops->proc_ioctl = proc_fops->unlocked_ioctl;
+          #ifdef CONFIG_COMPAT
+          		ops->proc_compat_ioctl = proc_fops->compat_ioctl;
+          #endif
+          		ops->proc_mmap = proc_fops->mmap;
+          		ops->proc_get_unmapped_area = proc_fops->get_unmapped_area;
+          	}
 
-	p->proc_ops = ops;
-	return proc_register(parent, p);
-}
-EXPORT_SYMBOL(proc_create_data);
-"""
+          	p->proc_ops = ops;
+          	return proc_register(parent, p);
+          }
+          EXPORT_SYMBOL(proc_create_data);
+          """
           if old not in text:
               raise SystemExit("current proc_create_data implementation block not found")
           text = text.replace(old, new, 1)
@@ -240,16 +240,16 @@ EXPORT_SYMBOL(proc_create_data);
           text = path.read_text()
 
           old = """	u64			exec_clock;
-	u64			min_vruntime;
-#ifndef CONFIG_64BIT
-"""
+          	u64			min_vruntime;
+          #ifndef CONFIG_64BIT
+          """
           new = """	u64			exec_clock;
-	u64			min_vruntime;
-#if defined(__GENKSYMS__) && defined(CONFIG_PERF_HUMANTASK)
-	u64			min_vruntimex;
-#endif
-#ifndef CONFIG_64BIT
-"""
+          	u64			min_vruntime;
+          #if defined(__GENKSYMS__) && defined(CONFIG_PERF_HUMANTASK)
+          	u64			min_vruntimex;
+          #endif
+          #ifndef CONFIG_64BIT
+          """
           if old not in text:
               raise SystemExit("scheduler min_vruntime insertion point not found")
           text = text.replace(old, new, 1)
