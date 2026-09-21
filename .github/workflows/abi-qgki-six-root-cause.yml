@@ -1,0 +1,409 @@
+name: Isolate final six QGKI ABI roots
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-qgki-six-root-cause.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-qgki-six-root-cause
+  cancel-in-progress: true
+
+jobs:
+  isolate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+
+    steps:
+      - name: Checkout reconstructed kernel
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 curl xz-utils unzip git rsync
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Download exact stock IKHEADERS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders.zip
+          unzip -q stock-kheaders.zip -d stock-artifact
+          test -d stock-artifact/stock-kheaders
+          test "$(find stock-artifact/stock-kheaders -type f -name '*.h' | wc -l)" -eq 7806
+
+      - name: Fetch redwood exact private ABI donor
+        run: |
+          set -euo pipefail
+          rm -rf donor-redwood
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git donor-redwood
+          git -C donor-redwood fetch --depth=1 origin redwood-s-oss
+          git -C donor-redwood checkout --detach FETCH_HEAD
+          echo "REDWOOD_HEAD=$(git -C donor-redwood rev-parse HEAD)" | tee donor-head.txt
+
+          test -f donor-redwood/fs/proc/generic.c
+          test -f donor-redwood/kernel/sched/core.c
+
+      - name: Inventory current procfs API migration scope
+        run: |
+          set -euo pipefail
+
+          git grep -n -E 'struct[[:space:]]+proc_ops|\.proc_(open|read|write|lseek|release|poll|ioctl|mmap)' \
+            -- '*.c' '*.h' > current-proc-ops-uses.txt || true
+
+          git grep -l -E 'struct[[:space:]]+proc_ops|\.proc_(open|read|write|lseek|release|poll|ioctl|mmap)' \
+            -- '*.c' '*.h' | sort > current-proc-ops-files.txt || true
+
+          echo "CURRENT_PROC_OPS_MATCHES=$(wc -l < current-proc-ops-uses.txt)"
+          echo "CURRENT_PROC_OPS_FILES=$(wc -l < current-proc-ops-files.txt)"
+
+          sed -n '1,260p' current-proc-ops-files.txt
+
+          grep -n -E 'proc_create_data|proc_create\(' include/linux/proc_fs.h \
+            > current-proc-api-signatures.txt || true
+          grep -n -E 'proc_create_data|proc_create\(' stock-artifact/stock-kheaders/include/linux/proc_fs.h \
+            > stock-proc-api-signatures.txt || true
+
+          echo "=== CURRENT PROC API ==="
+          cat current-proc-api-signatures.txt
+          echo "=== STOCK PROC API ==="
+          cat stock-proc-api-signatures.txt
+
+      - name: Capture current vs stock task_struct declarations
+        run: |
+          set -euo pipefail
+
+          python3 - include/linux/sched.h stock-artifact/stock-kheaders/include/linux/sched.h <<'PY'
+          import difflib
+          import sys
+          from pathlib import Path
+
+          def extract(path, needle):
+              text = Path(path).read_text(errors="replace")
+              start = text.find(needle)
+              if start < 0:
+                  raise SystemExit(f"{needle!r} not found in {path}")
+              brace = text.find("{", start)
+              if brace < 0:
+                  raise SystemExit(f"opening brace not found in {path}")
+              depth = 0
+              end = None
+              for i in range(brace, len(text)):
+                  if text[i] == "{":
+                      depth += 1
+                  elif text[i] == "}":
+                      depth -= 1
+                      if depth == 0:
+                          semi = text.find(";", i)
+                          end = semi + 1
+                          break
+              if end is None:
+                  raise SystemExit(f"struct end not found in {path}")
+              return text[start:end]
+
+          current = extract(sys.argv[1], "struct task_struct")
+          stock = extract(sys.argv[2], "struct task_struct")
+
+          Path("current-task-struct.txt").write_text(current + "\n")
+          Path("stock-task-struct.txt").write_text(stock + "\n")
+
+          diff = difflib.unified_diff(
+              current.splitlines(),
+              stock.splitlines(),
+              fromfile="current/include/linux/sched.h",
+              tofile="stock/include/linux/sched.h",
+              lineterm="",
+          )
+          Path("task-struct-current-vs-stock.diff").write_text("\n".join(diff) + "\n")
+
+          print(f"CURRENT_TASK_STRUCT_LINES={len(current.splitlines())}")
+          print(f"STOCK_TASK_STRUCT_LINES={len(stock.splitlines())}")
+          print(f"TASK_STRUCT_DECL_IDENTICAL={int(current == stock)}")
+          PY
+
+          sed -n '1,260p' task-struct-current-vs-stock.diff
+
+      - name: Prepare exact stock-config build environment
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts
+
+      - name: Stage exact stock global genksyms headers
+        env:
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+          rm -rf "$STOCK_ABI_ROOT"
+          mkdir -p "$STOCK_ABI_ROOT"
+          rsync -a stock-artifact/stock-kheaders/ "$STOCK_ABI_ROOT/"
+          test "$(find "$STOCK_ABI_ROOT" -type f -name '*.h' | wc -l)" -eq 7806
+
+      - name: Patch direct genksyms output and stock global include route
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+
+          old = '    $(call cmd_gensymtypes_c,true,$@) >/dev/null;                           \\\n'
+          new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
+          if old not in s:
+              raise SystemExit("direct genksyms output rule not found")
+          s = s.replace(old, new, 1)
+
+          stock = (
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/include "
+              "-I$(STOCK_ABI_ROOT)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/generated/uapi"
+          )
+
+          lines = s.splitlines(keepends=True)
+          done = False
+          for i, line in enumerate(lines):
+              if "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line:
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {stock} -D__GENKSYMS__",
+                      1,
+                  )
+                  done = True
+                  break
+
+          if not done:
+              raise SystemExit("C genksyms CPP rule not found")
+
+          p.write_text("".join(lines))
+          PY
+
+      - name: Run source-vs-private-header ablation for the six symbols
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+
+          mkdir -p six-results
+          git show HEAD:fs/proc/generic.c > six-results/current-proc-generic.c
+          git show HEAD:kernel/sched/core.c > six-results/current-sched-core.c
+
+          run_variant() {
+            local variant="$1"
+            local proc_source="$2"
+            local proc_headers="$3"
+            local sched_source="$4"
+            local sched_headers="$5"
+
+            echo "=== SIX_VARIANT $variant ==="
+
+            git checkout -- fs/proc kernel/sched
+            rm -rf out/fs/proc out/kernel/sched
+
+            if [[ "$proc_source" == "redwood" ]]; then
+              cp donor-redwood/fs/proc/generic.c fs/proc/generic.c
+            fi
+
+            if [[ "$proc_headers" == "redwood" ]]; then
+              while IFS= read -r p; do
+                rel="${p#donor-redwood/}"
+                cp "$p" "$rel"
+              done < <(find donor-redwood/fs/proc -maxdepth 1 -type f -name '*.h' | sort)
+            fi
+
+            if [[ "$sched_source" == "redwood" ]]; then
+              cp donor-redwood/kernel/sched/core.c kernel/sched/core.c
+            fi
+
+            if [[ "$sched_headers" == "redwood" ]]; then
+              while IFS= read -r p; do
+                rel="${p#donor-redwood/}"
+                cp "$p" "$rel"
+              done < <(find donor-redwood/kernel/sched -maxdepth 1 -type f -name '*.h' | sort)
+            fi
+
+            set +e
+            make -j1 O=out \
+              ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+              CLANG_TRIPLE=aarch64-linux-gnu- \
+              fs/proc/generic.symtypes \
+              >"six-results/${variant}-proc.log" 2>&1
+            proc_rc=$?
+
+            make -j1 O=out \
+              ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+              CLANG_TRIPLE=aarch64-linux-gnu- \
+              kernel/sched/core.symtypes \
+              >"six-results/${variant}-sched.log" 2>&1
+            sched_rc=$?
+            set -e
+
+            echo -e "${variant}\tproc_rc=${proc_rc}\tsched_rc=${sched_rc}" \
+              | tee -a six-results/variant-status.tsv
+
+            : > "six-results/${variant}.symversions"
+            find out/fs/proc out/kernel/sched -name '*.symversions' -type f -print0 2>/dev/null \
+              | xargs -0 cat >> "six-results/${variant}.symversions" || true
+          }
+
+          : > six-results/variant-status.tsv
+
+          run_variant current-control current current current current
+          run_variant proc-source-only redwood current current current
+          run_variant proc-private-only current redwood current current
+          run_variant proc-source-private redwood redwood current current
+          run_variant sched-source-only current current redwood current
+          run_variant sched-private-only current current current redwood
+          run_variant sched-source-private current current redwood redwood
+
+      - name: Score six-symbol ablation variants
+        run: |
+          set -euo pipefail
+
+          python3 - six-results six-root-cause-summary.tsv <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          out = Path(sys.argv[2])
+
+          expected = {
+              "proc_create_data": 0xa187c33a,
+              "proc_mkdir": 0xd8fd7935,
+              "proc_remove": 0x0420ade2,
+              "remove_proc_entry": 0x05ba4e75,
+              "sched_setscheduler": 0xe09be37d,
+              "wake_up_process": 0xfa54581b,
+          }
+
+          rx = re.compile(r"^__crc_([A-Za-z0-9_.$]+) = (0x[0-9a-fA-F]+);$")
+          lines = []
+
+          for path in sorted(root.glob("*.symversions")):
+              variant = path.stem
+              got = {}
+              for raw in path.read_text(errors="replace").splitlines():
+                  m = rx.match(raw.strip())
+                  if m:
+                      got[m.group(1)] = int(m.group(2), 16)
+
+              proc_score = sum(
+                  got.get(s) == expected[s]
+                  for s in [
+                      "proc_create_data", "proc_mkdir",
+                      "proc_remove", "remove_proc_entry"
+                  ]
+              )
+              sched_score = sum(
+                  got.get(s) == expected[s]
+                  for s in ["sched_setscheduler", "wake_up_process"]
+              )
+              total = proc_score + sched_score
+
+              print(
+                  f"SIX_VARIANT_SCORE\t{variant}\t"
+                  f"proc={proc_score}/4\tsched={sched_score}/2\ttotal={total}/6"
+              )
+              lines.append(
+                  f"{variant}\tproc={proc_score}/4\t"
+                  f"sched={sched_score}/2\ttotal={total}/6"
+              )
+
+              for sym, exp in expected.items():
+                  val = got.get(sym)
+                  status = "MATCH" if val == exp else ("MISMATCH" if val is not None else "MISSING")
+                  print(
+                      f"SIX_SYMBOL\t{variant}\t{status}\t{sym}\t"
+                      f"candidate={(f'0x{val:08x}' if val is not None else 'MISSING')}\t"
+                      f"stock=0x{exp:08x}"
+                  )
+
+          out.write_text("\n".join(lines) + "\n")
+          PY
+
+          cat six-root-cause-summary.tsv
+
+      - name: Upload six-symbol root-cause evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-six-root-cause
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            donor-head.txt
+            clang-version.txt
+            current-proc-ops-uses.txt
+            current-proc-ops-files.txt
+            current-proc-api-signatures.txt
+            stock-proc-api-signatures.txt
+            current-task-struct.txt
+            stock-task-struct.txt
+            task-struct-current-vs-stock.diff
+            six-results/
+            six-root-cause-summary.tsv
