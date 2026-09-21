@@ -271,6 +271,50 @@ The previously mismatching UFS exports now all reproduce the exact stock CRCs, i
 
 This result proves that the normal donor implementation can complete a full build while genksyms is supplied with the recovered stock ABI preprocessor/type environment. It does **not** by itself prove runtime type/layout compatibility: CRC agreement can be produced by the stock genksyms view even when donor implementation headers differ. The next checks therefore expand from the 55 known oracle symbols to the full 13,360-export stock oracle and then inspect critical structure layouts separately.
 
+## Full 13,360-export oracle after genksyms-only stock header routing
+
+The successful full build that routes only genksyms through the recovered stock ABI environment was compared against the exact stock Image's complete **13,360-export** CRC oracle.
+
+Results:
+
+- stock exports: **13,360**
+- current vmlinux exports: **14,032**
+- overlap: **13,257**
+- exact CRC matches: **12,348**
+- CRC mismatches: **909**
+- overlap match rate: **93.1432%**
+- stock-only exports: **103**
+- current-only vmlinux exports: **775**
+
+This improves the same overlap population from Build #53's **4,099 / 13,257 = 30.9195%** to **12,348 / 13,257 = 93.1432%**.
+
+The remaining 909 mismatches are highly concentrated:
+
+- `net`: 646
+- `drivers`: 198
+- `kernel`: 30
+- `fs`: 21
+- `lib`: 3
+- `techpack`: 3
+- unmapped: 8
+
+Largest deep groups:
+
+- `net/netfilter`: 190
+- `drivers/mmc`: 173
+- `net/core`: 158
+- `net/ipv4`: 118
+- `net/ipv6`: 78
+- `net/socket.c`: 33
+- `net/xfrm`: 27
+- `kernel/sched`: 25
+- `net/sched`: 25
+- `fs/proc`: 19
+
+Interpretation: the 774-header stock source closure was derived only from the 18 selected core ABI targets. It is sufficient for the 38-symbol core oracle and the 17-symbol vendor/UFS oracle, but headers outside that closure fall back to donor headers during genksyms preprocessing. The concentration in networking and MMC is consistent with this limited closure.
+
+The next experiment therefore stages the **complete stock IKHEADERS source set** (5,686 source headers plus 2,120 generated/config headers) in an isolated genksyms-only include root. Normal C/assembly compilation continues to use donor headers, avoiding the source/API incompatibilities observed when stock headers were globally overlaid.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
