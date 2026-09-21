@@ -485,6 +485,64 @@ The four procfs mismatches correspond to a real API-generation difference: the e
 
 The next diagnostic separates redwood source files from redwood private headers for `fs/proc/generic.c` and `kernel/sched/core.c`, and inventories the current tree's proc_ops migration scope before any source-generation rollback is attempted.
 
+## Final six QGKI CRC roots are private headers, not C implementations
+
+A source-vs-private-header ablation was run for the six boot-critical QGKI CRC mismatches while retaining the exact stock global IKHEADERS genksyms environment.
+
+Results:
+
+### procfs
+
+- current control: **0/4**
+- redwood `fs/proc/generic.c` only: **0/4**
+- redwood private proc headers only: **4/4**
+- redwood source + private headers: **4/4**
+
+Only two proc private headers exist in both trees:
+
+- `fs/proc/fd.h`: byte-identical
+- `fs/proc/internal.h`: different
+
+Therefore all four procfs CRC roots are isolated to **`fs/proc/internal.h`**.
+
+The key structural difference is the `struct proc_dir_entry` operation-pointer field:
+
+Current reconstruction:
+
+```c
+union {
+    const struct proc_ops *proc_ops;
+    const struct file_operations *proc_dir_ops;
+};
+```
+
+redwood / stock-generation lineage:
+
+```c
+const struct file_operations *proc_fops;
+```
+
+### scheduler
+
+- current control: **0/2**
+- redwood `kernel/sched/core.c` only: **0/2**
+- redwood private scheduler headers only: **2/2**
+- redwood source + private headers: **2/2**
+
+Of the eight scheduler-private headers, five are byte-identical between current and redwood. Only these three differ:
+
+- `kernel/sched/features.h`
+- `kernel/sched/pelt.h`
+- `kernel/sched/sched.h`
+
+Thus the two scheduler CRC mismatches are also header/type-graph differences rather than implementation-body differences.
+
+### Runtime implication
+
+The current tree contains **982 proc_ops-related matches across 136 source/header files**, so globally rolling back to the old procfs API would be invasive.
+
+The next experiment minimizes the scheduler private-header subset and separately tests whether the exact proc/scheduler private-header substitutions compile under the normal donor C header environment. This distinguishes a safe runtime source overlay from a genksyms-only ABI view.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
