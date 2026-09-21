@@ -135,7 +135,14 @@ jobs:
           new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
           if old not in s:
               raise SystemExit("direct genksyms rule not found")
-          p.write_text(s.replace(old, new, 1))
+          s = s.replace(old, new, 1)
+
+          cpp_old = '    $(CPP) -D__GENKSYMS__ $(c_flags) $< |                             \\\n'
+          cpp_new = '    $(CPP) -H -D__GENKSYMS__ $(c_flags) $< |                          \\\n'
+          if cpp_old not in s:
+              raise SystemExit("genksyms CPP rule not found")
+          s = s.replace(cpp_old, cpp_new, 1)
+          p.write_text(s)
           PY
 
           targets=(
@@ -159,143 +166,89 @@ jobs:
             drivers/dma-buf/dma-buf.symtypes
           )
 
+          rm -rf include-trace
+          mkdir -p include-trace
+
+          idx=0
           for t in "${targets[@]}"; do
-            make -j"$(nproc)" O=out \
+            idx=$((idx + 1))
+            safe="${t//\//__}"
+            echo "=== TRACE_GENKSYMS $t ==="
+            make -j1 O=out \
               ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
               CROSS_COMPILE=aarch64-linux-gnu- \
               CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-              CLANG_TRIPLE=aarch64-linux-gnu- "$t"
+              CLANG_TRIPLE=aarch64-linux-gnu- "$t" \
+              >"include-trace/${idx}-${safe}.log" 2>&1
+            cat "include-trace/${idx}-${safe}.log"
           done
 
-          find out -name '*.cmd' -type f | sort > all-cmd-files.txt
-          echo "CMD_FILE_COUNT=$(wc -l < all-cmd-files.txt)"
+          echo "INCLUDE_TRACE_LOGS=$(find include-trace -type f -name '*.log' | wc -l)"
 
       - name: Derive source-header dependency closure
         run: |
           set -euo pipefail
 
-          python3 - out stock-artifact/stock-kheaders abi-source-header-closure.txt <<'PY'
+          python3 - include-trace stock-artifact/stock-kheaders abi-source-header-closure.txt <<'PY'
           import re
           import sys
           from pathlib import Path
 
-          out = Path(sys.argv[1])
+          trace_root = Path(sys.argv[1])
           stock = Path(sys.argv[2])
           report = Path(sys.argv[3])
-
-          roots = [
-              "kernel/module",
-              "drivers/base/core",
-              "drivers/base/platform",
-              "drivers/base/power/runtime",
-              "drivers/of/base",
-              "drivers/of/address",
-              "drivers/clk/clk",
-              "drivers/clk/clkdev",
-              "drivers/iommu/iommu",
-              "drivers/regulator/core",
-              "kernel/kthread",
-              "kernel/irq/irqdomain",
-              "fs/sysfs/group",
-              "lib/kobject",
-              "mm/page_alloc",
-              "kernel/dma/direct",
-              "kernel/dma/mapping",
-              "drivers/dma-buf/dma-buf",
-          ]
-
-          # Kbuild .cmd files record prerequisite closures for compiled
-          # objects. Parse command files corresponding to the 18 ABI roots.
-          selected_cmd = []
-          for root in roots:
-              parent = out / Path(root).parent
-              stem = Path(root).name
-              selected_cmd.extend(parent.glob(f".{stem}*.cmd"))
-
-          selected_cmd = sorted(set(selected_cmd))
-          print(f"ABI_SELECTED_CMD_FILES={len(selected_cmd)}")
-          for p in selected_cmd[:40]:
-              print(f"ABI_CMD_FILE\t{p.as_posix()}")
-
-          if not selected_cmd:
-              raise SystemExit("no Kbuild .cmd files found for ABI targets")
-
           repo_root = Path.cwd().resolve()
-          out_root = out.resolve()
+
+          logs = sorted(trace_root.glob("*.log"))
+          print(f"ABI_INCLUDE_TRACE_LOGS={len(logs)}")
+          if len(logs) != 18:
+              raise SystemExit(f"expected 18 include trace logs, got {len(logs)}")
+
           candidates = set()
-          raw_header_tokens = set()
+          observed = set()
 
-          def normalize_token(token):
-              token = token.strip().strip("'\"(),:")
-              token = token.replace("\\", "")
-              if not token.endswith(".h"):
-                  return None
+          # clang -H prints one line per include, prefixed by one or more dots:
+          # . /abs/path/include/linux/foo.h
+          # .. /abs/path/include/linux/bar.h
+          trace_re = re.compile(r"^\.+\s+(.+\.h)$")
 
-              if token.startswith("$(srctree)/"):
-                  token = token[len("$(srctree)/"):]
-              elif token.startswith("$(objtree)/"):
-                  return None
+          for log in logs:
+              for raw in log.read_text(errors="replace").splitlines():
+                  m = trace_re.match(raw.strip())
+                  if not m:
+                      continue
+                  token = m.group(1).strip()
+                  observed.add(token)
 
-              p = Path(token)
-              if p.is_absolute():
-                  try:
-                      rel = p.resolve().relative_to(repo_root)
-                  except ValueError:
-                      return None
-                  token = rel.as_posix()
-              elif token.startswith("../"):
-                  try:
-                      rel = (out_root / token).resolve().relative_to(repo_root)
-                  except ValueError:
-                      return None
-                  token = rel.as_posix()
-              elif token.startswith("./"):
-                  token = token[2:]
+                  p = Path(token)
+                  if p.is_absolute():
+                      try:
+                          rel = p.resolve().relative_to(repo_root).as_posix()
+                      except ValueError:
+                          continue
+                  else:
+                      rel = token
+                      if rel.startswith("./"):
+                          rel = rel[2:]
 
-              if token.startswith("out/"):
-                  return None
-              if token.startswith(("include/", "arch/arm64/include/")):
-                  return token
-              return None
-
-          for cmd in selected_cmd:
-              text = cmd.read_text(errors="replace")
-              flat = text.replace("\\\n", " ")
-              for token in re.findall(r"[^\s]+?\.h(?=[\s\\)]|$)", flat):
-                  raw_header_tokens.add(token)
-                  rel = normalize_token(token)
-                  if rel and (stock / rel).is_file():
+                  if rel.startswith("out/"):
+                      continue
+                  if not rel.startswith(("include/", "arch/arm64/include/")):
+                      continue
+                  if (stock / rel).is_file():
                       candidates.add(rel)
 
-          print(f"ABI_RAW_HEADER_TOKENS={len(raw_header_tokens)}")
-          for token in sorted(raw_header_tokens)[:120]:
-              print(f"ABI_RAW_HEADER\t{token}")
-
-          # Conservative fallback: scan all command files that mention a
-          # selected ABI root. Some Kbuild variants place dependency data in
-          # .o command files rather than the .symtypes command file.
-          root_markers = tuple(root + "." for root in roots)
-          for cmd in out.rglob(".*.cmd"):
-              text = cmd.read_text(errors="replace")
-              if not any(marker in text for marker in root_markers):
-                  continue
-              flat = text.replace("\\\n", " ")
-              for token in re.findall(r"[^\s]+?\.h(?=[\s\\)]|$)", flat):
-                  rel = normalize_token(token)
-                  if rel and (stock / rel).is_file():
-                      candidates.add(rel)
-
-          report.write_text(
-              ("\n".join(sorted(candidates)) + "\n") if candidates else ""
-          )
+          print(f"ABI_INCLUDE_TRACE_HEADERS={len(observed)}")
           print(f"ABI_SOURCE_HEADER_CLOSURE={len(candidates)}")
-          for rel in sorted(candidates)[:200]:
+          for rel in sorted(candidates)[:240]:
               print(f"ABI_SOURCE_HEADER\t{rel}")
 
           if len(candidates) < 50:
               raise SystemExit(
-                  f"dependency closure implausibly small: {len(candidates)}"
+                  f"include-trace closure implausibly small: {len(candidates)}"
               )
+
+          report.write_text("\n".join(sorted(candidates)) + "\n")
           PY
 
           test -s abi-source-header-closure.txt
@@ -310,7 +263,7 @@ jobs:
           # Restore tracked source files after the full-overlay dependency pass
           # and remove stock source headers that were untracked in this donor.
           git reset --hard HEAD
-          git clean -fd -e stock-artifact/ -e abi-source-header-closure.txt -e all-cmd-files.txt
+          git clean -fd -e stock-artifact/ -e abi-source-header-closure.txt -e include-trace/
 
           # Recreate the donor-generated build environment from scratch.
           rm -rf out
@@ -487,6 +440,6 @@ jobs:
           path: |
             abi-source-header-closure.txt
             minimal.symversions
-            all-cmd-files.txt
+            include-trace/
             out/**/*.symtypes
             out/**/*.symversions
