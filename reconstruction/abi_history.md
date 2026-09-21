@@ -225,6 +225,27 @@ A Qualcomm vendor manifest for `LA.UM.9.14.r1-16900-LAHAINA.0` gives the exact `
 
 That commit is preserved in many public Qualcomm-derived mirrors, so the next probe will resolve early tag revisions from vendor manifests and fetch the exact commit by SHA.
 
+## Manifest-exact early Lahaina results
+
+Workflow commit `6cee2104` used Qualcomm vendor-manifest exact `kernel/msm-5.4` revisions and direct genksyms. All jobs completed the CRC stage successfully.
+
+| Release(s) | Exact kernel revision | Result | Present | module_layout |
+| --- | --- | ---: | ---: | --- |
+| 15400 | `4065f0ea2f5e...` | 0/38 | 37/38 | `0x9024fb67` |
+| 15500 / 15600 QSSI12 | `5ad0937ee3cc...` | 0/38 | 37/38 | `0x9024fb67` |
+| 15800 | `02c90c6a7bea...` | 0/38 | 37/38 | `0x9024fb67` |
+| 16100 / 16100.01 QSSI12 | `7a4b43854304...` | 0/38 | 37/38 | `0x9024fb67` |
+| 16300 | `178ecd92d985...` | 0/38 | 37/38 | `0x9024fb67` |
+| 16700 | `bec53eadb657...` | 0/38 | 37/38 | `0x9024fb67` |
+| 16900 | `203d4a97455e...` | 0/38 | 37/38 | `0x9024fb67` |
+| 17700 control | `21af954d9156...` | 0/38 | 37/38 | `0x9024fb67` |
+
+The 17700 control reproduced the expected direct-genksyms values and emitted `EARLY_LAHAINA_CONTROL_OK=1`.
+
+This proves the mainstream Qualcomm Lahaina core-KABI generation is stable across at least 15400 through 20000.01 and does not match stock Lisa HyperOS QGKI.
+
+The earlier `0xc20359c8` values from Skywalker 16900/17500 snapshots were fork-state artifacts, not Qualcomm tag-tip ABI generations.
+
 ## Current active direction
 
 The next useful boundary is **pre-18400 Lahaina**, not later QSSI12/QSSI14 forks.
