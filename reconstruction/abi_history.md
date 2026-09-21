@@ -315,6 +315,46 @@ Interpretation: the 774-header stock source closure was derived only from the 18
 
 The next experiment therefore stages the **complete stock IKHEADERS source set** (5,686 source headers plus 2,120 generated/config headers) in an isolated genksyms-only include root. Normal C/assembly compilation continues to use donor headers, avoiding the source/API incompatibilities observed when stock headers were globally overlaid.
 
+## Complete stock IKHEADERS genksyms root reaches 99.4795%
+
+A full kernel build using the complete stock IKHEADERS archive **only for genksyms preprocessing**, while normal C/assembly compilation continues to use donor headers, completed successfully after two unsupported translation-unit families were explicitly routed back to donor genksyms headers:
+
+- `lib/zstd/*`
+- `drivers/android/vendor_hooks.c`
+
+Those two families previously produced 19 unversioned exports and unresolved `__crc_*` relocations at final vmlinux link. With the narrow fallback, `GENKSYMS_VERSION_FAILURES=0`.
+
+Full stock Image oracle comparison:
+
+- stock exports: **13,360**
+- vmlinux overlap: **13,257**
+- exact CRC matches: **13,188**
+- CRC mismatches: **69**
+- match rate: **99.4795%**
+- stock-only exports: **103**
+- current-only vmlinux exports: **775**
+
+Progression on the same 13,257-symbol overlap:
+
+- Build #53: **4,099 / 13,257 = 30.9195%**
+- 774-header genksyms closure: **12,348 / 13,257 = 93.1432%**
+- complete stock IKHEADERS genksyms root: **13,188 / 13,257 = 99.4795%**
+
+All 69 remaining mismatches are mapped to source paths. Their concentration is:
+
+- `kernel/sched`: 25
+- `fs/proc`: 19
+- `drivers/usb`: 16
+- `lib/lz4`: 3
+- `techpack` / IPA: 2
+- `drivers/gpu` / KGSL: 2
+- `net/qrtr`: 1
+- `drivers/thermal`: 1
+
+This pattern matches the construction of stock IKHEADERS: the archive contains `include/` and `arch/arm64/include/` headers, but not subsystem-private headers such as `kernel/sched/sched.h`, `fs/proc/internal.h`, or driver-local headers under `drivers/`, `net/`, `lib/`, and `techpack/`.
+
+Therefore the remaining 69 symbols should be treated as a **private implementation/header lineage problem**, not a global Kconfig/header problem. The next experiment compares public Xiaomi/Qualcomm/Lisa source lineages only for the 19 translation units that own those 69 exports while retaining the exact stock global IKHEADERS environment.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
