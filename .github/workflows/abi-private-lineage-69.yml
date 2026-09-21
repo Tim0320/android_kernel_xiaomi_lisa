@@ -1,0 +1,535 @@
+name: Fingerprint remaining 69 private ABI symbols
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-private-lineage-69.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-private-abi-69
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: current-control
+            repo: https://github.com/Tim0320/android_kernel_xiaomi_lisa.git
+            ref: reconstruction/5.4.289-qgki
+
+          - label: cannedshroud-lisa
+            repo: https://github.com/CannedShroud/kernel_xiaomi_lisa.git
+            ref: main
+
+          - label: endcredits-asb-2024-10
+            repo: https://github.com/EndCredits/android_kernel_xiaomi_sm8350-miui.git
+            ref: ASB-2024-10-05
+
+          - label: yzzzr-hyper14
+            repo: https://github.com/YZzZr/android_kernel_xiaomi_sm8350-miui.git
+            ref: hyper-14
+
+          - label: jiuge-new-rebase
+            repo: https://github.com/JiuGeFaCai/android_kernel_xiaomi_sm8350-miui.git
+            ref: new-rebase
+
+          - label: micode-lisa-r
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: lisa-r-oss
+
+          - label: micode-redwood-s
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: redwood-s-oss
+
+          - label: micode-taoyao-s
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: taoyao-s-oss
+
+          - label: lahaina-16900-exact
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 203d4a97455e95f81738823edbb34b17c55fec43
+
+          - label: lahaina-17700-exact
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 21af954d9156c3da3a3a47fef5dbf23526691ba5
+
+          - label: lahaina-18400.02-exact
+            repo: https://github.com/Wcoom/kernel_xiaomi_haydn.git
+            ref: cc27e795a125d4c26bc843c34a6e6574fb5a836e
+
+          - label: lineage-lisa-qgki-289
+            repo: https://github.com/xiaomi-lisa-resources/android_kernel_xiaomi_lisa.git
+            ref: 6fd7609f90995c774f78ba1887618c3a642ad84e
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+
+    steps:
+      - name: Checkout reconstructed base
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            cpio kmod rsync python3 curl xz-utils unzip git
+
+      - name: Cache stock-generation AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install stock-generation AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+
+          curl -L --fail --retry 5 --retry-all-errors \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
+
+      - name: Download exact stock IKHEADERS and 69-symbol oracle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+          FULL_BUILD_ARTIFACT_ID: "10645181148"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact full-build-artifact
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders.zip
+          unzip -q stock-kheaders.zip -d stock-artifact
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${FULL_BUILD_ARTIFACT_ID}/zip" \
+            -o full-build.zip
+          unzip -q full-build.zip -d full-build-artifact
+
+          compare_file="$(find full-build-artifact -name full-stock-genksyms-compare.txt -type f -print -quit)"
+          defs_file="$(find full-build-artifact -name export-definitions.txt -type f -print -quit)"
+          test -n "$compare_file"
+          test -n "$defs_file"
+
+          cp "$compare_file" baseline-full-compare.txt
+          cp "$defs_file" baseline-export-definitions.txt
+
+          python3 - baseline-full-compare.txt baseline-export-definitions.txt remaining69.tsv <<'PY'
+          import re
+          import sys
+          from collections import defaultdict
+          from pathlib import Path
+
+          compare_path, defs_path, out_path = sys.argv[1:]
+
+          expected = {}
+          for raw in Path(compare_path).read_text(errors="replace").splitlines():
+              if not raw.startswith("MISMATCH\t"):
+                  continue
+              parts = raw.split("\t")
+              symbol = parts[1]
+              stock = parts[2].split("=", 1)[1]
+              expected[symbol] = stock
+
+          paths = defaultdict(list)
+          rx = re.compile(
+              r'^(.*?):(\d+):.*?(?:EXPORT_SYMBOL[A-Z0-9_]*)\s*\(\s*([A-Za-z0-9_.$]+)\s*\)'
+          )
+          for raw in Path(defs_path).read_text(errors="replace").splitlines():
+              m = rx.search(raw)
+              if not m:
+                  continue
+              path, line, symbol = m.groups()
+              if symbol in expected:
+                  paths[symbol].append(path)
+
+          def family(path):
+              if path.startswith("kernel/sched/"):
+                  return "sched"
+              if path.startswith("fs/proc/"):
+                  return "proc"
+              if path.startswith("drivers/usb/"):
+                  return "usb"
+              if path.startswith("lib/lz4/"):
+                  return "lz4"
+              if path.startswith("techpack/dataipa/"):
+                  return "ipa"
+              if path.startswith("drivers/gpu/msm/"):
+                  return "kgsl"
+              if path.startswith("net/qrtr/"):
+                  return "qrtr"
+              if path.startswith("drivers/thermal/"):
+                  return "tsens"
+              return "other"
+
+          lines = []
+          for symbol in sorted(expected):
+              p = sorted(set(paths.get(symbol, [])))
+              path = p[0] if p else "-"
+              lines.append(f"{symbol}\t{expected[symbol]}\t{family(path)}\t{path}")
+
+          if len(lines) != 69:
+              raise SystemExit(f"expected 69 mismatch symbols, got {len(lines)}")
+
+          Path(out_path).write_text("\n".join(lines) + "\n")
+          print("PRIVATE_ORACLE_SYMBOLS=69")
+          PY
+
+          cat remaining69.tsv
+
+      - name: Prepare exact-config donor build environment
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+
+      - name: Fetch candidate private implementation
+        env:
+          CANDIDATE_REPO: ${{ matrix.repo }}
+          CANDIDATE_REF: ${{ matrix.ref }}
+        run: |
+          set -euo pipefail
+          rm -rf candidate-src
+          git clone --filter=blob:none --no-checkout "$CANDIDATE_REPO" candidate-src
+          git -C candidate-src fetch --depth=1 origin "$CANDIDATE_REF"
+          git -C candidate-src checkout --detach FETCH_HEAD
+          echo "PRIVATE_CANDIDATE=${{ matrix.label }}"
+          echo "PRIVATE_CANDIDATE_COMMIT=$(git -C candidate-src rev-parse HEAD)"
+
+      - name: Overlay candidate private C and local headers
+        run: |
+          set -euo pipefail
+
+          python3 - candidate-src . candidate-private-manifest.txt <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          src = Path(sys.argv[1])
+          dst = Path(sys.argv[2])
+          manifest = Path(sys.argv[3])
+
+          roots = [
+              "kernel/sched",
+              "fs/proc",
+              "drivers/usb/dwc3",
+              "lib/lz4",
+              "techpack/dataipa/drivers/platform/msm/ipa/ipa_v3",
+              "drivers/gpu/msm",
+              "net/qrtr",
+              "drivers/thermal",
+          ]
+
+          copied = []
+          for root_text in roots:
+              root = src / root_text
+              if not root.is_dir():
+                  continue
+              for p in sorted(root.rglob("*")):
+                  if not p.is_file() or p.suffix not in {".c", ".h"}:
+                      continue
+
+                  rel = p.relative_to(src)
+
+                  # In drivers/usb/host only the xHCI family owns remaining
+                  # mismatches. It is outside drivers/usb/dwc3, so include it
+                  # separately below rather than copying the entire host stack.
+                  target = dst / rel
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(p, target)
+                  copied.append(rel.as_posix())
+
+          host = src / "drivers/usb/host"
+          if host.is_dir():
+              for p in sorted(host.glob("xhci*")):
+                  if not p.is_file() or p.suffix not in {".c", ".h"}:
+                      continue
+                  rel = p.relative_to(src)
+                  target = dst / rel
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(p, target)
+                  copied.append(rel.as_posix())
+
+          copied = sorted(set(copied))
+          manifest.write_text("\n".join(copied) + "\n")
+          print(f"PRIVATE_CANDIDATE_FILES_COPIED={len(copied)}")
+          for rel in copied[:160]:
+              print(f"PRIVATE_CANDIDATE_FILE\t{rel}")
+          PY
+
+          test -s candidate-private-manifest.txt
+
+      - name: Stage complete stock global headers for genksyms
+        env:
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+          rm -rf "$STOCK_ABI_ROOT"
+          mkdir -p "$STOCK_ABI_ROOT"
+
+          python3 - stock-artifact/stock-kheaders "$STOCK_ABI_ROOT" <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          stock = Path(sys.argv[1])
+          root = Path(sys.argv[2])
+          count = 0
+          for p in sorted(x for x in stock.rglob("*.h") if x.is_file()):
+              rel = p.relative_to(stock)
+              target = root / rel
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(p, target)
+              count += 1
+          print(f"PRIVATE_STOCK_GLOBAL_HEADERS={count}")
+          if count != 7806:
+              raise SystemExit(f"expected 7806 headers, got {count}")
+          PY
+
+      - name: Route direct genksyms through stock global headers
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+
+          old = '    $(call cmd_gensymtypes_c,true,$@) >/dev/null;                           \\\n'
+          new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
+          if old not in s:
+              raise SystemExit("direct genksyms output rule not found")
+          s = s.replace(old, new, 1)
+
+          stock_flags = (
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/include "
+              "-I$(STOCK_ABI_ROOT)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/generated/uapi"
+          )
+
+          lines = s.splitlines(keepends=True)
+          done = False
+          for i, line in enumerate(lines):
+              if "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line:
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {stock_flags} -D__GENKSYMS__",
+                      1,
+                  )
+                  done = True
+                  break
+
+          if not done:
+              raise SystemExit("C genksyms rule not found")
+
+          p.write_text("".join(lines))
+          PY
+
+      - name: Probe 19 translation units
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+
+          targets=(
+            lib/lz4/lz4.symtypes
+            fs/proc/generic.symtypes
+            fs/proc/proc_net.symtypes
+            drivers/usb/dwc3/core.symtypes
+            drivers/usb/dwc3/debug_ipc.symtypes
+            drivers/usb/dwc3/gadget.symtypes
+            drivers/usb/dwc3/host.symtypes
+            drivers/usb/host/xhci-dbg.symtypes
+            drivers/usb/host/xhci-ext-caps.symtypes
+            drivers/usb/host/xhci.symtypes
+            kernel/sched/swait.symtypes
+            kernel/sched/isolation.symtypes
+            kernel/sched/cputime.symtypes
+            kernel/sched/core.symtypes
+            kernel/sched/fair.symtypes
+            techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.symtypes
+            drivers/gpu/msm/kgsl_pwrscale.symtypes
+            net/qrtr/qrtr.symtypes
+            drivers/thermal/tsens-mtc.symtypes
+          )
+
+          success=0
+          fail=0
+          : > private-target-status.txt
+
+          for target in "${targets[@]}"; do
+            echo "=== PRIVATE_TARGET $target ==="
+            set +e
+            make -j1 O=out \
+              ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+              CLANG_TRIPLE=aarch64-linux-gnu- "$target" \
+              >"private-${target//\//__}.log" 2>&1
+            rc=$?
+            set -e
+
+            if [[ "$rc" -eq 0 ]]; then
+              success=$((success + 1))
+              echo -e "SUCCESS\t$target" | tee -a private-target-status.txt
+            else
+              fail=$((fail + 1))
+              echo -e "FAIL\t$target\trc=$rc" | tee -a private-target-status.txt
+              tail -n 50 "private-${target//\//__}.log" || true
+            fi
+          done
+
+          echo "PRIVATE_TARGET_SUCCESS=$success"
+          echo "PRIVATE_TARGET_FAIL=$fail"
+
+          find out -name '*.symversions' -type f -print0 | xargs -0 cat > private-candidate.symversions || true
+          touch private-candidate.symversions
+
+      - name: Score candidate against remaining 69 exact stock CRCs
+        run: |
+          set -euo pipefail
+
+          python3 - remaining69.tsv private-candidate.symversions private-score.txt <<'PY'
+          import re
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          oracle_path, symvers_path, out_path = sys.argv[1:]
+
+          oracle = {}
+          for raw in Path(oracle_path).read_text().splitlines():
+              symbol, expected, family, path = raw.split("\t", 3)
+              oracle[symbol] = (expected.lower(), family, path)
+
+          actual = {}
+          rx = re.compile(r"^__crc_([A-Za-z0-9_.$]+) = (0x[0-9a-fA-F]+);$")
+          for raw in Path(symvers_path).read_text(errors="replace").splitlines():
+              m = rx.match(raw.strip())
+              if m:
+                  actual[m.group(1)] = m.group(2).lower()
+
+          fam_total = Counter()
+          fam_present = Counter()
+          fam_match = Counter()
+
+          lines = []
+          present = 0
+          matches = 0
+
+          for symbol in sorted(oracle):
+              expected, family, path = oracle[symbol]
+              fam_total[family] += 1
+              got = actual.get(symbol)
+
+              if got is not None:
+                  present += 1
+                  fam_present[family] += 1
+              if got == expected:
+                  matches += 1
+                  fam_match[family] += 1
+
+              status = "MATCH" if got == expected else ("MISMATCH" if got else "MISSING")
+              lines.append(
+                  f"{status}\t{symbol}\tcandidate={got or 'MISSING'}\t"
+                  f"stock={expected}\tfamily={family}\tpath={path}"
+              )
+
+          print(f"PRIVATE_ABI_PRESENT={present}/69")
+          print(f"PRIVATE_ABI_SCORE={matches}/69")
+
+          for family in sorted(fam_total):
+              print(
+                  f"PRIVATE_FAMILY\t{family}\tpresent={fam_present[family]}/{fam_total[family]}\t"
+                  f"match={fam_match[family]}/{fam_total[family]}"
+              )
+
+          Path(out_path).write_text(
+              "\n".join(
+                  [
+                      f"candidate=${{ matrix.label }}",
+                      f"present={present}/69",
+                      f"score={matches}/69",
+                      "",
+                      *[
+                          f"family={family}\tpresent={fam_present[family]}/{fam_total[family]}\t"
+                          f"match={fam_match[family]}/{fam_total[family]}"
+                          for family in sorted(fam_total)
+                      ],
+                      "",
+                      *lines,
+                  ]
+              ) + "\n"
+          )
+          PY
+
+          cat private-score.txt
+
+      - name: Upload candidate private ABI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: private-abi-69-${{ matrix.label }}
+          retention-days: 10
+          if-no-files-found: warn
+          path: |
+            remaining69.tsv
+            candidate-private-manifest.txt
+            private-target-status.txt
+            private-candidate.symversions
+            private-score.txt
+            private-*.log
