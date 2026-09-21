@@ -1,0 +1,323 @@
+name: Probe manifest-exact early Lahaina ABI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/abi-lahaina-manifest-exact-history.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: lahaina-15400
+            tag: LA.UM.9.14.r1-15400-LAHAINA.0
+            fixed_ref: ""
+          - label: lahaina-15500
+            tag: LA.UM.9.14.r1-15500-LAHAINA.0
+            fixed_ref: ""
+          - label: lahaina-15600-qssi12
+            tag: LA.UM.9.14.r1-15600-LAHAINA.QSSI12.0
+            fixed_ref: ""
+          - label: lahaina-15800
+            tag: LA.UM.9.14.r1-15800-LAHAINA.0
+            fixed_ref: ""
+          - label: lahaina-16100
+            tag: LA.UM.9.14.r1-16100-LAHAINA.0
+            fixed_ref: ""
+          - label: lahaina-16100.01-qssi12
+            tag: LA.UM.9.14.r1-16100.01-LAHAINA.QSSI12.0
+            fixed_ref: ""
+          - label: lahaina-16300
+            tag: LA.UM.9.14.r1-16300-LAHAINA.0
+            fixed_ref: ""
+          - label: lahaina-16700
+            tag: LA.UM.9.14.r1-16700-LAHAINA.0
+            fixed_ref: ""
+          - label: lahaina-16900
+            tag: LA.UM.9.14.r1-16900-LAHAINA.0
+            fixed_ref: ""
+          - label: lahaina-17700-control
+            tag: LA.UM.9.14.r1-17700-LAHAINA.0
+            fixed_ref: 21af954d9156c3da3a3a47fef5dbf23526691ba5
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git curl rsync
+
+      - name: Cache AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+          curl -L --fail --retry 5 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+
+      - name: Resolve exact kernel revision from Qualcomm vendor manifest
+        id: resolve
+        run: |
+          set -euo pipefail
+          tag="${{ matrix.tag }}"
+          fixed="${{ matrix.fixed_ref }}"
+          echo "MANIFEST_TAG=$tag"
+
+          if [[ -n "$fixed" ]]; then
+            rev="$fixed"
+            echo "REVISION_SOURCE=fixed-exact"
+          else
+            manifest="/tmp/$tag.xml"
+            ok=0
+            for branch in master main; do
+              url="https://gitlab.com/TadiT7/la_vendor_manifest/-/raw/$branch/$tag.xml"
+              echo "TRY_MANIFEST=$url"
+              if curl -L --fail --retry 4 --retry-delay 2 "$url" -o "$manifest"; then
+                ok=1
+                break
+              fi
+            done
+            if [[ "$ok" != "1" ]]; then
+              echo "Unable to fetch vendor manifest for $tag"
+              exit 20
+            fi
+
+            rev="$(python3 - "$manifest" <<'PY'
+          import sys
+          import xml.etree.ElementTree as ET
+          root = ET.parse(sys.argv[1]).getroot()
+          for p in root.iter("project"):
+              if p.attrib.get("name") == "kernel/msm-5.4":
+                  print(p.attrib.get("revision", ""))
+                  break
+          PY
+            )"
+            echo "REVISION_SOURCE=vendor-manifest"
+          fi
+
+          if [[ ! "$rev" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Invalid kernel/msm-5.4 revision: $rev"
+            exit 21
+          fi
+
+          if [[ "${{ matrix.label }}" == "lahaina-16900" ]]; then
+            test "$rev" = "203d4a97455e95f81738823edbb34b17c55fec43"
+            echo "MANIFEST_16900_CONTROL_OK=1"
+          fi
+
+          echo "KERNEL_REVISION=$rev"
+          echo "kernel_revision=$rev" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch exact Qualcomm core revision from preserved mirror
+        run: |
+          set -euo pipefail
+          rev="${{ steps.resolve.outputs.kernel_revision }}"
+          mirror=https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+          mkdir kernel
+          git -C kernel init
+          git -C kernel remote add origin "$mirror"
+
+          if ! git -C kernel fetch --depth=1 origin "$rev"; then
+            echo "Primary mirror missing $rev, trying Nothing SM7325 mirror"
+            git -C kernel remote set-url origin https://github.com/hiper25-OpenSource/kernel_nothing_sm7325.git
+            git -C kernel fetch --depth=1 origin "$rev"
+          fi
+
+          git -C kernel checkout --detach FETCH_HEAD
+          cd kernel
+          echo "GENKSYMS_LABEL=${{ matrix.label }}"
+          echo "GENKSYMS_TAG=${{ matrix.tag }}"
+          echo "GENKSYMS_HEAD=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "$rev"
+
+      - name: Generate native Lahaina QGKI config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          TARGET_BUILD_VARIANT: user
+        run: |
+          set -euo pipefail
+          cd kernel
+          export ARCH=arm64
+          export CROSS_COMPILE=aarch64-linux-gnu-
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          export REAL_CC=clang
+          export CC=clang
+          export LLVM=1
+          export LLVM_IAS=1
+
+          test -f arch/arm64/configs/vendor/lahaina_GKI.config
+          test -f arch/arm64/configs/vendor/lahaina_QGKI.config
+          chmod +x scripts/gki/generate_defconfig.sh
+          scripts/gki/generate_defconfig.sh vendor/lahaina-qgki_defconfig
+
+          mkdir -p out
+          make O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            vendor/lahaina-qgki_defconfig
+
+          grep -E '^(CONFIG_LOCALVERSION|CONFIG_QGKI|CONFIG_ARCH_LAHAINA|CONFIG_ARCH_YUPIK|CONFIG_MODVERSIONS|CONFIG_LTO_CLANG|CONFIG_CFI_CLANG)=' out/.config || true
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+
+      - name: Preserve direct genksyms CRC output
+        run: |
+          set -euo pipefail
+          cd kernel
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+          old = '    $(call cmd_gensymtypes_c,true,$@) >/dev/null;                           \\\n'
+          new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
+          if old not in s:
+              raise SystemExit("direct genksyms rule not found")
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Generate exact CRCs directly with genksyms
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          targets=(
+            kernel/module.symtypes
+            drivers/base/core.symtypes
+            drivers/base/platform.symtypes
+            drivers/base/power/runtime.symtypes
+            drivers/of/base.symtypes
+            drivers/of/address.symtypes
+            drivers/clk/clk.symtypes
+            drivers/iommu/iommu.symtypes
+            drivers/regulator/core.symtypes
+            kernel/kthread.symtypes
+            kernel/irq/irqdomain.symtypes
+            fs/sysfs/group.symtypes
+            lib/kobject.symtypes
+            mm/page_alloc.symtypes
+            kernel/dma/direct.symtypes
+            kernel/dma/mapping.symtypes
+            drivers/dma-buf/dma-buf.symtypes
+          )
+
+          for t in "${targets[@]}"; do
+            echo "=== GENKSYMS $t ==="
+            make -j"$(nproc)" O=out \
+              ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+              CLANG_TRIPLE=aarch64-linux-gnu- "$t"
+          done
+
+      - name: Score exact manifest revision
+        run: |
+          set -euo pipefail
+          cd kernel
+          find out -name '*.symversions' -type f -print0 | xargs -0 cat > /tmp/all.symversions
+          test -s /tmp/all.symversions
+
+          label="${{ matrix.label }}"
+          score=0
+          total=0
+          present=0
+
+          check() {
+            local symbol="$1" expected="$2"
+            local actual
+            total=$((total+1))
+            actual="$(sed -n "s/^__crc_${symbol} = \(0x[0-9a-fA-F]*\);/\1/p" /tmp/all.symversions | head -n1)"
+            actual="${actual,,}"
+            [[ -n "$actual" ]] && present=$((present+1)) || true
+            echo "$label: $symbol candidate=${actual:-MISSING} stock=$expected"
+            [[ "$actual" == "$expected" ]] && score=$((score+1)) || true
+          }
+
+          check module_layout 0xba39cbb8
+          check device_register 0xcf9bcdee
+          check device_unregister 0x4678e0d9
+          check dev_driver_string 0x22a8544f
+          check device_create 0xbebfb31d
+          check __platform_driver_register 0x8a28799a
+          check platform_driver_unregister 0xb1643fd1
+          check platform_get_irq 0xbcc683a6
+          check platform_get_resource 0x0b50f5aa
+          check platform_get_resource_byname 0x67870233
+          check __pm_runtime_resume 0xd7ceaec5
+          check pm_runtime_enable 0x69233960
+          check of_find_property 0x7bfb6ef3
+          check of_get_property 0x3f86cb17
+          check of_parse_phandle 0x5d8562ca
+          check of_address_to_resource 0x6f7055af
+          check of_device_is_compatible 0xb56ea40d
+          check clk_get 0xf8127647
+          check clk_register 0xab9a55da
+          check iommu_attach_device 0x0c54e55f
+          check iommu_map 0xa106c11d
+          check iommu_unmap 0xe1da4443
+          check regulator_get 0xf7c6097c
+          check regulator_enable 0x691df2d6
+          check regulator_set_voltage 0x54cdbf0a
+          check kthread_create_on_node 0x947eb746
+          check kthread_stop 0x97198f13
+          check irq_domain_remove 0x160aa18c
+          check irq_find_mapping 0x6fb78324
+          check sysfs_create_group 0x0965d890
+          check kobject_create_and_add 0x93a00376
+          check __free_pages 0x419e8d31
+          check adjust_managed_page_count 0xcf0c4b39
+          check dma_direct_map_page 0x803f2855
+          check dma_direct_map_sg 0x9e7457c3
+          check dma_alloc_attrs 0x1c3c2bb3
+          check dma_buf_attach 0x995856d1
+          check dma_buf_map_attachment 0x3d20e038
+
+          echo "MANIFEST_GENKSYMS_PRESENT=$present/$total"
+          echo "MANIFEST_GENKSYMS_SCORE=$score/$total"
+
+          if [[ "${{ matrix.label }}" == "lahaina-17700-control" ]]; then
+            grep -q '__crc_module_layout = 0x9024fb67;' /tmp/all.symversions
+            grep -q '__crc_device_register = 0xed2b9680;' /tmp/all.symversions
+            echo "MANIFEST_HISTORY_CONTROL_OK=1"
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: manifest-exact-${{ matrix.label }}
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            kernel/out/.config
+            kernel/out/**/*.symversions
+            kernel/out/**/*.symtypes
