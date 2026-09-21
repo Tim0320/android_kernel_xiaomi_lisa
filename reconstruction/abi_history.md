@@ -239,6 +239,22 @@ Therefore the stock KABI reproduction is an interaction effect: stock source-hea
 
 The next step is to derive the **minimal source-header closure** actually consumed by the 18 direct-genksyms targets from Kbuild dependency files, then test stock generated/config headers plus only that dependency-closed source subset. This avoids treating all 5,686 source headers as required when most are unrelated to the 38-symbol core oracle.
 
+## Minimal stock header full-build incompatibility and genksyms-only routing
+
+The proven minimal ABI environment consists of **774** stock source headers plus **2,120** stock generated/config headers and reproduces the 38-symbol core oracle at **38/38** under direct genksyms.
+
+A full kernel build using those 774 headers as global replacements failed because the current reconstructed donor C implementation is not source-compatible with the exact stock header API generation. Concrete failures included:
+
+- `kernel/irq/proc.c`: donor C uses `struct proc_ops`, while the stock header set leaves it incomplete in this source context.
+- `fs/erofs/internal.h`: donor code calls `vm_map_ram(pages, count, -1)`, while the stock `include/linux/vmalloc.h` declares a four-argument form.
+- `mm/compaction.c`: donor code calls `lru_add_drain_cpu_zone()`, while the stock `include/linux/swap.h` does not declare that donor-side API.
+
+Therefore the 774-header closure is an **ABI/genksyms closure**, not a drop-in full source compilation header replacement.
+
+The next diagnostic build keeps normal donor headers for C/assembly compilation and routes only the genksyms preprocessing stage through an isolated stock ABI include tree. This can test whether a complete Image/modules/DTB build can retain the already-proven 38/38 CRC environment without breaking donor source compilation.
+
+Important limitation: matching CRCs alone does not prove runtime structure-layout compatibility. A genksyms-only stock header route is diagnostic evidence and must not be treated as the final safe reconstruction if the underlying donor implementation layout differs from the stock implementation.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
