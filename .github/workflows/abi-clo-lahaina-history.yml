@@ -18,14 +18,19 @@ jobs:
         include:
           - label: clo-qssi12-18600.02
             needle: LA.UM.9.14.r1-18600.02-LAHAINA.QSSI12.0
+            fallback_sha: 846e80aba10f06141d1a125745a59f74610b812c
           - label: clo-qssi12-22000
             needle: LA.UM.9.14.r1-22000-LAHAINA.QSSI12.0
+            fallback_sha: ""
           - label: clo-qssi14-22900.01
             needle: LA.UM.9.14.r1-22900.01-LAHAINA.QSSI14.0
+            fallback_sha: ""
           - label: clo-qssi14-23600
             needle: LA.UM.9.14.r1-23600-LAHAINA.QSSI14.0
+            fallback_sha: ""
           - label: clo-qssi14-25000.02
             needle: LA.UM.9.14.r1-25000.02-LAHAINA.QSSI14.0
+            fallback_sha: ""
 
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -59,32 +64,61 @@ jobs:
           tar -xzf "$ARCHIVE" -C "$DEST"
           "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
 
-      - name: Resolve and clone CLO tag
+      - name: Resolve and clone CLO revision
         run: |
           set -euo pipefail
           remote=https://git.codelinaro.org/clo/la/kernel/msm-5.4.git
           needle="${{ matrix.needle }}"
+          fallback="${{ matrix.fallback_sha }}"
 
           echo "CLO_LABEL=${{ matrix.label }}"
           echo "CLO_NEEDLE=$needle"
 
-          refs="$(git ls-remote --heads --tags "$remote")"
-          printf '%s\n' "$refs" | grep -F "$needle" || true
+          # Do not pipe a very large ls-remote result into an early-exiting
+          # awk/grep under pipefail. Save it first, then inspect the file.
+          git ls-remote --heads --tags "$remote" > /tmp/clo-refs.txt
+          echo "CLO_REF_COUNT=$(wc -l < /tmp/clo-refs.txt)"
 
-          ref="$(printf '%s\n' "$refs" | awk -v n="$needle" '$2 ~ n"$" {print $2; exit}')"
+          echo "=== matching refs ==="
+          grep -F "$needle" /tmp/clo-refs.txt || true
+
+          ref="$(
+            awk -v n="$needle" '
+              $2 == "refs/tags/" n || $2 == "refs/heads/" n {
+                print $2
+                exit
+              }
+            ' /tmp/clo-refs.txt
+          )"
+
           if [[ -z "$ref" ]]; then
-            ref="$(printf '%s\n' "$refs" | awk -v n="$needle" '$2 ~ n"\^\{\}$" {sub(/\^\{\}$/,"",$2); print $2; exit}')"
+            ref="$(
+              awk -v n="$needle" '
+                index($2, n) && $2 !~ /\^\{\}$/ {
+                  print $2
+                  exit
+                }
+              ' /tmp/clo-refs.txt
+            )"
           fi
-          if [[ -z "$ref" ]]; then
-            echo "Unable to resolve CLO ref for $needle"
+
+          target="$ref"
+          if [[ -z "$target" && -n "$fallback" ]]; then
+            echo "CLO_REF_NOT_LISTED=1"
+            echo "CLO_FALLBACK_SHA=$fallback"
+            target="$fallback"
+          fi
+
+          if [[ -z "$target" ]]; then
+            echo "Unable to resolve CLO revision for $needle"
             exit 20
           fi
 
-          echo "CLO_REF=$ref"
+          echo "CLO_TARGET=$target"
           mkdir kernel
           git -C kernel init
           git -C kernel remote add origin "$remote"
-          git -C kernel fetch --depth=1 origin "$ref"
+          git -C kernel fetch --depth=1 origin "$target"
           git -C kernel checkout --detach FETCH_HEAD
           cd kernel
           echo "CLO_HEAD=$(git rev-parse HEAD)"
