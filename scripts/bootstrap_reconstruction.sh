@@ -198,6 +198,37 @@ if old not in text:
 text = text.replace(old, new, 1)
 path.write_text(text)
 
+# Android common 5.4.289's pmem driver uses the synchronous-I/O BDI
+# capability. The stable donor carries both the pmem use and the matching
+# backing-dev definition, but the downstream merge can retain the older header
+# while accepting the newer pmem.c. Restore the missing half of that API pair.
+path = Path("include/linux/backing-dev.h")
+text = path.read_text()
+if "BDI_CAP_SYNCHRONOUS_IO" not in text:
+    define_anchor = "#define BDI_CAP_CGROUP_WRITEBACK 0x00000020\n"
+    if define_anchor not in text:
+        raise SystemExit("BDI capability insertion point not found")
+    text = text.replace(
+        define_anchor,
+        define_anchor + "#define BDI_CAP_SYNCHRONOUS_IO\t0x00000040\n",
+        1,
+    )
+
+    helper_anchor = """long congestion_wait(int sync, long timeout);
+long wait_iff_congested(int sync, long timeout);
+
+"""
+    helper = """static inline bool bdi_cap_synchronous_io(struct backing_dev_info *bdi)
+{
+\treturn bdi->capabilities & BDI_CAP_SYNCHRONOUS_IO;
+}
+
+"""
+    if helper_anchor not in text:
+        raise SystemExit("BDI synchronous-I/O helper insertion point not found")
+    text = text.replace(helper_anchor, helper_anchor + helper, 1)
+path.write_text(text)
+
 # Android common 5.4.289 renamed the upstream GLINK command constants from
 # RPM_CMD_* to GLINK_CMD_*. The Xiaomi/Qualcomm downstream driver carries a
 # newer implementation and command set, so a hunk merge can update call sites
