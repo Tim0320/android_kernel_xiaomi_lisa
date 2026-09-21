@@ -1,0 +1,468 @@
+name: Build Lisa composite stock lineage
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-kernel-composite-lineage.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-composite-stock-lineage
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout reconstructed kernel
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            cpio kmod rsync python3 curl xz-utils unzip git
+
+      - name: Cache stock-generation AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install stock-generation AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            "$DEST/bin/clang" --version | tee clang-version.txt
+            exit 0
+          fi
+
+          curl -L --fail --retry 5 --retry-all-errors \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Download exact stock IKHEADERS and full stock CRC oracle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+          STOCK_ORACLE_ARTIFACT_ID: "10636403934"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact stock-oracle
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders.zip
+          unzip -q stock-kheaders.zip -d stock-artifact
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_ORACLE_ARTIFACT_ID}/zip" \
+            -o stock-oracle.zip
+          unzip -q stock-oracle.zip -d stock-oracle
+
+          test -d stock-artifact/stock-kheaders
+          stock_crc="$(find stock-oracle -type f -name stock.full.crcs -print -quit)"
+          test -n "$stock_crc"
+          cp "$stock_crc" stock.full.crcs
+
+          echo "STOCK_GLOBAL_HEADERS=$(find stock-artifact/stock-kheaders -type f -name '*.h' | wc -l)"
+          echo "STOCK_EXPORT_ORACLE=$(grep -cv '^#\|^$' stock.full.crcs)"
+
+      - name: Fetch exact private-source donors
+        run: |
+          set -euo pipefail
+
+          rm -rf donor-redwood donor-yzzzr donor-linux54
+
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git donor-redwood
+          git -C donor-redwood fetch --depth=1 origin redwood-s-oss
+          git -C donor-redwood checkout --detach FETCH_HEAD
+
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/YZzZr/android_kernel_xiaomi_sm8350-miui.git donor-yzzzr
+          git -C donor-yzzzr fetch --depth=1 origin hyper-14
+          git -C donor-yzzzr checkout --detach FETCH_HEAD
+
+          git clone --filter=blob:none --no-checkout \
+            https://github.com/torvalds/linux.git donor-linux54
+          git -C donor-linux54 fetch --depth=1 origin v5.4
+          git -C donor-linux54 checkout --detach FETCH_HEAD
+
+          {
+            echo "redwood=$(git -C donor-redwood rev-parse HEAD)"
+            echo "yzzzr=$(git -C donor-yzzzr rev-parse HEAD)"
+            echo "linux54=$(git -C donor-linux54 rev-parse HEAD)"
+          } | tee composite-donor-commits.txt
+
+      - name: Overlay redwood private implementation families
+        run: |
+          set -euo pipefail
+
+          python3 - donor-redwood . redwood-overlay-manifest.txt <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          src = Path(sys.argv[1])
+          dst = Path(sys.argv[2])
+          manifest = Path(sys.argv[3])
+
+          roots = [
+              "kernel/sched",
+              "fs/proc",
+              "drivers/gpu/msm",
+              "net/qrtr",
+              "techpack/dataipa/drivers/platform/msm/ipa",
+          ]
+
+          copied = []
+          for root_text in roots:
+              root = src / root_text
+              if not root.is_dir():
+                  raise SystemExit(f"missing redwood donor root: {root_text}")
+              for p in sorted(root.rglob("*")):
+                  if not p.is_file() or p.suffix not in {".c", ".h"}:
+                      continue
+                  rel = p.relative_to(src)
+                  target = dst / rel
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(p, target)
+                  copied.append(rel.as_posix())
+
+          manifest.write_text("\n".join(copied) + "\n")
+          print(f"REDWOOD_PRIVATE_FILES={len(copied)}")
+          PY
+
+          test -s redwood-overlay-manifest.txt
+
+      - name: Overlay YZzZr USB and TSENS private implementation
+        run: |
+          set -euo pipefail
+
+          python3 - donor-yzzzr . yzzzr-overlay-manifest.txt <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          src = Path(sys.argv[1])
+          dst = Path(sys.argv[2])
+          manifest = Path(sys.argv[3])
+          copied = []
+
+          for root_text in ["drivers/usb/dwc3", "drivers/thermal"]:
+              root = src / root_text
+              if not root.is_dir():
+                  raise SystemExit(f"missing YZzZr donor root: {root_text}")
+              for p in sorted(root.rglob("*")):
+                  if not p.is_file() or p.suffix not in {".c", ".h"}:
+                      continue
+                  rel = p.relative_to(src)
+                  target = dst / rel
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  shutil.copyfile(p, target)
+                  copied.append(rel.as_posix())
+
+          host = src / "drivers/usb/host"
+          if not host.is_dir():
+              raise SystemExit("missing YZzZr drivers/usb/host")
+          for p in sorted(host.glob("xhci*")):
+              if not p.is_file() or p.suffix not in {".c", ".h"}:
+                  continue
+              rel = p.relative_to(src)
+              target = dst / rel
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(p, target)
+              copied.append(rel.as_posix())
+
+          copied = sorted(set(copied))
+          manifest.write_text("\n".join(copied) + "\n")
+          print(f"YZZZR_PRIVATE_FILES={len(copied)}")
+          PY
+
+          test -s yzzzr-overlay-manifest.txt
+
+      - name: Restore Linux 5.4 LZ4 implementation family
+        run: |
+          set -euo pipefail
+
+          rm -rf lib/lz4
+          mkdir -p lib/lz4
+          cp donor-linux54/lib/lz4/Makefile lib/lz4/Makefile
+          cp donor-linux54/lib/lz4/lz4_compress.c lib/lz4/lz4_compress.c
+          cp donor-linux54/lib/lz4/lz4_decompress.c lib/lz4/lz4_decompress.c
+          cp donor-linux54/lib/lz4/lz4defs.h lib/lz4/lz4defs.h
+          cp donor-linux54/lib/lz4/lz4hc_compress.c lib/lz4/lz4hc_compress.c
+          cp donor-linux54/include/linux/lz4.h include/linux/lz4.h
+
+          {
+            echo "lib/lz4/Makefile"
+            echo "lib/lz4/lz4_compress.c"
+            echo "lib/lz4/lz4_decompress.c"
+            echo "lib/lz4/lz4defs.h"
+            echo "lib/lz4/lz4hc_compress.c"
+            echo "include/linux/lz4.h"
+          } > lz4-overlay-manifest.txt
+
+          echo "LZ4_SOURCE_GENERATION=linux-v5.4"
+
+      - name: Generate build environment from exact stock IKCONFIG
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          source reconstruction/manifest.env
+
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+
+      - name: Stage complete stock global headers for genksyms only
+        env:
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+          rm -rf "$STOCK_ABI_ROOT"
+          mkdir -p "$STOCK_ABI_ROOT"
+          rsync -a stock-artifact/stock-kheaders/ "$STOCK_ABI_ROOT/"
+          count="$(find "$STOCK_ABI_ROOT" -type f -name '*.h' | wc -l)"
+          echo "COMPOSITE_STOCK_GENKSYMS_HEADERS=$count"
+          test "$count" -eq 7806
+
+      - name: Route genksyms through stock global headers
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+
+          stock = (
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/include "
+              "-I$(STOCK_ABI_ROOT)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/generated/uapi"
+          )
+
+          conditional = (
+              "$(if $(or "
+              "$(findstring /lib/zstd/,$<),"
+              "$(findstring /drivers/android/vendor_hooks.c,$<)"
+              f"),,{stock})"
+          )
+
+          lines = s.splitlines(keepends=True)
+          c_done = False
+          asm_done = False
+
+          for i, line in enumerate(lines):
+              if not c_done and "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line:
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {conditional} -D__GENKSYMS__",
+                      1,
+                  )
+                  c_done = True
+                  continue
+              if not asm_done and "$(CPP) -D__GENKSYMS__ $(c_flags) -xc - |" in line:
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {stock} -D__GENKSYMS__",
+                      1,
+                  )
+                  asm_done = True
+
+          if not c_done:
+              raise SystemExit("C genksyms rule not found")
+          if not asm_done:
+              raise SystemExit("ASM genksyms rule not found")
+
+          p.write_text("".join(lines))
+          PY
+
+      - name: Build Image modules and DTBs
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 \
+            CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            Image modules dtbs 2>&1 | tee composite-build.log
+
+      - name: Summarize genksyms failures
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -f composite-build.log ]]; then
+            grep 'version generation failed' composite-build.log > composite-genksyms-failures.txt || true
+          else
+            : > composite-genksyms-failures.txt
+          fi
+          echo "COMPOSITE_GENKSYMS_VERSION_FAILURES=$(wc -l < composite-genksyms-failures.txt)"
+          cat composite-genksyms-failures.txt || true
+
+      - name: Validate build outputs and vermagic
+        run: |
+          set -euo pipefail
+          test -s out/arch/arm64/boot/Image
+          test -s out/Module.symvers
+
+          source reconstruction/manifest.env
+          for ko in \
+            out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko \
+            out/drivers/input/touchscreen/gt9897t/goodix_core.ko \
+            out/drivers/misc/mi-memory/mi_memory.ko \
+            out/drivers/net/wireless/mi_cnss_statistic/mi_cnss_statistic.ko; do
+            test -s "$ko"
+            actual="$(strings -a "$ko" | sed -n 's/^vermagic=//p' | head -n1 | awk '{print $1}')"
+            echo "COMPOSITE_VERMAGIC\t$ko\t$actual"
+            test "$actual" = "$TARGET_VERMAGIC"
+          done
+
+      - name: Compare entire stock ABI oracle
+        run: |
+          set -euo pipefail
+
+          python3 - stock.full.crcs out/Module.symvers composite-full-abi.txt <<'PY'
+          import sys
+          from pathlib import Path
+
+          stock_path, symvers_path, out_path = sys.argv[1:]
+
+          stock = {}
+          for raw in Path(stock_path).read_text(errors="replace").splitlines():
+              if not raw or raw.startswith("#"):
+                  continue
+              p = raw.split("\t")
+              if len(p) >= 2:
+                  stock[p[1]] = (int(p[0], 16), p[2] if len(p) >= 3 else "-")
+
+          current = {}
+          for raw in Path(symvers_path).read_text(errors="replace").splitlines():
+              p = raw.split()
+              if len(p) < 3 or p[2] != "vmlinux":
+                  continue
+              try:
+                  current[p[1]] = int(p[0], 16)
+              except ValueError:
+                  pass
+
+          sn = set(stock)
+          cn = set(current)
+          overlap = sn & cn
+          matches = sorted(n for n in overlap if stock[n][0] == current[n])
+          mismatches = sorted(n for n in overlap if stock[n][0] != current[n])
+          stock_only = sorted(sn - cn)
+          current_only = sorted(cn - sn)
+
+          print(f"COMPOSITE_STOCK_EXPORTS={len(stock)}")
+          print(f"COMPOSITE_CURRENT_VMLINUX={len(current)}")
+          print(f"COMPOSITE_OVERLAP={len(overlap)}")
+          print(f"COMPOSITE_CRC_MATCHES={len(matches)}")
+          print(f"COMPOSITE_CRC_MISMATCHES={len(mismatches)}")
+          print(f"COMPOSITE_STOCK_ONLY={len(stock_only)}")
+          print(f"COMPOSITE_CURRENT_ONLY={len(current_only)}")
+          if overlap:
+              print(f"COMPOSITE_MATCH_RATE={len(matches)/len(overlap):.6f}")
+
+          lines = [
+              "# Composite lineage full stock ABI comparison",
+              f"stock_exports={len(stock)}",
+              f"current_vmlinux={len(current)}",
+              f"overlap={len(overlap)}",
+              f"matches={len(matches)}",
+              f"mismatches={len(mismatches)}",
+              f"stock_only={len(stock_only)}",
+              f"current_only={len(current_only)}",
+              "",
+              "## MISMATCHES",
+          ]
+          for n in mismatches:
+              lines.append(
+                  f"MISMATCH\t{n}\tstock=0x{stock[n][0]:08x}\tcurrent=0x{current[n]:08x}\t{stock[n][1]}"
+              )
+
+          lines += ["", "## STOCK_ONLY"]
+          for n in stock_only:
+              lines.append(f"STOCK_ONLY\t{n}\t0x{stock[n][0]:08x}\t{stock[n][1]}")
+
+          lines += ["", "## CURRENT_ONLY"]
+          for n in current_only:
+              lines.append(f"CURRENT_ONLY\t{n}\t0x{current[n]:08x}")
+
+          Path(out_path).write_text("\n".join(lines) + "\n")
+          PY
+
+          test -s composite-full-abi.txt
+          sed -n '1,140p' composite-full-abi.txt
+
+      - name: Upload composite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-composite-stock-lineage-evidence
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            clang-version.txt
+            composite-donor-commits.txt
+            redwood-overlay-manifest.txt
+            yzzzr-overlay-manifest.txt
+            lz4-overlay-manifest.txt
+            composite-build.log
+            composite-genksyms-failures.txt
+            composite-full-abi.txt
+            stock.full.crcs
+            out/.config
+            out/Module.symvers
+            out/arch/arm64/boot/Image
