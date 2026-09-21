@@ -204,52 +204,98 @@ jobs:
               "drivers/dma-buf/dma-buf",
           ]
 
-          # Kbuild .cmd files record full prerequisite closures for compiled
-          # objects. Parse only command files corresponding to the 18 ABI roots
-          # and normalize absolute srctree paths back to repository-relative
-          # header paths.
+          # Kbuild .cmd files record prerequisite closures for compiled
+          # objects. Parse command files corresponding to the 18 ABI roots.
           selected_cmd = []
           for root in roots:
               parent = out / Path(root).parent
               stem = Path(root).name
               selected_cmd.extend(parent.glob(f".{stem}*.cmd"))
 
-          path_re = re.compile(r"(?:^|\s)([^\s\\]+\.h)(?:\s|\\|$)")
+          selected_cmd = sorted(set(selected_cmd))
+          print(f"ABI_SELECTED_CMD_FILES={len(selected_cmd)}")
+          for p in selected_cmd[:40]:
+              print(f"ABI_CMD_FILE\t{p.as_posix()}")
+
+          if not selected_cmd:
+              raise SystemExit("no Kbuild .cmd files found for ABI targets")
+
+          repo_root = Path.cwd().resolve()
+          out_root = out.resolve()
           candidates = set()
+          raw_header_tokens = set()
+
+          def normalize_token(token):
+              token = token.strip().strip("'\"(),:")
+              token = token.replace("\\", "")
+              if not token.endswith(".h"):
+                  return None
+
+              if token.startswith("$(srctree)/"):
+                  token = token[len("$(srctree)/"):]
+              elif token.startswith("$(objtree)/"):
+                  return None
+
+              p = Path(token)
+              if p.is_absolute():
+                  try:
+                      rel = p.resolve().relative_to(repo_root)
+                  except ValueError:
+                      return None
+                  token = rel.as_posix()
+              elif token.startswith("../"):
+                  try:
+                      rel = (out_root / token).resolve().relative_to(repo_root)
+                  except ValueError:
+                      return None
+                  token = rel.as_posix()
+              elif token.startswith("./"):
+                  token = token[2:]
+
+              if token.startswith("out/"):
+                  return None
+              if token.startswith(("include/", "arch/arm64/include/")):
+                  return token
+              return None
 
           for cmd in selected_cmd:
               text = cmd.read_text(errors="replace")
-              # Also catch paths split by Make continuation backslashes.
               flat = text.replace("\\\n", " ")
-              for token in re.findall(r"[^\s]+\.h", flat):
-                  token = token.strip("'\"")
-                  # Absolute source tree path.
-                  marker = "/android_kernel_xiaomi_lisa/android_kernel_xiaomi_lisa/"
-                  if marker in token:
-                      token = token.split(marker, 1)[1]
-                  if token.startswith("out/"):
-                      continue
-                  if token.startswith("./"):
-                      token = token[2:]
-                  if token.startswith(("include/", "arch/arm64/include/")):
-                      if (stock / token).is_file():
-                          candidates.add(token)
+              for token in re.findall(r"[^\s]+?\.h(?=[\s\\)]|$)", flat):
+                  raw_header_tokens.add(token)
+                  rel = normalize_token(token)
+                  if rel and (stock / rel).is_file():
+                      candidates.add(rel)
 
-          # Some .cmd files can be absent for pure .symtypes targets. Add all
-          # stock source headers referenced textually by generated .symtypes so
-          # the closure remains conservative.
-          include_re = re.compile(r"(?:include|arch/arm64/include)/[A-Za-z0-9_./+-]+\.h")
-          for symtypes in out.rglob("*.symtypes"):
-              text = symtypes.read_text(errors="replace")
-              for token in include_re.findall(text):
-                  if (stock / token).is_file():
-                      candidates.add(token)
+          print(f"ABI_RAW_HEADER_TOKENS={len(raw_header_tokens)}")
+          for token in sorted(raw_header_tokens)[:120]:
+              print(f"ABI_RAW_HEADER\t{token}")
 
-          report.write_text("\n".join(sorted(candidates)) + "\n")
+          # Conservative fallback: scan all command files that mention a
+          # selected ABI root. Some Kbuild variants place dependency data in
+          # .o command files rather than the .symtypes command file.
+          root_markers = tuple(root + "." for root in roots)
+          for cmd in out.rglob(".*.cmd"):
+              text = cmd.read_text(errors="replace")
+              if not any(marker in text for marker in root_markers):
+                  continue
+              flat = text.replace("\\\n", " ")
+              for token in re.findall(r"[^\s]+?\.h(?=[\s\\)]|$)", flat):
+                  rel = normalize_token(token)
+                  if rel and (stock / rel).is_file():
+                      candidates.add(rel)
+
+          report.write_text(
+              ("\n".join(sorted(candidates)) + "\n") if candidates else ""
+          )
           print(f"ABI_SOURCE_HEADER_CLOSURE={len(candidates)}")
-          for rel in sorted(candidates)[:160]:
+          for rel in sorted(candidates)[:200]:
               print(f"ABI_SOURCE_HEADER\t{rel}")
-          PY
+
+          if len(candidates) < 50:
+              raise SystemExit(
+                  f"dependency closure implausibly small: {len(candidates)}"
+              )          PY
 
           test -s abi-source-header-closure.txt
           echo "ABI_SOURCE_HEADER_CLOSURE_FILE=$(wc -l < abi-source-header-closure.txt)"
@@ -260,8 +306,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Restore tracked source files after the full-overlay dependency pass.
+          # Restore tracked source files after the full-overlay dependency pass
+          # and remove stock source headers that were untracked in this donor.
           git reset --hard HEAD
+          git clean -fd -e stock-artifact/ -e abi-source-header-closure.txt -e all-cmd-files.txt
 
           # Recreate the donor-generated build environment from scratch.
           rm -rf out
