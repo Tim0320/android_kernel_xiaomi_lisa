@@ -1,0 +1,205 @@
+name: Probe lisa stock ABI oracle
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-oracle-lisa-stock.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-stock-abi-oracle
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            cpio kmod rsync python3 curl xz-utils git
+
+      - name: Cache stock-generation AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install stock-generation AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            "$DEST/bin/clang" --version
+            exit 0
+          fi
+
+          urls=(
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r46/clang-r383902b1.tar.gz"
+          )
+
+          ok=0
+          for url in "${urls[@]}"; do
+            rm -f "$ARCHIVE"
+            if curl -L --fail --retry 5 --retry-all-errors --connect-timeout 30 "$url" -o "$ARCHIVE" \
+                && tar -tzf "$ARCHIVE" >/dev/null; then
+              ok=1
+              break
+            fi
+          done
+          test "$ok" -eq 1
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
+
+      - name: Clone lisa stock-derived source
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --single-branch --depth=1 \
+            https://github.com/CannedShroud/kernel_xiaomi_lisa.git kernel
+          cd kernel
+          test "$(git rev-parse HEAD)" = "fc6ec759ef1a5513c2576c11c463bb96145e7f36"
+          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 289/' Makefile
+          printf '%s\n' '-g5987d69e25da' > .scmversion
+
+      - name: Apply exact stock lisa IKCONFIG
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          mkdir -p out
+          curl -L --fail --retry 5 \
+            https://raw.githubusercontent.com/Jiovanni-dump/xiaomi_lisa_dump/2dbe7b5569ed49cc2c6649a7b313d4a092755034/ikconfig \
+            -o out/.config
+          test "$(git hash-object out/.config)" = "3343d7b7b3874e065ce4805eac61c0160c40b0a3"
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            olddefconfig </dev/null
+
+          grep -E '^(CONFIG_LOCALVERSION|CONFIG_LOCALVERSION_AUTO|CONFIG_MODVERSIONS|CONFIG_UFSGKI|CONFIG_UFS_WB|CONFIG_MI_UFS_FFU|CONFIG_OEM_KERNEL|CONFIG_PASSTHROUGH_SYSTEM)=' out/.config || true
+
+      - name: Inject UFS ABI probe
+        run: |
+          set -euo pipefail
+          cd kernel
+          cat > drivers/misc/lisa_abi_probe.c <<'EOF'
+          #include <linux/module.h>
+          #include <linux/types.h>
+          #include <scsi/scsi_device.h>
+          #include "../scsi/ufs/ufshcd.h"
+          #include "../scsi/ufs/ufs.h"
+
+          struct ufs_err_state_debug {
+              u64 err_occurred;
+              char err_reason[10][32];
+          };
+
+          struct ufs_data {
+              struct ufs_hba *hba;
+              struct scsi_device *sdev;
+              struct ufs_err_state_debug ufs_err_state;
+          };
+
+          struct ufs_hba *get_ufs_hba_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_hba_data);
+
+          struct scsi_device *get_ufs_sdev_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_sdev_data);
+
+          struct ufs_data *get_ufs_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_data);
+
+          int ufs_get_string_desc(struct ufs_hba *hba, void *buf, int size,
+                                  enum device_desc_param pname, bool ascii_std)
+          {
+              return 0;
+          }
+          EXPORT_SYMBOL(ufs_get_string_desc);
+
+          int ufs_read_desc_param(struct ufs_hba *hba, enum desc_idn desc_id,
+                                  u8 desc_index, u8 param_offset,
+                                  void *buf, u8 param_size)
+          {
+              return 0;
+          }
+          EXPORT_SYMBOL(ufs_read_desc_param);
+
+          int ufshcd_read_desc(struct ufs_hba *hba, enum desc_idn desc_id,
+                               int desc_index, void *buf, u32 size)
+          {
+              return 0;
+          }
+          EXPORT_SYMBOL(ufshcd_read_desc);
+          EOF
+          printf '\nobj-y += lisa_abi_probe.o\n' >> drivers/misc/Makefile
+
+      - name: Build ABI-bearing objects
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            prepare scripts
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            kernel/module.o drivers/misc/lisa_abi_probe.o
+
+      - name: Compare oracle CRCs with HyperOS stock
+        run: |
+          set -euo pipefail
+          cd kernel
+
+          crc_from_object() {
+            local obj="$1"
+            local symbol="$2"
+            local expected="$3"
+            local actual
+            actual="$(aarch64-linux-gnu-nm "$obj" | awk -v s="__crc_$symbol" '$3 == s {print "0x" tolower($1); found=1} END {if (!found) exit 1}')" || actual="MISSING"
+            echo "$symbol: oracle=$actual stock=$expected"
+          }
+
+          crc_from_object out/drivers/misc/lisa_abi_probe.o get_ufs_data 0xfa507f92
+          crc_from_object out/drivers/misc/lisa_abi_probe.o get_ufs_hba_data 0xc40eabac
+          crc_from_object out/drivers/misc/lisa_abi_probe.o get_ufs_sdev_data 0xc5bbd8a8
+          crc_from_object out/drivers/misc/lisa_abi_probe.o ufs_get_string_desc 0x479d5ded
+          crc_from_object out/drivers/misc/lisa_abi_probe.o ufs_read_desc_param 0x16548413
+          crc_from_object out/drivers/misc/lisa_abi_probe.o ufshcd_read_desc 0xa93e3b58
+          crc_from_object out/kernel/module.o module_layout 0xba39cbb8
+
+      - name: Upload oracle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-abi-oracle
+          retention-days: 14
+          include-hidden-files: true
+          path: |
+            kernel/out/.config
+            kernel/out/kernel/module.o
+            kernel/out/drivers/misc/lisa_abi_probe.o
