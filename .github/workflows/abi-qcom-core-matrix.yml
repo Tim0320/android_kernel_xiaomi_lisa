@@ -44,6 +44,18 @@ jobs:
           - label: oneplus-sm8350
             repo: https://github.com/dev-sm8350/kernel_oneplus_sm8350.git
             ref: 15.2
+          - label: xiaomi-qgki-alioth
+            repo: https://github.com/uestclhp/qgki_alioth_5.4.git
+            ref: 5.4
+          - label: xiaomi-qgki-kona
+            repo: https://github.com/rofikkerneldev/qgki_kona_5.4.git
+            ref: 5.4
+          - label: xiaomi-qgki-raphael
+            repo: https://github.com/erg-raphael-5-4/android_kernel_xiaomi_sm8150.git
+            ref: MI_RAPHAEL_5.4
+          - label: xiaomi-sm6375
+            repo: https://github.com/dev-sm6375/kernel_xiaomi_sm6375.git
+            ref: main
 
     runs-on: ubuntu-24.04
     timeout-minutes: 60
