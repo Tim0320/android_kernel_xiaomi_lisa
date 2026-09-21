@@ -51,20 +51,19 @@ fi
 printf '%s\n' "$BASE_SHA" > "$WORK_ROOT/base-before-stable.txt"
 echo "::endgroup::"
 
-echo "::group::Overlay Xiaomi sweet UFS ABI probe donor"
-# Third ABI experiment: use the exact Xiaomi downstream donor already pinned
-# in manifest.env. This is an evidence-only A/B probe, not a final provenance
-# choice. Build #43 (miui-t UFS) and #45 (merged 5.4.289 UFS) both missed all
-# six stock UFS CRCs.
-mkdir -p "$WORK_ROOT/mi-memory-abi"
-git -C "$WORK_ROOT/mi-memory-abi" init
-git -C "$WORK_ROOT/mi-memory-abi" remote add origin "$MI_MEMORY_ABI_REPO"
-git -C "$WORK_ROOT/mi-memory-abi" fetch --depth=1 origin "$MI_MEMORY_ABI_COMMIT"
-git -C "$WORK_ROOT/mi-memory-abi" checkout --detach FETCH_HEAD
+echo "::group::Overlay MIUI UFS ABI candidate"
+# Re-test the older Xiaomi/Lahaina UFS subtree with the *stock* lisa UFS
+# configuration enabled. Earlier Build #43 used this donor without
+# CONFIG_UFSGKI/CONFIG_UFS_WB/CONFIG_MI_UFS_FFU, so that CRC result was not a
+# valid stock-equivalence test.
+git clone --filter=blob:none --single-branch --depth=1 --branch "$UFS_ABI_REF" \
+    "$UFS_ABI_REPO" "$WORK_ROOT/ufs-abi"
 rm -rf drivers/scsi/ufs
-cp -a "$WORK_ROOT/mi-memory-abi/drivers/scsi/ufs" drivers/scsi/ufs
+cp -a "$WORK_ROOT/ufs-abi/drivers/scsi/ufs" drivers/scsi/ufs
 test -f drivers/scsi/ufs/ufshcd.h
-grep -q 'Copyright (C) 2021 XiaoMi' drivers/scsi/ufs/ufshcd.h
+grep -q 'unsigned long lrb_in_use;' drivers/scsi/ufs/ufshcd.h
+grep -q 'unsigned long tm_slots_in_use;' drivers/scsi/ufs/ufshcd.h
+grep -q 'config UFSGKI' drivers/scsi/ufs/Kconfig
 echo "::endgroup::"
 
 echo "::group::Repair MIUI sources for the 5.4.289 common API"
@@ -450,6 +449,9 @@ set_cfg CONFIG_USB_F_DTP 'CONFIG_USB_F_DTP=m'
 set_cfg CONFIG_QGKI_SYSTEM 'CONFIG_QGKI_SYSTEM=y'
 set_cfg CONFIG_ARCH_YUPIK 'CONFIG_ARCH_YUPIK=y'
 set_cfg CONFIG_PINCTRL_SM7325 'CONFIG_PINCTRL_SM7325=y'
+set_cfg CONFIG_UFSGKI 'CONFIG_UFSGKI=y'
+set_cfg CONFIG_UFS_WB 'CONFIG_UFS_WB=y'
+set_cfg CONFIG_MI_UFS_FFU 'CONFIG_MI_UFS_FFU=y'
 
 # Preserve stock CONFIG_LOCALVERSION_AUTO=y semantics while forcing the
 # shipping SCM suffix instead of the reconstruction repository commit hash.
