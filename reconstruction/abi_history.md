@@ -684,6 +684,44 @@ Presence in an imported function signature does not by itself prove that the mod
 
 The next gate therefore compares real Clang record layouts for the high-frequency public structures under the exact stock IKHEADERS/config environment versus the current runtime build environment. Incomplete/opaque public types are classified separately rather than counted as layout mismatches.
 
+## Stock msm_drm instruction-level runtime-risk inspection
+
+The exact stock QGKI `msm_drm.ko` contains:
+
+- BTF: **no**
+- BTF.ext: **no**
+- DWARF/debug sections: **none**
+- ELF symbol table: **present**
+- version entries: **736**
+- exact QGKI vermagic confirmed
+
+Therefore module-native type metadata is unavailable, but symbolized AArch64 disassembly and relocations are available.
+
+The module has 38 functions that call APIs associated with the three public layouts previously found to differ (`task_struct`, `inode`, and `drm_panel`).
+
+Important direct-layout observations:
+
+1. **task_struct**
+   - The stock module directly reads `current` through ARM64 `sp_el0`.
+   - Dominant direct offsets are `+1616` and `+1620` bytes, consistent with PID/TGID logging paths.
+   - Current and stock `task_struct` record layouts have an identical sequential field-offset prefix through byte **2752**; their first field-offset divergence occurs at current 2760 vs stock 2756 bytes.
+   - Thus the observed direct current-task offsets are within the identical prefix, not the divergent tail.
+   - Display source also uses `current->group_leader`, `current->tgid`, and `task->comm`; these are checked explicitly in the final field-offset gate.
+
+2. **inode**
+   - Current and stock `inode` layouts share their first 25 top-level field offsets; the first divergence is at roughly byte 200/current vs 208/stock.
+   - Display procfs code passes inode pointers to `PDE_DATA()`; it does not dereference procfs-private inode fields itself.
+   - `msm_gem_purge()` directly uses `file_inode(obj->filp)->i_mapping`; the final gate explicitly compares `i_mapping` offsets.
+
+3. **drm_panel**
+   - All six top-level member offsets are identical between current and stock.
+   - Current size is 96 bytes; stock size is 104 bytes.
+   - The size difference comes from stock `struct rw_semaphore` containing `ANDROID_VENDOR_DATA(1)`, which increases the embedded `blocking_notifier_head` tail.
+   - Stock module paths call `drm_panel_init/add/remove/notifier_call_chain` rather than manipulating notifier internals directly in the observed source/callsites.
+   - The final gate asserts no direct `panel->nh.{rwsem,head}` access in the display source and verifies all public `drm_panel` member offsets.
+
+A final field-level CI gate now compares the exact named offsets needed by observed module code and checks all direct `sp_el0` accesses against the common `task_struct` prefix.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
