@@ -255,6 +255,10 @@ def main():
     ap.add_argument("--kallsyms", required=True)
     ap.add_argument("--oracle", required=True)
     ap.add_argument("--output", required=True)
+    ap.add_argument(
+        "--full-output",
+        help="Optional path for all recovered exported-symbol CRCs",
+    )
     args = ap.parse_args()
 
     symbols, _types = load_kallsyms(args.kallsyms)
@@ -312,6 +316,21 @@ def main():
         exports.update(parsed)
 
     print(f"STOCK_IMAGE_EXPORTED_SYMBOLS={len(exports)}")
+
+    if args.full_output:
+        full_lines = [
+            "# crc\tsymbol\tsection",
+        ]
+        for name in sorted(exports):
+            item = exports[name]
+            full_lines.append(
+                f"0x{item['direct_crc']:08x}\t{name}\t{item['section']}"
+            )
+        Path(args.full_output).write_text("\n".join(full_lines) + "\n")
+        print(
+            f"STOCK_IMAGE_FULL_CRC_ORACLE={args.full_output} "
+            f"entries={len(exports)}"
+        )
 
     direct_score = 0
     relative_score = 0
