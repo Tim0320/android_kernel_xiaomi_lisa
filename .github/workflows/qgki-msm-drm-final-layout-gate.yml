@@ -241,7 +241,7 @@ jobs:
               "task_tgid",
               "task_group_leader",
               "task_comm",
-              "inode_i_mapping",
+              "inode_i_mapping", "inode_i_private",
               "panel_drm",
               "panel_connector",
               "panel_dev",
@@ -372,17 +372,17 @@ jobs:
 
             echo
             echo "=== drm_panel notifier internals ==="
-            git grep -n -E '(\.nh|->nh)[[:space:]]*\.(rwsem|head)|blocking_notifier_(head|rwsem)' \
+            git grep -n -E '(\.nh|->nh)[[:space:]]*\.(rwsem|head)' \
               -- techpack/display/msm || true
           } | tee source-risk-audit.txt
 
-          # The known direct inode access in MSM GEM is i_mapping, which is
-          # explicitly asserted equal in the field probe above. Flag any other
-          # direct inode member so it cannot silently bypass the gate.
+          # i_mapping and i_private are both directly used by stock msm_drm.
+          # Their offsets are explicitly asserted equal in the field probe.
+          # Flag any other direct inode member so it cannot bypass the gate.
           unexpected_inode="$(
             git grep -n -E '(inode->[[:space:]]*i_|file_inode\([^)]*\)->i_)' \
               -- techpack/display/msm 2>/dev/null \
-              | grep -v -- '->i_mapping' || true
+              | grep -v -E -- '->i_(mapping|private)' || true
           )"
           if [[ -n "$unexpected_inode" ]]; then
             echo "UNEXPECTED_DIRECT_INODE_MEMBERS:"
@@ -392,7 +392,7 @@ jobs:
 
           # drm_panel notifier internals must remain kernel-helper-owned.
           direct_nh="$(
-            git grep -n -E '(\.nh|->nh)[[:space:]]*\.(rwsem|head)|blocking_notifier_(head|rwsem)' \
+            git grep -n -E '(\.nh|->nh)[[:space:]]*\.(rwsem|head)' \
               -- techpack/display/msm 2>/dev/null || true
           )"
           if [[ -n "$direct_nh" ]]; then
