@@ -1,0 +1,208 @@
+name: Probe lisa ABI candidate matrix
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-candidate-matrix.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: current-miui-t
+            repo: https://github.com/tanz3/kernel_xiaomi_sm8350-miui.git
+            ref: miui-t
+          - label: endcredits-asb
+            repo: https://github.com/EndCredits/android_kernel_xiaomi_sm8350-miui.git
+            ref: ASB-2024-10-05
+          - label: hyper14-yzzzr
+            repo: https://github.com/YZzZr/android_kernel_xiaomi_sm8350-miui.git
+            ref: hyper-14
+          - label: new-rebase
+            repo: https://github.com/JiuGeFaCai/android_kernel_xiaomi_sm8350-miui.git
+            ref: new-rebase
+          - label: lisa-stock-derived
+            repo: https://github.com/CannedShroud/kernel_xiaomi_lisa.git
+            ref: main
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            cpio kmod rsync python3 curl xz-utils git
+
+      - name: Cache AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+          for url in \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r46/clang-r383902b1.tar.gz"
+          do
+            rm -f "$ARCHIVE"
+            if curl -L --fail --retry 5 --retry-all-errors "$url" -o "$ARCHIVE" && tar -tzf "$ARCHIVE" >/dev/null; then
+              tar -xzf "$ARCHIVE" -C "$DEST"
+              break
+            fi
+          done
+          "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
+
+      - name: Clone candidate
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --single-branch --depth=1 \
+            --branch "${{ matrix.ref }}" "${{ matrix.repo }}" kernel
+          cd kernel
+          echo "candidate=${{ matrix.label }}"
+          echo "candidate_head=$(git rev-parse HEAD)"
+          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 289/' Makefile
+          printf '%s\n' '-g5987d69e25da' > .scmversion
+
+      - name: Apply exact stock lisa IKCONFIG
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          mkdir -p out
+          curl -L --fail --retry 5 \
+            https://raw.githubusercontent.com/Jiovanni-dump/xiaomi_lisa_dump/2dbe7b5569ed49cc2c6649a7b313d4a092755034/ikconfig \
+            -o out/.config
+          test "$(git hash-object out/.config)" = "3343d7b7b3874e065ce4805eac61c0160c40b0a3"
+          timeout 180s make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            olddefconfig </dev/null
+          grep -E '^(CONFIG_LOCALVERSION|CONFIG_LOCALVERSION_AUTO|CONFIG_MODVERSIONS|CONFIG_UFSGKI|CONFIG_UFS_WB|CONFIG_MI_UFS_FFU|CONFIG_OEM_KERNEL|CONFIG_PASSTHROUGH_SYSTEM)=' out/.config || true
+
+      - name: Inject ABI probe
+        run: |
+          set -euo pipefail
+          cd kernel
+          cat > drivers/misc/lisa_abi_probe.c <<'EOF'
+          #include <linux/module.h>
+          #include <linux/types.h>
+          #include <scsi/scsi_device.h>
+          #include "../scsi/ufs/ufshcd.h"
+          #include "../scsi/ufs/ufs.h"
+
+          struct ufs_err_state_debug {
+              u64 err_occurred;
+              char err_reason[10][32];
+          };
+
+          struct ufs_data {
+              struct ufs_hba *hba;
+              struct scsi_device *sdev;
+              struct ufs_err_state_debug ufs_err_state;
+          };
+
+          struct ufs_hba *get_ufs_hba_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_hba_data);
+          struct scsi_device *get_ufs_sdev_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_sdev_data);
+          struct ufs_data *get_ufs_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_data);
+
+          int ufs_get_string_desc(struct ufs_hba *hba, void *buf, int size,
+                                  enum device_desc_param pname, bool ascii_std)
+          { return 0; }
+          EXPORT_SYMBOL(ufs_get_string_desc);
+
+          int ufs_read_desc_param(struct ufs_hba *hba, enum desc_idn desc_id,
+                                  u8 desc_index, u8 param_offset,
+                                  void *buf, u8 param_size)
+          { return 0; }
+          EXPORT_SYMBOL(ufs_read_desc_param);
+
+          int ufshcd_read_desc(struct ufs_hba *hba, enum desc_idn desc_id,
+                               int desc_index, void *buf, u32 size)
+          { return 0; }
+          EXPORT_SYMBOL(ufshcd_read_desc);
+          EOF
+          printf '\nobj-y += lisa_abi_probe.o\n' >> drivers/misc/Makefile
+
+      - name: Build ABI-bearing objects
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            prepare scripts
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            kernel/module.o drivers/misc/lisa_abi_probe.o
+
+      - name: Score CRCs against HyperOS stock
+        run: |
+          set -euo pipefail
+          cd kernel
+          score=0
+          total=7
+
+          check_symversion() {
+            local file="$1" symbol="$2" expected="$3"
+            local actual
+            actual="$(sed -n "s/^__crc_${symbol} = \(0x[0-9a-fA-F]*\);/\1/p" "$file" | head -n1)"
+            actual="${actual,,}"
+            echo "${{ matrix.label }}: $symbol candidate=${actual:-MISSING} stock=$expected"
+            if [[ "$actual" == "$expected" ]]; then
+              score=$((score + 1))
+            fi
+          }
+
+          check_symversion out/drivers/misc/lisa_abi_probe.o.symversions get_ufs_data 0xfa507f92
+          check_symversion out/drivers/misc/lisa_abi_probe.o.symversions get_ufs_hba_data 0xc40eabac
+          check_symversion out/drivers/misc/lisa_abi_probe.o.symversions get_ufs_sdev_data 0xc5bbd8a8
+          check_symversion out/drivers/misc/lisa_abi_probe.o.symversions ufs_get_string_desc 0x479d5ded
+          check_symversion out/drivers/misc/lisa_abi_probe.o.symversions ufs_read_desc_param 0x16548413
+          check_symversion out/drivers/misc/lisa_abi_probe.o.symversions ufshcd_read_desc 0xa93e3b58
+          check_symversion out/kernel/module.o.symversions module_layout 0xba39cbb8
+          echo "ABI_SCORE=${score}/${total}"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: abi-candidate-${{ matrix.label }}
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            kernel/out/.config
+            kernel/out/kernel/module.o.symversions
+            kernel/out/drivers/misc/lisa_abi_probe.o.symversions
