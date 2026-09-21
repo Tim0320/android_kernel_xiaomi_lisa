@@ -722,6 +722,51 @@ Important direct-layout observations:
 
 A final field-level CI gate now compares the exact named offsets needed by observed module code and checks all direct `sp_el0` accesses against the common `task_struct` prefix.
 
+## Final field-level gate identifies rw_semaphore as a real runtime blocker
+
+The first field-level runtime gate failed only in the display-source inode audit.
+
+The hard layout assertions themselves passed:
+
+- required named runtime fields equal: **12/12**
+- direct `sp_el0` accesses found in stock `msm_drm.ko`: **1221**
+- unique direct current-task offsets: **24, 62, 1616, 1620**
+- maximum direct current-task offset: **1620**
+- first known `task_struct` layout divergence is after the common prefix near byte 2752
+- direct task accesses beyond common prefix: **0**
+
+The source audit then found that stock display code directly reads `inode->i_private` in multiple debugfs/procfs paths.
+
+Exact stock layout probing shows:
+
+- stock `inode->i_mapping` offset: **48 bytes**
+- stock `inode->i_private` offset: **640 bytes**
+- stock `sizeof(struct inode)`: **664 bytes**
+
+The current reconstructed tree has `i_private` at **624 bytes**, creating a real direct-member runtime incompatibility.
+
+Root cause is coherent and global rather than inode-specific:
+
+- stock `struct rw_semaphore` contains `ANDROID_VENDOR_DATA(1)`
+- current reconstructed `struct rw_semaphore` does not
+- stock `sizeof(struct rw_semaphore) = 48`, current = 40
+
+`struct inode` contains this rwsem layout twice before `i_private`:
+
+1. direct `inode::i_rwsem`
+2. nested `inode::i_data.i_mmap_rwsem`
+
+This produces exactly the observed **16-byte** `i_private` offset gap.
+
+The same missing 8-byte rwsem reserve explains the other remaining public-layout difference:
+
+- current `struct drm_panel`: 96 bytes
+- stock `struct drm_panel`: 104 bytes
+
+because `drm_panel::nh` embeds a `blocking_notifier_head`, which embeds a `rw_semaphore`.
+
+The next full build therefore restores the stock runtime `ANDROID_VENDOR_DATA(1)` reserve in `struct rw_semaphore` instead of adding inode- or DRM-specific padding. This should align both inode and drm_panel through one coherent stock-generation fix.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
