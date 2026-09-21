@@ -1,0 +1,257 @@
+name: Probe exact Lahaina sources with Lisa stock config
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/abi-lahaina-stockconfig-exact.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: current-control
+            repo: https://github.com/Tim0320/android_kernel_xiaomi_lisa.git
+            ref: reconstruction/5.4.289-qgki
+          - label: lahaina-15400
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 4065f0ea2f5e0009cac9034fe4d6f1e028bdb8e9
+          - label: lahaina-15500-15600
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 5ad0937ee3cc5d56c3b80e181393e2a9281520de
+          - label: lahaina-15800
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 02c90c6a7bea78ebcd39f2e467b9e6fe34a2b86d
+          - label: lahaina-16100
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 7a4b43854304219cec6e1f58c2e16b54dfc37608
+          - label: lahaina-16300
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 178ecd92d9856a4de0a7690a9d3ac994e4d7c9d4
+          - label: lahaina-16700
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: bec53eadb657dfe7f42fc939ddcc1000959cc2aa
+          - label: lahaina-16900
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 203d4a97455e95f81738823edbb34b17c55fec43
+          - label: lahaina-17700
+            repo: https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+            ref: 21af954d9156c3da3a3a47fef5dbf23526691ba5
+          - label: lineage-lisa-qgki-5.4.289
+            repo: https://github.com/xiaomi-lisa-resources/android_kernel_xiaomi_lisa.git
+            ref: 6fd7609f90995c774f78ba1887618c3a642ad84e
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git curl rsync
+
+      - name: Cache stock clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install exact stock clang
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+          curl -L --fail --retry 5 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | head -n3
+
+      - name: Fetch exact candidate
+        run: |
+          set -euo pipefail
+          mkdir kernel
+          git -C kernel init
+          git -C kernel remote add origin "${{ matrix.repo }}"
+          git -C kernel fetch --depth=1 origin "${{ matrix.ref }}"
+          git -C kernel checkout --detach FETCH_HEAD
+          cd kernel
+          echo "STOCKCFG_LABEL=${{ matrix.label }}"
+          echo "STOCKCFG_HEAD=$(git rev-parse HEAD)"
+          test "$(git rev-parse HEAD)" = "${{ matrix.ref }}"
+
+      - name: Apply exact Lisa stock IKCONFIG
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          mkdir -p out
+
+          curl -L --fail --retry 5 \
+            https://raw.githubusercontent.com/Jiovanni-dump/xiaomi_lisa_dump/2dbe7b5569ed49cc2c6649a7b313d4a092755034/ikconfig \
+            -o out/.config
+          test "$(git hash-object out/.config)" = "3343d7b7b3874e065ce4805eac61c0160c40b0a3"
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig </dev/null
+
+          echo "=== stock-config identity ==="
+          grep -E '^(CONFIG_LOCALVERSION|CONFIG_QGKI|CONFIG_ARCH_LAHAINA|CONFIG_ARCH_YUPIK|CONFIG_MODVERSIONS|CONFIG_LTO_CLANG|CONFIG_CFI_CLANG)=' out/.config || true
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+
+      - name: Preserve direct genksyms CRC output
+        run: |
+          set -euo pipefail
+          cd kernel
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+          old = '    $(call cmd_gensymtypes_c,true,$@) >/dev/null;                           \\\n'
+          new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
+          if old not in s:
+              raise SystemExit("direct genksyms rule not found")
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Generate stock-config CRCs directly
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+
+          targets=(
+            kernel/module.symtypes
+            drivers/base/core.symtypes
+            drivers/base/platform.symtypes
+            drivers/base/power/runtime.symtypes
+            drivers/of/base.symtypes
+            drivers/of/address.symtypes
+            drivers/clk/clk.symtypes
+            drivers/iommu/iommu.symtypes
+            drivers/regulator/core.symtypes
+            kernel/kthread.symtypes
+            kernel/irq/irqdomain.symtypes
+            fs/sysfs/group.symtypes
+            lib/kobject.symtypes
+            mm/page_alloc.symtypes
+            kernel/dma/direct.symtypes
+            kernel/dma/mapping.symtypes
+            drivers/dma-buf/dma-buf.symtypes
+          )
+
+          for t in "${targets[@]}"; do
+            echo "=== GENKSYMS $t ==="
+            make -j"$(nproc)" O=out \
+              ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+              CROSS_COMPILE=aarch64-linux-gnu- \
+              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+              CLANG_TRIPLE=aarch64-linux-gnu- "$t"
+          done
+
+      - name: Score stock-config core fingerprint
+        run: |
+          set -euo pipefail
+          cd kernel
+          find out -name '*.symversions' -type f -print0 | xargs -0 cat > /tmp/all.symversions
+          test -s /tmp/all.symversions
+
+          label="${{ matrix.label }}"
+          score=0
+          total=0
+          present=0
+
+          check() {
+            local symbol="$1" expected="$2"
+            local actual
+            total=$((total+1))
+            actual="$(sed -n "s/^__crc_${symbol} = \(0x[0-9a-fA-F]*\);/\1/p" /tmp/all.symversions | head -n1)"
+            actual="${actual,,}"
+            [[ -n "$actual" ]] && present=$((present+1)) || true
+            echo "$label: $symbol candidate=${actual:-MISSING} stock=$expected"
+            [[ "$actual" == "$expected" ]] && score=$((score+1)) || true
+          }
+
+          check module_layout 0xba39cbb8
+          check device_register 0xcf9bcdee
+          check device_unregister 0x4678e0d9
+          check dev_driver_string 0x22a8544f
+          check device_create 0xbebfb31d
+          check __platform_driver_register 0x8a28799a
+          check platform_driver_unregister 0xb1643fd1
+          check platform_get_irq 0xbcc683a6
+          check platform_get_resource 0x0b50f5aa
+          check platform_get_resource_byname 0x67870233
+          check __pm_runtime_resume 0xd7ceaec5
+          check pm_runtime_enable 0x69233960
+          check of_find_property 0x7bfb6ef3
+          check of_get_property 0x3f86cb17
+          check of_parse_phandle 0x5d8562ca
+          check of_address_to_resource 0x6f7055af
+          check of_device_is_compatible 0xb56ea40d
+          check clk_get 0xf8127647
+          check clk_register 0xab9a55da
+          check iommu_attach_device 0x0c54e55f
+          check iommu_map 0xa106c11d
+          check iommu_unmap 0xe1da4443
+          check regulator_get 0xf7c6097c
+          check regulator_enable 0x691df2d6
+          check regulator_set_voltage 0x54cdbf0a
+          check kthread_create_on_node 0x947eb746
+          check kthread_stop 0x97198f13
+          check irq_domain_remove 0x160aa18c
+          check irq_find_mapping 0x6fb78324
+          check sysfs_create_group 0x0965d890
+          check kobject_create_and_add 0x93a00376
+          check __free_pages 0x419e8d31
+          check adjust_managed_page_count 0xcf0c4b39
+          check dma_direct_map_page 0x803f2855
+          check dma_direct_map_sg 0x9e7457c3
+          check dma_alloc_attrs 0x1c3c2bb3
+          check dma_buf_attach 0x995856d1
+          check dma_buf_map_attachment 0x3d20e038
+
+          echo "STOCKCFG_PRESENT=$present/$total"
+          echo "STOCKCFG_SCORE=$score/$total"
+
+          if [[ "${{ matrix.label }}" == "current-control" ]]; then
+            grep -q '__crc_module_layout = 0x0816e668;' /tmp/all.symversions
+            grep -q '__crc_device_register = 0xc1e70e13;' /tmp/all.symversions
+            grep -q '__crc_device_unregister = 0xb88b5350;' /tmp/all.symversions
+            grep -q '__crc_dev_driver_string = 0x52e5afec;' /tmp/all.symversions
+            echo "STOCKCFG_CONTROL_OK=1"
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stockcfg-${{ matrix.label }}
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            kernel/out/.config
+            kernel/out/**/*.symversions
+            kernel/out/**/*.symtypes
