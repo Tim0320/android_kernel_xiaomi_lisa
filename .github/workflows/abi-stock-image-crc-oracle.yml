@@ -1,4 +1,4 @@
-name: Compare exact Lisa OS2.0.16.0 stock Image CRCs with stock QGKI module ABI
+name: Compare uploaded exact Lisa stock Image CRCs with stock QGKI module ABI
 # CI retrigger marker: stock-image ABI oracle
 
 on:
@@ -7,6 +7,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/abi-stock-image-crc-oracle.yml
+      - reconstruction/stock/stock-Image/**
 
 permissions:
   contents: write
@@ -14,11 +15,13 @@ permissions:
 jobs:
   stock-image-oracle:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 30
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          lfs: true
 
       - name: Install dependencies
         id: install
@@ -31,7 +34,7 @@ jobs:
           sudo apt-get install -y xz-utils gzip bzip2 lz4 zstd binutils python3-pip git git-lfs
           git lfs install
 
-      - name: Fetch exact target boot from official OS2.0.16.0.UKOCNXM fastboot ROM
+      - name: Use uploaded exact Lisa stock images
         id: fetch
         continue-on-error: true
         run: |
@@ -39,44 +42,28 @@ jobs:
           exec > >(tee diagnostics/02-fetch.log) 2>&1
           set -euo pipefail
 
-          version="OS2.0.16.0.UKOCNXM"
-          archive="lisa_images_OS2.0.16.0.UKOCNXM_20251221.0000.00_14.0_cn_48554e03ca.tgz"
-          expected_archive_md5="48554e03ca0ad00d3b4cd7f32a1de4f3"
+          stock_dir="reconstruction/stock/stock-Image"
 
-          urls=(
-            "https://bigota.d.miui.com/${version}/${archive}"
-            "https://hugeota.d.miui.com/${version}/${archive}"
-          )
+          test -f "${stock_dir}/boot.img"
+          test -f "${stock_dir}/vendor_boot.img"
+          test -f "${stock_dir}/dtbo.img"
+          test -f "${stock_dir}/odm.img"
 
-          rm -f boot.img
-          success=0
-
-          for url in "${urls[@]}"; do
-            echo "Trying official ROM: $url"
-
-            if curl -L --fail --retry 3 --retry-delay 3 --connect-timeout 30 "$url" \
-              | tar -xzO --wildcards --no-anchored 'boot.img' > boot.img; then
-              if [[ -s boot.img ]] && [[ "$(head -c 8 boot.img)" == "ANDROID!" ]]; then
-                success=1
-                echo "TARGET_BOOT_SOURCE=$url"
-                break
-              fi
-            fi
-
-            rm -f boot.img
-          done
-
-          if [[ "$success" -ne 1 ]]; then
-            echo "Unable to extract boot.img from official target fastboot ROM"
-            exit 21
+          if grep -q '^version https://git-lfs.github.com/spec/v1' "${stock_dir}/boot.img"; then
+            echo "boot.img is still an LFS pointer; checkout did not materialize LFS content"
+            exit 23
           fi
 
-          echo "TARGET_ROM=${version}"
-          echo "TARGET_FASTBOOT_ARCHIVE=${archive}"
-          echo "TARGET_FASTBOOT_ARCHIVE_MD5=${expected_archive_md5}"
-          file boot.img || true
-          ls -lh boot.img
-          sha256sum boot.img
+          cp "${stock_dir}/boot.img" boot.img
+
+          echo "STOCK_BOOT_SOURCE=${stock_dir}/boot.img"
+          echo "STOCK_VENDOR_BOOT=${stock_dir}/vendor_boot.img"
+          echo "STOCK_DTBO=${stock_dir}/dtbo.img"
+          echo "STOCK_ODM=${stock_dir}/odm.img"
+
+          file boot.img "${stock_dir}/vendor_boot.img" "${stock_dir}/dtbo.img" "${stock_dir}/odm.img" || true
+          ls -lh boot.img "${stock_dir}/vendor_boot.img" "${stock_dir}/dtbo.img" "${stock_dir}/odm.img"
+          sha256sum boot.img "${stock_dir}/vendor_boot.img" "${stock_dir}/dtbo.img" "${stock_dir}/odm.img"
 
       - name: Extract and decompress ARM64 Image from Android boot image
         id: extract
