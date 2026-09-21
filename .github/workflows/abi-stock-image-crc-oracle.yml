@@ -25,29 +25,26 @@ jobs:
         continue-on-error: true
         run: |
           mkdir -p diagnostics
-          {
-            set -euo pipefail
-            sudo apt-get update
-            sudo apt-get install -y xz-utils gzip bzip2 lz4 zstd binutils python3-pip git git-lfs
-            git lfs install
-          } 2>&1 | tee diagnostics/01-install.log
+          exec > >(tee diagnostics/01-install.log) 2>&1
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y xz-utils gzip bzip2 lz4 zstd binutils python3-pip git git-lfs
+          git lfs install
 
       - name: Fetch public stock boot image
         id: fetch
         continue-on-error: true
         run: |
           mkdir -p diagnostics
-          {
+          exec > >(tee diagnostics/02-fetch.log) 2>&1
           set -euo pipefail
+
           url="https://raw.githubusercontent.com/Jiovanni-dump/xiaomi_lisa_dump/2dbe7b5569ed49cc2c6649a7b313d4a092755034/boot.img.xz"
+          rm -f stock-boot-download boot.img
 
-          if ! curl -L --fail --retry 5 --retry-delay 2 "$url" -o boot.img.xz; then
-            rm -f boot.img.xz
-          fi
-
-          if [[ ! -s boot.img.xz ]] || ! xz -t boot.img.xz 2>/dev/null; then
-            echo "Raw path did not yield a valid xz; falling back to sparse Git/LFS fetch"
-            rm -rf dump boot.img.xz
+          if ! curl -L --fail --retry 5 --retry-delay 2 "$url" -o stock-boot-download; then
+            echo "Raw download failed; falling back to sparse Git/LFS fetch"
+            rm -rf dump stock-boot-download
             git init dump
             git -C dump remote add origin https://github.com/Jiovanni-dump/xiaomi_lisa_dump.git
             git -C dump config core.sparseCheckout true
@@ -55,21 +52,56 @@ jobs:
             GIT_LFS_SKIP_SMUDGE=1 git -C dump fetch --depth=1 origin 2dbe7b5569ed49cc2c6649a7b313d4a092755034
             GIT_LFS_SKIP_SMUDGE=1 git -C dump checkout FETCH_HEAD
             git -C dump lfs pull --include="boot.img.xz"
-            cp dump/boot.img.xz boot.img.xz
+            cp dump/boot.img.xz stock-boot-download
           fi
 
-          xz -t boot.img.xz
-          xz -dc boot.img.xz > boot.img
-          ls -lh boot.img.xz boot.img
-          sha256sum boot.img.xz boot.img
-          } 2>&1 | tee diagnostics/02-fetch.log
+          ls -lh stock-boot-download
+          file stock-boot-download || true
+          sha256sum stock-boot-download
+          python3 - <<'PY'
+          from pathlib import Path
+          import gzip
+          import lzma
+
+          src = Path("stock-boot-download").read_bytes()
+          print("DOWNLOAD_MAGIC=" + src[:16].hex())
+
+          if src.startswith(b"ANDROID!"):
+              print("STOCK_BOOT_CONTAINER=raw-android-boot")
+              boot = src
+          elif src.startswith(b"\xfd7zXZ\x00"):
+              print("STOCK_BOOT_CONTAINER=xz")
+              boot = lzma.decompress(src)
+          elif src.startswith(b"\x1f\x8b"):
+              print("STOCK_BOOT_CONTAINER=gzip")
+              boot = gzip.decompress(src)
+          elif src.startswith(b"version https://git-lfs.github.com/spec/v1"):
+              raise SystemExit("Received a Git LFS pointer instead of file payload")
+          else:
+              raise SystemExit(
+                  "Unknown stock boot container; first16=" + src[:16].hex()
+              )
+
+          if not boot.startswith(b"ANDROID!"):
+              raise SystemExit(
+                  "Normalized payload is not an Android boot image; first16="
+                  + boot[:16].hex()
+              )
+
+          Path("boot.img").write_bytes(boot)
+          print(f"BOOT_IMG_SIZE={len(boot)}")
+          PY
+
+          file boot.img || true
+          ls -lh boot.img
+          sha256sum boot.img
 
       - name: Extract and decompress ARM64 Image from Android boot image
         id: extract
         continue-on-error: true
         run: |
           mkdir -p diagnostics
-          {
+          exec > >(tee diagnostics/03-extract.log) 2>&1
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
@@ -175,26 +207,24 @@ jobs:
           strings -a stock-Image | grep -F "Linux version 5.4.289-qgki-g5987d69e25da"
           strings -a stock-Image | grep -F "5.4.289-qgki-g5987d69e25da" | head -n 20
           ls -lh kernel-payload.bin stock-Image
-          } 2>&1 | tee diagnostics/03-extract.log
 
       - name: Install kallsyms recovery tool
         id: tools
         continue-on-error: true
         run: |
           mkdir -p diagnostics
-          {
-            set -euo pipefail
-            python3 -m pip install --break-system-packages git+https://github.com/marin-m/vmlinux-to-elf.git
-            command -v kallsyms-finder
-            command -v vmlinux-to-elf
-          } 2>&1 | tee diagnostics/04-tools.log
+          exec > >(tee diagnostics/04-tools.log) 2>&1
+          set -euo pipefail
+          python3 -m pip install --break-system-packages git+https://github.com/marin-m/vmlinux-to-elf.git
+          command -v kallsyms-finder
+          command -v vmlinux-to-elf
 
       - name: Recover stock Image kallsyms and CRC symbols
         id: recover
         continue-on-error: true
         run: |
           mkdir -p diagnostics
-          {
+          exec > >(tee diagnostics/05-recover.log) 2>&1
           set -euo pipefail
 
           kallsyms-finder stock-Image > stock.kallsyms
@@ -217,15 +247,19 @@ jobs:
             nm -n stock-vmlinux.elf | grep ' __crc_' > stock.elf.crcs || true
             head -n 20 stock.elf.crcs || true
           fi
-          } 2>&1 | tee diagnostics/05-recover.log
 
       - name: Compare stock Image CRCs to stock msm_drm QGKI oracle
         id: compare
         continue-on-error: true
         run: |
           mkdir -p diagnostics
-          {
+          exec > >(tee diagnostics/06-compare.log) 2>&1
           set -euo pipefail
+
+          if [[ ! -s stock.kallsyms ]]; then
+            echo "stock.kallsyms missing; compare cannot run"
+            exit 40
+          fi
 
           score=0
           total=0
@@ -303,7 +337,6 @@ jobs:
           else
             echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=0"
           fi
-          } 2>&1 | tee diagnostics/06-compare.log
 
       - name: Persist diagnostic report
         if: always()
