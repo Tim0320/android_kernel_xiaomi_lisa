@@ -1,0 +1,330 @@
+name: Inspect stock QGKI msm_drm runtime layout risk
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-msm-drm-runtime-risk.yml
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout exact stock images
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 1
+
+      - name: Install inspection tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            cpio gzip file binutils-aarch64-linux-gnu \
+            llvm python3 python3-pyelftools dwarves
+
+      - name: Extract exact stock msm_drm.ko
+        run: |
+          set -euo pipefail
+          img="reconstruction/stock/stock-Image/vendor_boot.img"
+          test -s "$img"
+
+          rm -rf msm-risk
+          mkdir -p msm-risk/root
+
+          python3 - "$img" msm-risk/vendor_ramdisk.gz <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+
+          data = Path(sys.argv[1]).read_bytes()
+          if data[:8] != b"VNDRBOOT":
+              raise SystemExit("bad vendor_boot magic")
+
+          def u32(off):
+              return struct.unpack_from("<I", data, off)[0]
+
+          def align(v, a):
+              return (v + a - 1) // a * a
+
+          page = u32(12)
+          ramdisk_size = u32(24)
+          header_size = u32(2096)
+          off = align(header_size, page)
+
+          Path(sys.argv[2]).write_bytes(data[off:off + ramdisk_size])
+
+          print(f"RISK_VENDOR_BOOT_PAGE_SIZE={page}")
+          print(f"RISK_VENDOR_RAMDISK_BYTES={ramdisk_size}")
+          PY
+
+          gzip -dc msm-risk/vendor_ramdisk.gz > msm-risk/vendor_ramdisk.cpio
+          (
+            cd msm-risk/root
+            cpio --quiet -idm --no-absolute-filenames < ../vendor_ramdisk.cpio
+          )
+
+          msm="$(find msm-risk/root -type f -path '*/lib/modules/msm_drm.ko' -print -quit)"
+          test -n "$msm"
+          cp "$msm" msm-risk/msm_drm.ko
+          test -s msm-risk/msm_drm.ko
+
+          file msm-risk/msm_drm.ko | tee msm-risk/file.txt
+
+      - name: Inspect ELF sections and metadata
+        run: |
+          set -euo pipefail
+
+          aarch64-linux-gnu-readelf -h msm-risk/msm_drm.ko > msm-risk/elf-header.txt
+          aarch64-linux-gnu-readelf -S -W msm-risk/msm_drm.ko > msm-risk/sections.txt
+          aarch64-linux-gnu-readelf -s -W msm-risk/msm_drm.ko > msm-risk/symbols.txt
+          aarch64-linux-gnu-readelf -r -W msm-risk/msm_drm.ko > msm-risk/relocations.txt
+          aarch64-linux-gnu-nm -n msm-risk/msm_drm.ko > msm-risk/nm.txt
+          aarch64-linux-gnu-nm -u msm-risk/msm_drm.ko > msm-risk/undefined.txt
+          aarch64-linux-gnu-objdump -drwC msm-risk/msm_drm.ko > msm-risk/disassembly.txt
+
+          python3 - msm-risk/msm_drm.ko msm-risk/module-metadata.txt <<'PY'
+          import sys
+          from pathlib import Path
+          from elftools.elf.elffile import ELFFile
+
+          p = Path(sys.argv[1])
+          out = Path(sys.argv[2])
+
+          with p.open("rb") as f:
+              elf = ELFFile(f)
+              names = [s.name for s in elf.iter_sections()]
+
+              modinfo = elf.get_section_by_name(".modinfo")
+              fields = {}
+              if modinfo is not None:
+                  for raw in modinfo.data().split(b"\0"):
+                      if b"=" not in raw:
+                          continue
+                      k, v = raw.split(b"=", 1)
+                      fields.setdefault(
+                          k.decode("utf-8", "replace"), []
+                      ).append(v.decode("utf-8", "replace"))
+
+              versions = elf.get_section_by_name("__versions")
+              version_count = 0
+              if versions is not None:
+                  version_count = len(versions.data()) // 64
+
+          has_btf = ".BTF" in names
+          has_btf_ext = ".BTF.ext" in names
+          debug_sections = sorted(
+              n for n in names if n.startswith(".debug")
+          )
+          has_symtab = ".symtab" in names
+
+          vermagic = fields.get("vermagic", [""])[0]
+
+          print(f"MSM_DRM_HAS_BTF={int(has_btf)}")
+          print(f"MSM_DRM_HAS_BTF_EXT={int(has_btf_ext)}")
+          print(f"MSM_DRM_DEBUG_SECTION_COUNT={len(debug_sections)}")
+          print(f"MSM_DRM_HAS_SYMTAB={int(has_symtab)}")
+          print(f"MSM_DRM_VERSION_ENTRIES={version_count}")
+          print(f"MSM_DRM_VERMAGIC={vermagic}")
+
+          lines = [
+              f"has_btf={int(has_btf)}",
+              f"has_btf_ext={int(has_btf_ext)}",
+              f"debug_sections={','.join(debug_sections)}",
+              f"has_symtab={int(has_symtab)}",
+              f"version_entries={version_count}",
+              f"vermagic={vermagic}",
+          ]
+          out.write_text("\n".join(lines) + "\n")
+          PY
+
+          cat msm-risk/module-metadata.txt
+          grep -E '\.(BTF|debug)|symtab|__versions|modinfo' msm-risk/sections.txt || true
+
+      - name: Dump module-native type information when available
+        run: |
+          set -euo pipefail
+          : > msm-risk/native-types.txt
+
+          if grep -q '^has_btf=1$' msm-risk/module-metadata.txt; then
+            echo "=== PAHOLE BTF ===" >> msm-risk/native-types.txt
+            pahole msm-risk/msm_drm.ko >> msm-risk/native-types.txt 2>&1 || true
+          fi
+
+          if grep -q '^debug_sections=\..*' msm-risk/module-metadata.txt; then
+            echo "=== DWARF INFO ===" >> msm-risk/native-types.txt
+            aarch64-linux-gnu-readelf --debug-dump=info msm-risk/msm_drm.ko \
+              >> msm-risk/native-types.txt 2>&1 || true
+          fi
+
+          for t in task_struct inode drm_panel blocking_notifier_head; do
+            echo "=== TYPE $t ==="
+            grep -n -A70 -B5 -E "(struct )?$t" msm-risk/native-types.txt \
+              | head -n 180 || true
+          done
+
+      - name: Map risky imported APIs to module functions and disassembly
+        run: |
+          set -euo pipefail
+
+          cat > msm-risk/risky-symbols.txt <<'EOF'
+          kthread_create_on_node
+          kthread_park
+          kthread_stop
+          kthread_unpark
+          perf_trace_run_bpf_submit
+          sched_setscheduler
+          wake_up_process
+          PDE_DATA
+          drm_open
+          drm_release
+          shmem_truncate_range
+          single_release
+          drm_panel_add
+          drm_panel_init
+          drm_panel_notifier_call_chain
+          drm_panel_remove
+          EOF
+
+          python3 - msm-risk/disassembly.txt msm-risk/risky-symbols.txt msm-risk/risky-call-sites.txt <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+
+          dis = Path(sys.argv[1]).read_text(errors="replace").splitlines()
+          wanted = set(
+              x.strip() for x in Path(sys.argv[2]).read_text().splitlines()
+              if x.strip()
+          )
+
+          func_re = re.compile(r"^[0-9a-f]+ <([^>]+)>:$")
+          current = None
+          funcs = {}
+          order = []
+
+          for line in dis:
+              m = func_re.match(line.strip())
+              if m:
+                  current = m.group(1)
+                  if current not in funcs:
+                      funcs[current] = []
+                      order.append(current)
+              if current is not None:
+                  funcs[current].append(line)
+
+          hits = []
+          for fn in order:
+              block = funcs[fn]
+              matched = sorted(
+                  sym for sym in wanted
+                  if any(sym in line for line in block)
+              )
+              if matched:
+                  hits.append((fn, matched, block))
+
+          print(f"RISK_FUNCTIONS_WITH_TYPED_IMPORTS={len(hits)}")
+
+          out = []
+          for fn, matched, block in hits:
+              print(
+                  f"RISK_CALLSITE\t{fn}\timports={','.join(matched)}"
+              )
+              out.append(
+                  f"===== FUNCTION {fn} imports={','.join(matched)} ====="
+              )
+              out.extend(block)
+              out.append("")
+
+          Path(sys.argv[3]).write_text("\n".join(out) + "\n")
+          PY
+
+          sed -n '1,1600p' msm-risk/risky-call-sites.txt
+
+      - name: Classify direct-risk evidence
+        run: |
+          set -euo pipefail
+
+          python3 - msm-risk/module-metadata.txt msm-risk/risky-call-sites.txt msm-risk/runtime-risk-summary.txt <<'PY'
+          import sys
+          from pathlib import Path
+
+          meta = {}
+          for raw in Path(sys.argv[1]).read_text().splitlines():
+              if "=" in raw:
+                  k, v = raw.split("=", 1)
+                  meta[k] = v
+
+          calls = Path(sys.argv[2]).read_text(errors="replace")
+
+          has_native_types = (
+              meta.get("has_btf") == "1"
+              or bool(meta.get("debug_sections"))
+          )
+
+          task_apis = [
+              "kthread_create_on_node",
+              "kthread_park",
+              "kthread_stop",
+              "kthread_unpark",
+              "sched_setscheduler",
+              "wake_up_process",
+          ]
+          inode_apis = [
+              "PDE_DATA",
+              "drm_open",
+              "drm_release",
+              "shmem_truncate_range",
+              "single_release",
+          ]
+          panel_apis = [
+              "drm_panel_add",
+              "drm_panel_init",
+              "drm_panel_notifier_call_chain",
+              "drm_panel_remove",
+          ]
+
+          def present(group):
+              return [x for x in group if x in calls]
+
+          lines = [
+              "# Stock msm_drm runtime layout risk inspection",
+              f"native_type_info={int(has_native_types)}",
+              "task_struct_related_imports=" + ",".join(present(task_apis)),
+              "inode_related_imports=" + ",".join(present(inode_apis)),
+              "drm_panel_related_imports=" + ",".join(present(panel_apis)),
+              "",
+              "This report identifies functions/call-sites for manual or follow-up",
+              "instruction-level validation. Presence of an imported typed API alone",
+              "does not prove direct member dereference by the module.",
+          ]
+
+          Path(sys.argv[3]).write_text("\n".join(lines) + "\n")
+          print("\n".join(lines))
+          PY
+
+      - name: Upload runtime-risk evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-msm-drm-runtime-risk
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            msm-risk/file.txt
+            msm-risk/module-metadata.txt
+            msm-risk/sections.txt
+            msm-risk/symbols.txt
+            msm-risk/undefined.txt
+            msm-risk/relocations.txt
+            msm-risk/disassembly.txt
+            msm-risk/native-types.txt
+            msm-risk/risky-call-sites.txt
+            msm-risk/runtime-risk-summary.txt
