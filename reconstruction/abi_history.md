@@ -205,26 +205,30 @@ The next probe overlays **all** recovered stock IKHEADERS after `prepare`, inclu
 
 ## Full stock IKHEADERS overlay reproduces the stock core ABI
 
-A three-way direct-genksyms experiment isolated the missing ingredient:
+A direct-genksyms experiment isolated the missing ingredient:
 
 | Mode | Present | Stock CRC matches |
 | --- | ---: | ---: |
-| control | 37/38 | 0/38 |
-| stock source headers only | 37/38 | 0/38 |
-| stock source + generated/config headers | 37/38 | **37/38** |
+| control | 38/38 | 0/38 |
+| stock source headers only | 38/38 | 0/38 |
+| stock source + generated/config headers | 38/38 | **38/38** |
 
-Every symbol produced by the `stock-all-headers` probe exactly matched the stock Image/module oracle, including `module_layout`, device/platform, OF, regulator, IOMMU, kthread, IRQ, sysfs/kobject, page allocator, DMA and dma-buf CRCs.
+After adding `drivers/clk/clkdev.symtypes`, the previously absent `clk_get` was generated and matched exactly:
 
-The only absent oracle symbol was `clk_get`; it was not a mismatch. The probe target list built `drivers/clk/clk.symtypes`, while `clk_get` is exported from `drivers/clk/clkdev.c`. A follow-up probe adds `drivers/clk/clkdev.symtypes`.
+- `clk_get = 0xf8127647` stock
+- `clk_get = 0xf8127647` overlay probe
 
-This is strong experimental proof that the dominant KABI divergence came from the **effective generated preprocessor/config environment**, not from the implementation files alone. In particular, the exact stock IKHEADERS generated/config headers restore the stock genksyms type graph on the current reconstructed source for every tested observable core symbol.
+All 38 core oracle symbols now reproduce the exact stock CRCs under the full exact-stock IKHEADERS environment. This includes `module_layout`, device/platform, OF, clock, regulator, IOMMU, kthread, IRQ, sysfs/kobject, page allocator, DMA and dma-buf CRCs.
+
+This is strong experimental proof that the dominant KABI divergence comes from the **effective generated preprocessor/config environment**. It does **not yet mean the normal reconstructed kernel build is ABI-correct**: the normal build still resolves the donor Kconfig and generated headers differently. The next isolation probe tests stock generated/config headers without replacing source headers, so the minimum required stock environment can be identified before changing the reconstruction pipeline.
 
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
 | --- | ---: | ---: | --- |
 | Selected vendor ABI from full Build #53 | 10 / 17 | 58.8% | MI memory, CNSS, display and touch are substantially aligned |
-| Core QGKI fingerprint | 0 / 38 | 0% | Core/device/platform/OF/IOMMU/DMA/module KABI still differs from stock |
+| Core QGKI fingerprint, normal reconstructed build | 0 / 38 | 0% | Normal donor-generated preprocessor/Kconfig environment still differs from stock |
+| Core QGKI fingerprint, exact full IKHEADERS diagnostic overlay | 38 / 38 | 100% | Exact stock source + generated/config header environment reproduces all tested core CRCs |
 | UFS + module fingerprint | 0 / 7 | 0% | UFS type graph and `module_layout` still differ from stock |
 
 Known Build #53 stock matches:
