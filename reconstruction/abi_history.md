@@ -543,6 +543,45 @@ The current tree contains **982 proc_ops-related matches across 136 source/heade
 
 The next experiment minimizes the scheduler private-header subset and separately tests whether the exact proc/scheduler private-header substitutions compile under the normal donor C header environment. This distinguishes a safe runtime source overlay from a genksyms-only ABI view.
 
+## Minimal private headers for the six QGKI symbols
+
+The minimal private-header experiment succeeded.
+
+### procfs
+
+Only `fs/proc/internal.h` is required to reproduce the four stock QGKI procfs CRCs:
+
+- `proc_create_data`
+- `proc_mkdir`
+- `proc_remove`
+- `remove_proc_entry`
+
+Result: **4/4**.
+
+Directly replacing the runtime header is not source compatible with the current procfs implementation. The current kernel uses `struct proc_ops` and `proc_dir_entry::proc_ops`; the stock/redwood generation uses `struct file_operations` and `proc_dir_entry::proc_fops`.
+
+Therefore procfs requires a dual-ABI compatibility layer rather than a global source rollback.
+
+### scheduler
+
+The single header `kernel/sched/sched.h` is sufficient to reproduce both remaining scheduler CRCs:
+
+- `sched_setscheduler`
+- `wake_up_process`
+
+Result: **2/2**.
+
+The apparent `normal_compile_rc=2` for the `sched.h`-only case was not a source compile failure: all scheduler objects compiled, and the test stopped only because the isolated `kernel/sched/built-in.a` target expected `kernel/sched/walt/built-in.a`, which that narrow test did not build.
+
+Under the exact stock config:
+
+- `CONFIG_PERF_HUMANTASK=y`
+- `CONFIG_FAIR_GROUP_SCHED=n`
+
+The active stock/redwood difference that matters to the genksyms type graph is the extra `cfs_rq::min_vruntimex` field. Differences in `throttled_clock_*` are behind `CONFIG_FAIR_GROUP_SCHED` and are not active in this configuration.
+
+The next full-build prototype keeps the current runtime scheduler layout and exposes `min_vruntimex` only under `__GENKSYMS__`. For procfs, it keeps the current proc_ops runtime for reconstructed callers while exporting a real legacy `proc_create_data(..., const struct file_operations *, ...)` adapter for the stock QGKI module.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
