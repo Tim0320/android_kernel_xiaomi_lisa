@@ -24,6 +24,7 @@ jobs:
         mode:
           - control
           - stock-source-headers
+          - stock-all-headers
 
     runs-on: ubuntu-24.04
     timeout-minutes: 70
@@ -80,7 +81,7 @@ jobs:
           "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
 
       - name: Download exact stock IKHEADERS
-        if: matrix.mode == 'stock-source-headers'
+        if: matrix.mode != 'control'
         env:
           GH_TOKEN: ${{ github.token }}
           STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
@@ -193,6 +194,58 @@ jobs:
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             prepare scripts
+
+      - name: Overlay complete exact stock IKHEADERS after prepare
+        if: matrix.mode == 'stock-all-headers'
+        run: |
+          set -euo pipefail
+
+          python3 - stock-artifact/stock-kheaders . stock-all-overlay-manifest.txt <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          stock = Path(sys.argv[1])
+          dst = Path(sys.argv[2])
+          manifest = Path(sys.argv[3])
+
+          copied = []
+          for src in sorted(p for p in stock.rglob("*.h") if p.is_file()):
+              rel = src.relative_to(stock)
+              target = dst / rel
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(src, target)
+              copied.append(rel.as_posix())
+
+          manifest.write_text(
+              "\n".join(
+                  [
+                      f"copied={len(copied)}",
+                      "",
+                      "## COPIED",
+                      *copied,
+                  ]
+              )
+              + "\n"
+          )
+          print(f"STOCK_ALL_HEADERS_OVERLAID={len(copied)}")
+          PY
+
+          test -s stock-all-overlay-manifest.txt
+
+          for rel in \
+            include/generated/autoconf.h \
+            include/linux/device.h \
+            include/linux/fs.h \
+            include/linux/skbuff.h \
+            include/linux/netdevice.h
+          do
+            if [[ -f "$rel" ]]; then
+              echo "OVERLAY_FILE $rel $(sha256sum "$rel" | awk '{print $1}')"
+            else
+              echo "OVERLAY_FILE_MISSING $rel"
+            fi
+          done
 
       - name: Preserve direct genksyms CRC output
         run: |
@@ -342,5 +395,6 @@ jobs:
             overlay-abi-summary.txt
             all.symversions
             stock-overlay-manifest.txt
+            stock-all-overlay-manifest.txt
             out/**/*.symtypes
             out/**/*.symversions
