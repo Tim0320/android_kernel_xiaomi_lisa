@@ -17,6 +17,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - label: lineage-lisa-22.2
+            repo: https://github.com/LineageOS/android_kernel_xiaomi_sm8350.git
+            ref: lineage-22.2
           - label: qcom-lahaina-qssi14
             repo: https://github.com/fangkuaixiaoqiao/android_kernel_msm-5.4.git
             ref: msm-5.4-LA.UM.9.14.r1-25000.02-LAHAINA.QSSI14.0
