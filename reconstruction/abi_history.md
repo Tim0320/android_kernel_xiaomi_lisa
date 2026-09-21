@@ -203,6 +203,22 @@ Therefore the current build cannot be described as using an exact effective stoc
 
 The next probe overlays **all** recovered stock IKHEADERS after `prepare`, including generated/config headers, to test whether the stock generated preprocessor environment materially restores the 38-symbol CRC fingerprint.
 
+## Full stock IKHEADERS overlay reproduces the stock core ABI
+
+A three-way direct-genksyms experiment isolated the missing ingredient:
+
+| Mode | Present | Stock CRC matches |
+| --- | ---: | ---: |
+| control | 37/38 | 0/38 |
+| stock source headers only | 37/38 | 0/38 |
+| stock source + generated/config headers | 37/38 | **37/38** |
+
+Every symbol produced by the `stock-all-headers` probe exactly matched the stock Image/module oracle, including `module_layout`, device/platform, OF, regulator, IOMMU, kthread, IRQ, sysfs/kobject, page allocator, DMA and dma-buf CRCs.
+
+The only absent oracle symbol was `clk_get`; it was not a mismatch. The probe target list built `drivers/clk/clk.symtypes`, while `clk_get` is exported from `drivers/clk/clkdev.c`. A follow-up probe adds `drivers/clk/clkdev.symtypes`.
+
+This is strong experimental proof that the dominant KABI divergence came from the **effective generated preprocessor/config environment**, not from the implementation files alone. In particular, the exact stock IKHEADERS generated/config headers restore the stock genksyms type graph on the current reconstructed source for every tested observable core symbol.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
