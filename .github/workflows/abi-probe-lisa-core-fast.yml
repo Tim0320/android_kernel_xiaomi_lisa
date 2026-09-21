@@ -31,7 +31,7 @@ jobs:
       - name: Clone lisa-specific stock-derived core
         run: |
           set -euo pipefail
-          git clone --depth=1 --branch main https://github.com/CannedShroud/kernel_xiaomi_lisa.git kernel
+          git clone --filter=blob:none --single-branch --depth=1 --branch main https://github.com/CannedShroud/kernel_xiaomi_lisa.git kernel
           cd kernel
           test "$(git rev-parse HEAD)" = "fc6ec759ef1a5513c2576c11c463bb96145e7f36"
 
