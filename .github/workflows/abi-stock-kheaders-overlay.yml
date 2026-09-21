@@ -200,50 +200,94 @@ jobs:
         run: |
           set -euo pipefail
 
-          python3 - stock-artifact/stock-kheaders . stock-all-overlay-manifest.txt <<'PY'
+          python3 - stock-artifact/stock-kheaders . out stock-all-overlay-manifest.txt <<'PY'
           import shutil
           import sys
           from pathlib import Path
 
           stock = Path(sys.argv[1])
-          dst = Path(sys.argv[2])
-          manifest = Path(sys.argv[3])
+          src_root = Path(sys.argv[2])
+          out_root = Path(sys.argv[3])
+          manifest = Path(sys.argv[4])
 
-          copied = []
+          source_paths = []
+          generated_paths = []
+
+          def is_generated(rel):
+              text = rel.as_posix()
+              return (
+                  text.startswith("include/generated/")
+                  or text.startswith("include/config/")
+                  or text.startswith("arch/arm64/include/generated/")
+              )
+
           for src in sorted(p for p in stock.rglob("*.h") if p.is_file()):
               rel = src.relative_to(stock)
-              target = dst / rel
+              if is_generated(rel):
+                  target = out_root / rel
+                  generated_paths.append(rel.as_posix())
+              else:
+                  target = src_root / rel
+                  source_paths.append(rel.as_posix())
+
               target.parent.mkdir(parents=True, exist_ok=True)
               shutil.copyfile(src, target)
-              copied.append(rel.as_posix())
 
           manifest.write_text(
               "\n".join(
                   [
-                      f"copied={len(copied)}",
+                      f"source_headers={len(source_paths)}",
+                      f"generated_headers={len(generated_paths)}",
+                      f"total={len(source_paths) + len(generated_paths)}",
                       "",
-                      "## COPIED",
-                      *copied,
+                      "## SOURCE",
+                      *source_paths,
+                      "",
+                      "## GENERATED_TO_OUT",
+                      *generated_paths,
                   ]
               )
               + "\n"
           )
-          print(f"STOCK_ALL_HEADERS_OVERLAID={len(copied)}")
+
+          print(f"STOCK_ALL_SOURCE_HEADERS_OVERLAID={len(source_paths)}")
+          print(f"STOCK_ALL_GENERATED_HEADERS_OVERLAID={len(generated_paths)}")
+          print(
+              "STOCK_ALL_HEADERS_OVERLAID="
+              f"{len(source_paths) + len(generated_paths)}"
+          )
           PY
 
           test -s stock-all-overlay-manifest.txt
 
+          # O=out requires these generated paths to remain outside srctree.
+          test ! -d include/config
+          test ! -d arch/arm64/include/generated
+          test ! -f .config
+          echo "SOURCE_TREE_CLEAN_FOR_O_BUILD=1"
+
           for rel in \
             include/generated/autoconf.h \
+            include/config/auto.conf.cmd \
+            arch/arm64/include/generated/asm-offsets.h
+          do
+            if [[ -f "out/$rel" ]]; then
+              echo "OVERLAY_OUT_FILE $rel $(sha256sum "out/$rel" | awk '{print $1}')"
+            else
+              echo "OVERLAY_OUT_FILE_MISSING $rel"
+            fi
+          done
+
+          for rel in \
             include/linux/device.h \
             include/linux/fs.h \
             include/linux/skbuff.h \
             include/linux/netdevice.h
           do
             if [[ -f "$rel" ]]; then
-              echo "OVERLAY_FILE $rel $(sha256sum "$rel" | awk '{print $1}')"
+              echo "OVERLAY_SOURCE_FILE $rel $(sha256sum "$rel" | awk '{print $1}')"
             else
-              echo "OVERLAY_FILE_MISSING $rel"
+              echo "OVERLAY_SOURCE_FILE_MISSING $rel"
             fi
           done
 
