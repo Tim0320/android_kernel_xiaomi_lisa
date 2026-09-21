@@ -1,0 +1,265 @@
+name: Extract exact Lisa stock embedded kernel headers
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/extract-stock-kheaders.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-stock-kheaders
+  cancel-in-progress: true
+
+jobs:
+  extract:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository with stock LFS images
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+
+      - name: Checkout reconstructed source for comparison
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          path: reconstructed-source
+          fetch-depth: 1
+
+      - name: Install extraction tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip xz-utils tar
+          python3 -m pip install --break-system-packages git+https://github.com/marin-m/vmlinux-to-elf.git
+          command -v kallsyms-finder
+
+      - name: Extract exact raw stock Image
+        run: |
+          set -euo pipefail
+          boot="reconstruction/stock/stock-Image/boot.img"
+          test -f "$boot"
+          if grep -q '^version https://git-lfs.github.com/spec/v1' "$boot"; then
+            echo "boot.img is still an LFS pointer"
+            exit 20
+          fi
+
+          python3 - "$boot" stock-Image <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+
+          boot_path, out_path = sys.argv[1:]
+          data = Path(boot_path).read_bytes()
+          if data[:8] != b"ANDROID!":
+              raise SystemExit("not an Android boot image")
+
+          kernel_size = struct.unpack_from("<I", data, 8)[0]
+          header_version = struct.unpack_from("<I", data, 40)[0]
+          page_size = 4096 if header_version >= 3 else struct.unpack_from("<I", data, 36)[0]
+          start = page_size
+          image = data[start:start + kernel_size]
+
+          if len(image) != kernel_size:
+              raise SystemExit("truncated kernel payload")
+          if struct.unpack_from("<I", image, 0x38)[0] != 0x644D5241:
+              raise SystemExit("payload is not ARM64 Image")
+
+          Path(out_path).write_bytes(image)
+          print(f"BOOT_HEADER_VERSION={header_version}")
+          print(f"STOCK_IMAGE_SIZE={len(image)}")
+          PY
+
+          version="$(strings -a stock-Image | grep -m1 '^Linux version ' || true)"
+          echo "STOCK_VERSION=$version"
+          [[ "$version" == *"5.4.289-qgki-g5987d69e25da"* ]]
+
+      - name: Locate embedded IKHEADERS archive
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          test -s stock.kallsyms
+
+          echo "IKHEADERS_SYMBOLS:"
+          grep -E ' (kernel_headers_data|kernel_headers_data_end)$' stock.kallsyms
+
+          python3 - stock-Image stock.kallsyms stock-kheaders.tar.xz <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+
+          image_path, kallsyms_path, out_path = sys.argv[1:]
+          image = Path(image_path).read_bytes()
+
+          syms = {}
+          for line in Path(kallsyms_path).read_text(errors="replace").splitlines():
+              parts = line.split()
+              if len(parts) >= 3:
+                  try:
+                      syms[parts[-1]] = int(parts[0], 16)
+                  except ValueError:
+                      pass
+
+          required = ["_text", "kernel_headers_data", "kernel_headers_data_end"]
+          missing = [x for x in required if x not in syms]
+          if missing:
+              raise SystemExit("missing kallsyms: " + ", ".join(missing))
+
+          base = syms["_text"]
+          start_va = syms["kernel_headers_data"]
+          end_va = syms["kernel_headers_data_end"]
+          start = start_va - base
+          end = end_va - base
+
+          print(f"IMAGE_BASE=0x{base:x}")
+          print(f"IKHEADERS_START_VA=0x{start_va:x}")
+          print(f"IKHEADERS_END_VA=0x{end_va:x}")
+          print(f"IKHEADERS_START_OFFSET=0x{start:x}")
+          print(f"IKHEADERS_END_OFFSET=0x{end:x}")
+          print(f"IKHEADERS_SIZE={end-start}")
+
+          if start < 0 or end <= start or end > len(image):
+              raise SystemExit("IKHEADERS address range is outside raw Image")
+
+          blob = image[start:end]
+          if not blob.startswith(b"\xfd7zXZ\x00"):
+              raise SystemExit(
+                  "IKHEADERS range does not begin with XZ magic: "
+                  + blob[:16].hex()
+              )
+
+          Path(out_path).write_bytes(blob)
+          PY
+
+          test -s stock-kheaders.tar.xz
+          xz -t stock-kheaders.tar.xz
+          sha256sum stock-kheaders.tar.xz
+          ls -lh stock-kheaders.tar.xz
+
+      - name: Extract and inspect stock kernel headers
+        run: |
+          set -euo pipefail
+          rm -rf stock-kheaders
+          mkdir stock-kheaders
+          tar -xJf stock-kheaders.tar.xz -C stock-kheaders
+
+          find stock-kheaders -type f | sort > stock-kheaders-files.txt
+          echo "STOCK_KHEADERS_FILE_COUNT=$(wc -l < stock-kheaders-files.txt)"
+          sed -n '1,120p' stock-kheaders-files.txt
+
+          critical=(
+            include/linux/device.h
+            include/linux/fs.h
+            include/linux/mm.h
+            include/linux/mm_types.h
+            include/linux/of.h
+            include/linux/module.h
+            include/linux/pci.h
+            include/linux/skbuff.h
+            include/linux/netdevice.h
+            include/linux/blkdev.h
+            include/linux/bio.h
+            include/linux/regmap.h
+            include/linux/mmc/host.h
+            include/linux/regulator/consumer.h
+            include/linux/regulator/driver.h
+            include/net/sock.h
+            include/net/net_namespace.h
+            include/scsi/scsi_device.h
+            include/scsi/scsi_host.h
+            include/ufs/ufshcd.h
+            include/drm/drm_device.h
+          )
+
+          {
+            echo "# Exact stock IKHEADERS comparison"
+            echo
+            echo "kernel=5.4.289-qgki-g5987d69e25da"
+            echo "archive_sha256=$(sha256sum stock-kheaders.tar.xz | awk '{print $1}')"
+            echo "file_count=$(wc -l < stock-kheaders-files.txt)"
+            echo
+            echo -e "path\tstock_sha256\treconstruction_sha256\tidentical"
+          } > stock-kheaders-comparison.tsv
+
+          for rel in "${critical[@]}"; do
+            stock="stock-kheaders/$rel"
+            current="reconstructed-source/$rel"
+
+            if [[ ! -f "$stock" ]]; then
+              echo -e "$rel\tMISSING_IN_STOCK_ARCHIVE\t-\t-" >> stock-kheaders-comparison.tsv
+              continue
+            fi
+
+            stock_sha="$(sha256sum "$stock" | awk '{print $1}')"
+            if [[ ! -f "$current" ]]; then
+              echo -e "$rel\t$stock_sha\tMISSING_CURRENT\t0" >> stock-kheaders-comparison.tsv
+              continue
+            fi
+
+            current_sha="$(sha256sum "$current" | awk '{print $1}')"
+            if cmp -s "$stock" "$current"; then
+              same=1
+            else
+              same=0
+            fi
+            echo -e "$rel\t$stock_sha\t$current_sha\t$same" >> stock-kheaders-comparison.tsv
+          done
+
+          cat stock-kheaders-comparison.tsv
+
+      - name: Produce focused root-type diffs
+        run: |
+          set -euo pipefail
+          mkdir -p root-type-diffs
+
+          files=(
+            include/linux/device.h
+            include/linux/fs.h
+            include/linux/mm_types.h
+            include/linux/of.h
+            include/linux/module.h
+            include/linux/skbuff.h
+            include/linux/netdevice.h
+            include/linux/blkdev.h
+            include/linux/bio.h
+            include/net/sock.h
+            include/net/net_namespace.h
+            include/scsi/scsi_device.h
+          )
+
+          for rel in "${files[@]}"; do
+            stock="stock-kheaders/$rel"
+            current="reconstructed-source/$rel"
+            [[ -f "$stock" && -f "$current" ]] || continue
+            safe="${rel//\//__}"
+            diff -u "$current" "$stock" > "root-type-diffs/$safe.diff" || true
+          done
+
+          echo "ROOT_TYPE_DIFF_FILES=$(find root-type-diffs -type f | wc -l)"
+          for f in root-type-diffs/*.diff; do
+            [[ -f "$f" ]] || continue
+            echo "===== $f ====="
+            sed -n '1,120p' "$f"
+          done
+
+      - name: Upload exact stock header evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-exact-stock-kheaders
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            stock-kheaders.tar.xz
+            stock-kheaders/
+            stock-kheaders-files.txt
+            stock-kheaders-comparison.tsv
+            root-type-diffs/
+            stock.kallsyms
