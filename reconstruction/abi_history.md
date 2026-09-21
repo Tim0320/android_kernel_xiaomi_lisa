@@ -153,6 +153,22 @@ Important limitation: IKHEADERS does not necessarily contain every private drive
 
 The next step is a **header-lineage fingerprint**: compare all 7,804 recovered stock headers against the previously tested Qualcomm/Xiaomi/public candidate trees and rank them by exact file identity and by critical root-type-header similarity. This is safer than copying stock headers wholesale into a source tree whose implementations may not match them.
 
+## Header-lineage fingerprint methodology correction
+
+The first exact-SHA lineage pass against the recovered IKHEADERS archive completed successfully but its raw identity percentages are **not valid lineage scores**.
+
+Reason: `kernel/gen_kheaders.sh` removes all C block comments except SPDX blocks before creating `kheaders_data.tar.xz`. The stock archive is therefore comment-stripped, while the candidate source trees used raw source headers. This systematically caused false differences, including 0/19 exact matches across the critical root-type header set and overall raw exact rates near 2.8%.
+
+The first-pass raw numbers must not be used to rank candidate source families.
+
+The lineage workflow was corrected to:
+
+1. reproduce the same IKHEADERS comment-removal transform on every candidate header before hashing;
+2. separate generated build headers (`include/generated`, `include/config`, and arch generated headers) from source-header coverage;
+3. report normalized source-header exact rate and normalized critical-root-header exact rate.
+
+Corrected workflow commit: `ceefc4e3`.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
