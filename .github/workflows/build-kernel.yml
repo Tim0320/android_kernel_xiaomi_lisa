@@ -117,39 +117,32 @@ jobs:
         run: |
           set -euo pipefail
 
-          kbuild() {
-            make -j"$(nproc)" O=out \
-              ARCH=arm64 \
-              CC=clang LLVM=1 LLVM_IAS=1 \
-              CROSS_COMPILE=aarch64-linux-gnu- \
-              CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-              CLANG_TRIPLE=aarch64-linux-gnu- "$@"
-          }
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 \
+            CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            modules_prepare
 
-          kbuild prepare scripts
-          kbuild \
-            drivers/misc/mi-memory/mem_interface.o \
-            drivers/input/touchscreen/xiaomi/xiaomi_touch.o
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 \
+            CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            drivers/misc/mi-memory/ \
+            drivers/input/touchscreen/xiaomi/
 
-          crc_from_obj() {
-            local obj="$1"
-            local symbol="$2"
-            local raw
-            raw="$(nm "$obj" | awk -v sym="__crc_$symbol" '$3 == sym {print tolower($1); exit}')"
-            if [[ -z "$raw" ]]; then
-              echo "CRC_MISSING: $symbol in $obj"
-              return 1
-            fi
-            echo "0x${raw: -8}"
-          }
+          test -s out/Module.symvers
 
           probe_fail=0
-          check_obj_crc() {
-            local obj="$1"
-            local symbol="$2"
-            local expected="$3"
+          check_crc() {
+            local symbol="$1"
+            local expected="$2"
             local actual
-            actual="$(crc_from_obj "$obj" "$symbol")" || {
+            actual="$(awk -v sym="$symbol" '$2 == sym {print tolower($1); found=1} END {if (!found) exit 1}' out/Module.symvers)" || {
+              echo "CRC_MISSING: $symbol"
               probe_fail=1
               return
             }
@@ -160,19 +153,16 @@ jobs:
             fi
           }
 
-          UFS_OBJ=out/drivers/misc/mi-memory/mem_interface.o
-          TOUCH_OBJ=out/drivers/input/touchscreen/xiaomi/xiaomi_touch.o
-
-          check_obj_crc "$UFS_OBJ" get_ufs_data 0xfa507f92
-          check_obj_crc "$UFS_OBJ" get_ufs_hba_data 0xc40eabac
-          check_obj_crc "$UFS_OBJ" get_ufs_sdev_data 0xc5bbd8a8
-          check_obj_crc "$UFS_OBJ" memblock_mem_size_in_gb 0x84fd4cc1
-          check_obj_crc "$UFS_OBJ" ufs_get_string_desc 0x479d5ded
-          check_obj_crc "$UFS_OBJ" ufs_read_desc_param 0x16548413
-          check_obj_crc "$UFS_OBJ" ufshcd_read_desc 0xa93e3b58
-          check_obj_crc "$TOUCH_OBJ" last_touch_events_collect 0x9e978bfa
-          check_obj_crc "$TOUCH_OBJ" update_palm_sensor_value 0x49118811
-          check_obj_crc "$TOUCH_OBJ" xiaomitouch_register_modedata 0x1d883975
+          check_crc get_ufs_data 0xfa507f92
+          check_crc get_ufs_hba_data 0xc40eabac
+          check_crc get_ufs_sdev_data 0xc5bbd8a8
+          check_crc memblock_mem_size_in_gb 0x84fd4cc1
+          check_crc ufs_get_string_desc 0x479d5ded
+          check_crc ufs_read_desc_param 0x16548413
+          check_crc ufshcd_read_desc 0xa93e3b58
+          check_crc last_touch_events_collect 0x9e978bfa
+          check_crc update_palm_sensor_value 0x49118811
+          check_crc xiaomitouch_register_modedata 0x1d883975
 
           if [[ "$probe_fail" -ne 0 ]]; then
             echo "Targeted ABI probe failed; skipping expensive full build."
