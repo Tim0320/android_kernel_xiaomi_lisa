@@ -27,6 +27,22 @@ The stock ARM64 binary uses 24-byte absolute `struct kernel_symbol` entries in t
 
 This validation means the historical 0/38 results for tested public source families cannot be explained by an incorrect `msm_drm.ko` oracle.
 
+## Full stock Image vs Build #53 vmlinux ABI
+
+The exact stock Image was compared against the `vmlinux` rows of Build #53 `Module.symvers` only. External module exports were excluded from the core comparison.
+
+- stock Image exports: **13,360**
+- reconstructed vmlinux exports: **14,031**
+- symbol-name overlap: **13,257**
+- CRC matches: **4,099**
+- CRC mismatches: **9,158**
+- stock-only symbols: **103**
+- reconstructed-vmlinux-only symbols: **774**
+- overlap CRC match rate: **30.92%**
+- Build #53 external-module exports, tracked separately: **300**
+
+The stock-name coverage is **13,257 / 13,360 = 99.23%**, so the dominant problem is not missing exported functionality. The dominant gap is ABI/type-signature divergence among symbols that exist in both kernels.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
