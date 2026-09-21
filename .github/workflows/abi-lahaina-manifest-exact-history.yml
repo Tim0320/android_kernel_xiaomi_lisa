@@ -1,4 +1,4 @@
-name: Probe manifest-exact early Lahaina ABI
+name: Probe fixed exact early Lahaina ABI
 
 on:
   workflow_dispatch:
@@ -17,35 +17,29 @@ jobs:
       matrix:
         include:
           - label: lahaina-15400
-            tag: LA.UM.9.14.r1-15400-LAHAINA.0
-            fixed_ref: ""
-          - label: lahaina-15500
-            tag: LA.UM.9.14.r1-15500-LAHAINA.0
-            fixed_ref: ""
-          - label: lahaina-15600-qssi12
-            tag: LA.UM.9.14.r1-15600-LAHAINA.QSSI12.0
-            fixed_ref: ""
+            releases: LA.UM.9.14.r1-15400-LAHAINA.0
+            ref: 4065f0ea2f5e0009cac9034fe4d6f1e028bdb8e9
+          - label: lahaina-15500-15600-qssi12
+            releases: LA.UM.9.14.r1-15500-LAHAINA.0 / LA.UM.9.14.r1-15600-LAHAINA.QSSI12.0
+            ref: 5ad0937ee3cc5d56c3b80e181393e2a9281520de
           - label: lahaina-15800
-            tag: LA.UM.9.14.r1-15800-LAHAINA.0
-            fixed_ref: ""
-          - label: lahaina-16100
-            tag: LA.UM.9.14.r1-16100-LAHAINA.0
-            fixed_ref: ""
-          - label: lahaina-16100.01-qssi12
-            tag: LA.UM.9.14.r1-16100.01-LAHAINA.QSSI12.0
-            fixed_ref: ""
+            releases: LA.UM.9.14.r1-15800-LAHAINA.0
+            ref: 02c90c6a7bea78ebcd39f2e467b9e6fe34a2b86d
+          - label: lahaina-16100-16100.01-qssi12
+            releases: LA.UM.9.14.r1-16100-LAHAINA.0 / LA.UM.9.14.r1-16100.01-LAHAINA.QSSI12.0
+            ref: 7a4b43854304219cec6e1f58c2e16b54dfc37608
           - label: lahaina-16300
-            tag: LA.UM.9.14.r1-16300-LAHAINA.0
-            fixed_ref: ""
+            releases: LA.UM.9.14.r1-16300-LAHAINA.0
+            ref: 178ecd92d9856a4de0a7690a9d3ac994e4d7c9d4
           - label: lahaina-16700
-            tag: LA.UM.9.14.r1-16700-LAHAINA.0
-            fixed_ref: ""
+            releases: LA.UM.9.14.r1-16700-LAHAINA.0
+            ref: bec53eadb657dfe7f42fc939ddcc1000959cc2aa
           - label: lahaina-16900
-            tag: LA.UM.9.14.r1-16900-LAHAINA.0
-            fixed_ref: ""
+            releases: LA.UM.9.14.r1-16900-LAHAINA.0
+            ref: 203d4a97455e95f81738823edbb34b17c55fec43
           - label: lahaina-17700-control
-            tag: LA.UM.9.14.r1-17700-LAHAINA.0
-            fixed_ref: 21af954d9156c3da3a3a47fef5dbf23526691ba5
+            releases: LA.UM.9.14.r1-17700-LAHAINA.0
+            ref: 21af954d9156c3da3a3a47fef5dbf23526691ba5
 
     runs-on: ubuntu-24.04
     timeout-minutes: 55
@@ -78,78 +72,23 @@ jobs:
             -o "$ARCHIVE"
           tar -xzf "$ARCHIVE" -C "$DEST"
 
-      - name: Resolve exact kernel revision from Qualcomm vendor manifest
-        id: resolve
-        run: |
-          set -euo pipefail
-          tag="${{ matrix.tag }}"
-          fixed="${{ matrix.fixed_ref }}"
-          echo "MANIFEST_TAG=$tag"
-
-          if [[ -n "$fixed" ]]; then
-            rev="$fixed"
-            echo "REVISION_SOURCE=fixed-exact"
-          else
-            manifest="/tmp/$tag.xml"
-            ok=0
-            for branch in master main; do
-              url="https://gitlab.com/TadiT7/la_vendor_manifest/-/raw/$branch/$tag.xml"
-              echo "TRY_MANIFEST=$url"
-              if curl -L --fail --retry 4 --retry-delay 2 "$url" -o "$manifest"; then
-                ok=1
-                break
-              fi
-            done
-            if [[ "$ok" != "1" ]]; then
-              echo "Unable to fetch vendor manifest for $tag"
-              exit 20
-            fi
-
-            rev="$(python3 - "$manifest" <<'PY'
-          import sys
-          import xml.etree.ElementTree as ET
-          root = ET.parse(sys.argv[1]).getroot()
-          for p in root.iter("project"):
-              if p.attrib.get("name") == "kernel/msm-5.4":
-                  print(p.attrib.get("revision", ""))
-                  break
-          PY
-            )"
-            echo "REVISION_SOURCE=vendor-manifest"
-          fi
-
-          if [[ ! "$rev" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "Invalid kernel/msm-5.4 revision: $rev"
-            exit 21
-          fi
-
-          if [[ "${{ matrix.label }}" == "lahaina-16900" ]]; then
-            test "$rev" = "203d4a97455e95f81738823edbb34b17c55fec43"
-            echo "MANIFEST_16900_CONTROL_OK=1"
-          fi
-
-          echo "KERNEL_REVISION=$rev"
-          echo "kernel_revision=$rev" >> "$GITHUB_OUTPUT"
-
       - name: Fetch exact Qualcomm core revision from preserved mirror
         run: |
           set -euo pipefail
-          rev="${{ steps.resolve.outputs.kernel_revision }}"
+          rev="${{ matrix.ref }}"
           mirror=https://github.com/AayamPokhrel/Kernel_Xiaomi_Stone_Chaos.git
+
+          echo "GENKSYMS_LABEL=${{ matrix.label }}"
+          echo "GENKSYMS_RELEASES=${{ matrix.releases }}"
+          echo "EXPECTED_HEAD=$rev"
+
           mkdir kernel
           git -C kernel init
           git -C kernel remote add origin "$mirror"
-
-          if ! git -C kernel fetch --depth=1 origin "$rev"; then
-            echo "Primary mirror missing $rev, trying Nothing SM7325 mirror"
-            git -C kernel remote set-url origin https://github.com/hiper25-OpenSource/kernel_nothing_sm7325.git
-            git -C kernel fetch --depth=1 origin "$rev"
-          fi
-
+          git -C kernel fetch --depth=1 origin "$rev"
           git -C kernel checkout --detach FETCH_HEAD
+
           cd kernel
-          echo "GENKSYMS_LABEL=${{ matrix.label }}"
-          echo "GENKSYMS_TAG=${{ matrix.tag }}"
           echo "GENKSYMS_HEAD=$(git rev-parse HEAD)"
           test "$(git rev-parse HEAD)" = "$rev"
 
@@ -160,6 +99,7 @@ jobs:
         run: |
           set -euo pipefail
           cd kernel
+
           export ARCH=arm64
           export CROSS_COMPILE=aarch64-linux-gnu-
           export CLANG_TRIPLE=aarch64-linux-gnu-
@@ -170,7 +110,9 @@ jobs:
 
           test -f arch/arm64/configs/vendor/lahaina_GKI.config
           test -f arch/arm64/configs/vendor/lahaina_QGKI.config
+          test -f scripts/gki/generate_defconfig.sh
           chmod +x scripts/gki/generate_defconfig.sh
+
           scripts/gki/generate_defconfig.sh vendor/lahaina-qgki_defconfig
 
           mkdir -p out
@@ -210,6 +152,7 @@ jobs:
         run: |
           set -euo pipefail
           cd kernel
+
           targets=(
             kernel/module.symtypes
             drivers/base/core.symtypes
@@ -239,10 +182,11 @@ jobs:
               CLANG_TRIPLE=aarch64-linux-gnu- "$t"
           done
 
-      - name: Score exact manifest revision
+      - name: Score exact early Lahaina revision
         run: |
           set -euo pipefail
           cd kernel
+
           find out -name '*.symversions' -type f -print0 | xargs -0 cat > /tmp/all.symversions
           test -s /tmp/all.symversions
 
@@ -301,20 +245,22 @@ jobs:
           check dma_buf_attach 0x995856d1
           check dma_buf_map_attachment 0x3d20e038
 
-          echo "MANIFEST_GENKSYMS_PRESENT=$present/$total"
-          echo "MANIFEST_GENKSYMS_SCORE=$score/$total"
+          echo "EARLY_LAHAINA_PRESENT=$present/$total"
+          echo "EARLY_LAHAINA_SCORE=$score/$total"
 
           if [[ "${{ matrix.label }}" == "lahaina-17700-control" ]]; then
             grep -q '__crc_module_layout = 0x9024fb67;' /tmp/all.symversions
             grep -q '__crc_device_register = 0xed2b9680;' /tmp/all.symversions
-            echo "MANIFEST_HISTORY_CONTROL_OK=1"
+            grep -q '__crc_device_unregister = 0xeeafcd98;' /tmp/all.symversions
+            grep -q '__crc_dev_driver_string = 0x0b85f108;' /tmp/all.symversions
+            echo "EARLY_LAHAINA_CONTROL_OK=1"
           fi
 
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: manifest-exact-${{ matrix.label }}
+          name: early-lahaina-${{ matrix.label }}
           retention-days: 7
           include-hidden-files: true
           path: |
