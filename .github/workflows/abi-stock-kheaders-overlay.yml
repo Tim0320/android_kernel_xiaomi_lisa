@@ -1,0 +1,346 @@
+name: Probe Lisa ABI with exact stock IKHEADERS overlay
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-stock-kheaders-overlay.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-stock-kheaders-overlay
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - control
+          - stock-source-headers
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+
+    steps:
+      - name: Checkout reconstructed kernel
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            cpio kmod rsync python3 curl xz-utils unzip
+
+      - name: Cache stock-generation AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install stock-generation AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            "$DEST/bin/clang" --version
+            exit 0
+          fi
+
+          urls=(
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r46/clang-r383902b1.tar.gz"
+          )
+          ok=0
+          for url in "${urls[@]}"; do
+            rm -f "$ARCHIVE"
+            if curl -L --fail --retry 5 --retry-all-errors "$url" -o "$ARCHIVE" \
+                && tar -tzf "$ARCHIVE" >/dev/null; then
+              ok=1
+              break
+            fi
+          done
+          test "$ok" -eq 1
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
+
+      - name: Download exact stock IKHEADERS
+        if: matrix.mode == 'stock-source-headers'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders-artifact.zip
+          unzip -q stock-kheaders-artifact.zip -d stock-artifact
+          test -d stock-artifact/stock-kheaders
+          echo "STOCK_KHEADERS_FILES=$(find stock-artifact/stock-kheaders -type f | wc -l)"
+
+      - name: Overlay exact stock source headers
+        if: matrix.mode == 'stock-source-headers'
+        run: |
+          set -euo pipefail
+
+          python3 - stock-artifact/stock-kheaders . stock-overlay-manifest.txt <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          stock = Path(sys.argv[1])
+          dst = Path(sys.argv[2])
+          manifest = Path(sys.argv[3])
+
+          copied = []
+          skipped_generated = []
+          missing_parent = []
+
+          def generated(rel):
+              return (
+                  rel.startswith("include/generated/")
+                  or rel.startswith("include/config/")
+                  or rel.startswith("arch/arm64/include/generated/")
+              )
+
+          for src in sorted(p for p in stock.rglob("*.h") if p.is_file()):
+              rel = src.relative_to(stock).as_posix()
+              if generated(rel):
+                  skipped_generated.append(rel)
+                  continue
+
+              # IKHEADERS contains only include/ and arch/$SRCARCH/include/.
+              # Copy the exact comment-stripped header content over the
+              # reconstructed source only for source-header paths.
+              target = dst / rel
+              target.parent.mkdir(parents=True, exist_ok=True)
+              if not target.parent.exists():
+                  missing_parent.append(rel)
+                  continue
+              shutil.copyfile(src, target)
+              copied.append(rel)
+
+          manifest.write_text(
+              "\n".join(
+                  [
+                      f"copied={len(copied)}",
+                      f"skipped_generated={len(skipped_generated)}",
+                      f"missing_parent={len(missing_parent)}",
+                      "",
+                      "## COPIED",
+                      *copied,
+                      "",
+                      "## SKIPPED_GENERATED",
+                      *skipped_generated,
+                  ]
+              )
+              + "\n"
+          )
+          print(f"STOCK_SOURCE_HEADERS_OVERLAID={len(copied)}")
+          print(f"STOCK_GENERATED_HEADERS_SKIPPED={len(skipped_generated)}")
+          PY
+
+          test -s stock-overlay-manifest.txt
+          head -n 30 stock-overlay-manifest.txt
+
+      - name: Generate exact Lisa stock config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          source reconstruction/manifest.env
+          test -s reconstruction/stock_ikconfig
+          test "$(git hash-object reconstruction/stock_ikconfig)" = "$STOCK_IKCONFIG_BLOB"
+
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 \
+            CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            olddefconfig
+
+          grep -qx 'CONFIG_MODVERSIONS=y' out/.config
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 \
+            CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            prepare scripts
+
+      - name: Preserve direct genksyms CRC output
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+          old = '    $(call cmd_gensymtypes_c,true,$@) >/dev/null;                           \\\n'
+          new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
+          if old not in s:
+              raise SystemExit("direct genksyms rule not found")
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Generate core ABI CRCs directly
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+
+          targets=(
+            kernel/module.symtypes
+            drivers/base/core.symtypes
+            drivers/base/platform.symtypes
+            drivers/base/power/runtime.symtypes
+            drivers/of/base.symtypes
+            drivers/of/address.symtypes
+            drivers/clk/clk.symtypes
+            drivers/iommu/iommu.symtypes
+            drivers/regulator/core.symtypes
+            kernel/kthread.symtypes
+            kernel/irq/irqdomain.symtypes
+            fs/sysfs/group.symtypes
+            lib/kobject.symtypes
+            mm/page_alloc.symtypes
+            kernel/dma/direct.symtypes
+            kernel/dma/mapping.symtypes
+            drivers/dma-buf/dma-buf.symtypes
+          )
+
+          success=0
+          fail=0
+          for t in "${targets[@]}"; do
+            echo "=== GENKSYMS $t ==="
+            if make -j"$(nproc)" O=out \
+                ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+                CROSS_COMPILE=aarch64-linux-gnu- \
+                CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+                CLANG_TRIPLE=aarch64-linux-gnu- "$t"; then
+              success=$((success + 1))
+            else
+              fail=$((fail + 1))
+            fi
+          done
+
+          echo "GENKSYMS_TARGET_SUCCESS=$success"
+          echo "GENKSYMS_TARGET_FAIL=$fail"
+
+          find out -name '*.symversions' -type f -print0 | xargs -0 cat > all.symversions || true
+          test -s all.symversions
+
+      - name: Score exact stock core ABI
+        run: |
+          set -euo pipefail
+
+          mode="${{ matrix.mode }}"
+          score=0
+          total=0
+          present=0
+
+          check() {
+            local symbol="$1" expected="$2"
+            local actual
+            total=$((total + 1))
+            actual="$(sed -n "s/^__crc_${symbol} = \(0x[0-9a-fA-F]*\);/\1/p" all.symversions | head -n1)"
+            actual="${actual,,}"
+            [[ -n "$actual" ]] && present=$((present + 1)) || true
+            echo "OVERLAY_ABI\t$mode\t$symbol\tcandidate=${actual:-MISSING}\tstock=$expected"
+            [[ "$actual" == "$expected" ]] && score=$((score + 1)) || true
+          }
+
+          check module_layout 0xba39cbb8
+          check device_register 0xcf9bcdee
+          check device_unregister 0x4678e0d9
+          check dev_driver_string 0x22a8544f
+          check device_create 0xbebfb31d
+          check __platform_driver_register 0x8a28799a
+          check platform_driver_unregister 0xb1643fd1
+          check platform_get_irq 0xbcc683a6
+          check platform_get_resource 0x0b50f5aa
+          check platform_get_resource_byname 0x67870233
+          check __pm_runtime_resume 0xd7ceaec5
+          check pm_runtime_enable 0x69233960
+          check of_find_property 0x7bfb6ef3
+          check of_get_property 0x3f86cb17
+          check of_parse_phandle 0x5d8562ca
+          check of_address_to_resource 0x6f7055af
+          check of_device_is_compatible 0xb56ea40d
+          check clk_get 0xf8127647
+          check clk_register 0xab9a55da
+          check iommu_attach_device 0x0c54e55f
+          check iommu_map 0xa106c11d
+          check iommu_unmap 0xe1da4443
+          check regulator_get 0xf7c6097c
+          check regulator_enable 0x691df2d6
+          check regulator_set_voltage 0x54cdbf0a
+          check kthread_create_on_node 0x947eb746
+          check kthread_stop 0x97198f13
+          check irq_domain_remove 0x160aa18c
+          check irq_find_mapping 0x6fb78324
+          check sysfs_create_group 0x0965d890
+          check kobject_create_and_add 0x93a00376
+          check __free_pages 0x419e8d31
+          check adjust_managed_page_count 0xcf0c4b39
+          check dma_direct_map_page 0x803f2855
+          check dma_direct_map_sg 0x9e7457c3
+          check dma_alloc_attrs 0x1c3c2bb3
+          check dma_buf_attach 0x995856d1
+          check dma_buf_map_attachment 0x3d20e038
+
+          echo "OVERLAY_ABI_MODE=$mode"
+          echo "OVERLAY_ABI_PRESENT=$present/$total"
+          echo "OVERLAY_ABI_SCORE=$score/$total"
+
+          {
+            echo "mode=$mode"
+            echo "present=$present/$total"
+            echo "score=$score/$total"
+          } > overlay-abi-summary.txt
+
+          if [[ "$mode" == "control" ]]; then
+            grep -q '__crc_module_layout = 0x0816e668;' all.symversions
+            echo "OVERLAY_CONTROL_OK=1"
+          fi
+
+      - name: Upload overlay ABI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-kheaders-overlay-${{ matrix.mode }}
+          retention-days: 10
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            overlay-abi-summary.txt
+            all.symversions
+            stock-overlay-manifest.txt
+            out/**/*.symtypes
+            out/**/*.symversions
