@@ -148,7 +148,22 @@ for old, new in proc_replacements.items():
 if "CONFIG_BOARD_XAIOMI_LISA" not in text:
     raise SystemExit("Goodix misspelled lisa board macro not found")
 text = text.replace("CONFIG_BOARD_XAIOMI_LISA", "CONFIG_BOARD_XIAOMI_LISA")
+path.write_text(text)
 
+# The vendor source references the lisa board selector but does not define a
+# matching Kconfig symbol. scripts/config can write an unknown symbol into
+# .config, but olddefconfig then drops it. Define the reconstructed selector so
+# the corrected Goodix lisa DT path can actually be enabled by the build.
+path = Path("drivers/input/touchscreen/gt9897t/Kconfig")
+text = path.read_text()
+if "config BOARD_XIAOMI_LISA" not in text:
+    text += """
+config BOARD_XIAOMI_LISA
+	bool "Xiaomi lisa Goodix board support"
+	default n
+	help
+	  Enable the lisa-specific Goodix device-tree configuration path.
+"""
 path.write_text(text)
 
 # Stock lisa vendor-module CRC evidence shows that xiaomitouch_register_modedata
