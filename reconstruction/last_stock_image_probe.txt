@@ -1,7 +1,7 @@
 # Stock Image ABI probe diagnostic
 
-commit=c0b811fbfffd0a23a5cfa42f759e4c4ebaedcfbe
-run_id=35593952003
+commit=a11e9dc6b1ae2e9befccf243af9fe94a16ef1383
+run_id=35594561721
 run_attempt=1
 
 install=success
@@ -14,40 +14,40 @@ compare=failure
 ===== diagnostics/01-install.log =====
 Get:1 file:/etc/apt/apt-mirrors.txt Mirrorlist [144 B]
 Hit:2 http://azure.archive.ubuntu.com/ubuntu noble InRelease
+Get:6 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
 Get:3 http://azure.archive.ubuntu.com/ubuntu noble-updates InRelease [126 kB]
 Get:4 http://azure.archive.ubuntu.com/ubuntu noble-backports InRelease [126 kB]
 Get:5 http://azure.archive.ubuntu.com/ubuntu noble-security InRelease [126 kB]
-Get:6 https://dl.google.com/linux/chrome-stable/deb stable InRelease [2548 B]
-Get:7 https://packages.microsoft.com/ubuntu/24.04/prod noble InRelease [3600 B]
-Get:8 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1275 kB]
-Get:9 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [294 kB]
-Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
-Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1689 kB]
-Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [338 kB]
-Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [387 kB]
-Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1580 kB]
-Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [359 kB]
-Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [45.7 kB]
-Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [13.1 kB]
-Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
-Get:19 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Packages [40.6 kB]
-Get:20 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5744 B]
-Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [31.0 kB]
-Get:22 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe Translation-en [18.6 kB]
-Get:23 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
-Get:24 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1009 kB]
-Get:25 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [214 kB]
-Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
-Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1208 kB]
-Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [243 kB]
-Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
-Get:30 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1449 kB]
-Get:31 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [336 kB]
-Get:33 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages [1408 B]
-Get:32 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse Translation-en [11.3 kB]
-Get:34 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [478 kB]
-Get:35 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [429 kB]
-Fetched 12.2 MB in 1s (9090 kB/s)
+Get:7 https://dl.google.com/linux/chrome-stable/deb stable InRelease [2548 B]
+Get:8 https://packages.microsoft.com/ubuntu/24.04/prod noble/main amd64 Packages [478 kB]
+Get:9 https://packages.microsoft.com/ubuntu/24.04/prod noble/main arm64 Packages [429 kB]
+Get:10 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Packages [1275 kB]
+Get:11 http://azure.archive.ubuntu.com/ubuntu noble-updates/main Translation-en [294 kB]
+Get:12 http://azure.archive.ubuntu.com/ubuntu noble-updates/main amd64 Components [181 kB]
+Get:13 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Packages [1689 kB]
+Get:14 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe Translation-en [338 kB]
+Get:15 http://azure.archive.ubuntu.com/ubuntu noble-updates/universe amd64 Components [387 kB]
+Get:16 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted amd64 Packages [1580 kB]
+Get:17 http://azure.archive.ubuntu.com/ubuntu noble-updates/restricted Translation-en [359 kB]
+Get:18 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Packages [45.7 kB]
+Get:19 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse Translation-en [13.1 kB]
+Get:20 http://azure.archive.ubuntu.com/ubuntu noble-updates/multiverse amd64 Components [940 B]
+Get:21 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Packages [40.6 kB]
+Get:22 http://azure.archive.ubuntu.com/ubuntu noble-backports/main amd64 Components [5744 B]
+Get:23 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Packages [31.0 kB]
+Get:24 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe Translation-en [18.6 kB]
+Get:25 http://azure.archive.ubuntu.com/ubuntu noble-backports/universe amd64 Components [12.6 kB]
+Get:26 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Packages [1020 kB]
+Get:27 http://azure.archive.ubuntu.com/ubuntu noble-security/main Translation-en [215 kB]
+Get:28 http://azure.archive.ubuntu.com/ubuntu noble-security/main amd64 Components [46.4 kB]
+Get:29 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Packages [1217 kB]
+Get:30 http://azure.archive.ubuntu.com/ubuntu noble-security/universe Translation-en [244 kB]
+Get:31 http://azure.archive.ubuntu.com/ubuntu noble-security/universe amd64 Components [76.3 kB]
+Get:32 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted amd64 Packages [1480 kB]
+Get:33 http://azure.archive.ubuntu.com/ubuntu noble-security/restricted Translation-en [340 kB]
+Get:34 http://azure.archive.ubuntu.com/ubuntu noble-security/multiverse Translation-en [11.3 kB]
+Get:35 https://dl.google.com/linux/chrome-stable/deb stable/main amd64 Packages [1408 B]
+Fetched 12.2 MB in 1s (8830 kB/s)
 Reading package lists...
 Reading package lists...
 Building dependency tree...
@@ -76,10 +76,10 @@ boot.img:                                         Android bootimg, kernel (0x12f
 reconstruction/stock/stock-Image/vendor_boot.img: data
 reconstruction/stock/stock-Image/dtbo.img:        data
 reconstruction/stock/stock-Image/odm.img:         EROFS filesystem, compat: SB_CHKSUM, blocksize=12, exslots=0, uuid=318B2557-82AD-A751-BBFC-ADBEED567E53, incompat: LZ4_0PADDING
--rw-r--r-- 1 runner runner 192M Sep 21 11:25 boot.img
--rw-r--r-- 1 runner runner  16M Sep 21 11:25 reconstruction/stock/stock-Image/dtbo.img
--rw-r--r-- 1 runner runner  17M Sep 21 11:25 reconstruction/stock/stock-Image/odm.img
--rw-r--r-- 1 runner runner  96M Sep 21 11:25 reconstruction/stock/stock-Image/vendor_boot.img
+-rw-r--r-- 1 runner runner 192M Sep 21 11:32 boot.img
+-rw-r--r-- 1 runner runner  16M Sep 21 11:32 reconstruction/stock/stock-Image/dtbo.img
+-rw-r--r-- 1 runner runner  17M Sep 21 11:32 reconstruction/stock/stock-Image/odm.img
+-rw-r--r-- 1 runner runner  96M Sep 21 11:32 reconstruction/stock/stock-Image/vendor_boot.img
 e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1  boot.img
 c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a  reconstruction/stock/stock-Image/vendor_boot.img
 db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7  reconstruction/stock/stock-Image/dtbo.img
@@ -98,14 +98,14 @@ kernel-payload.bin: Linux kernel ARM64 boot executable Image, little-endian, 4K 
 stock-Image:        Linux kernel ARM64 boot executable Image, little-endian, 4K pages
 DETECTED_KERNEL_VERSION=Linux version 5.4.289-qgki-g5987d69e25da (builder@pangu-build-component-vendor-782710-d7t6c-5vpwd-rmpns) (Android (6877366 based on r383902b1) clang version 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79), LLD 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79)) #1 SMP PREEMPT Sun Dec 21 12:22:29 UTC 2025 f2fs-hash:990dc88b60
 TARGET_KERNEL_VERSION_CONFIRMED=1
--rw-r--r-- 1 runner runner 50M Sep 21 11:25 kernel-payload.bin
--rw-r--r-- 1 runner runner 50M Sep 21 11:25 stock-Image
+-rw-r--r-- 1 runner runner 50M Sep 21 11:32 kernel-payload.bin
+-rw-r--r-- 1 runner runner 50M Sep 21 11:32 stock-Image
 
 ===== diagnostics/04-tools.log =====
 Defaulting to user installation because normal site-packages is not writeable
 Collecting git+https://github.com/marin-m/vmlinux-to-elf.git
-  Cloning https://github.com/marin-m/vmlinux-to-elf.git to /tmp/pip-req-build-bfawzmkz
-  Running command git clone --filter=blob:none --quiet https://github.com/marin-m/vmlinux-to-elf.git /tmp/pip-req-build-bfawzmkz
+  Cloning https://github.com/marin-m/vmlinux-to-elf.git to /tmp/pip-req-build-2g_zr67z
+  Running command git clone --filter=blob:none --quiet https://github.com/marin-m/vmlinux-to-elf.git /tmp/pip-req-build-2g_zr67z
   Resolved https://github.com/marin-m/vmlinux-to-elf.git to commit 19683fb95b29cd31362d49e6f48ab8368f96cbdf
   Installing build dependencies: started
   Installing build dependencies: finished with status 'done'
@@ -113,13 +113,15 @@ Collecting git+https://github.com/marin-m/vmlinux-to-elf.git
   Getting requirements to build wheel: finished with status 'done'
   Preparing metadata (pyproject.toml): started
   Preparing metadata (pyproject.toml): finished with status 'done'
+Collecting pyelftools
+  Downloading pyelftools-0.33-py3-none-any.whl.metadata (1.0 kB)
 Collecting lz4 (from vmlinux-to-elf==1.3.6)
   Downloading lz4-4.4.5-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (3.8 kB)
 Collecting zstandard>=0.25.0 (from vmlinux-to-elf==1.3.6)
   Downloading zstandard-0.25.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (3.3 kB)
 Collecting minilzo>=1.2 (from vmlinux-to-elf==1.3.6)
   Downloading minilzo-1.2.tar.gz (76 kB)
-     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 76.6/76.6 kB 7.7 MB/s eta 0:00:00
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 76.6/76.6 kB 4.6 MB/s eta 0:00:00
   Installing build dependencies: started
   Installing build dependencies: finished with status 'done'
   Getting requirements to build wheel: started
@@ -128,26 +130,29 @@ Collecting minilzo>=1.2 (from vmlinux-to-elf==1.3.6)
   Preparing metadata (pyproject.toml): finished with status 'done'
 Collecting peewee>=3.17 (from vmlinux-to-elf==1.3.6)
   Downloading peewee-4.5.1-py3-none-any.whl.metadata (10 kB)
+Downloading pyelftools-0.33-py3-none-any.whl (201 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 201.2/201.2 kB 9.3 MB/s eta 0:00:00
 Downloading peewee-4.5.1-py3-none-any.whl (193 kB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 193.9/193.9 kB 22.6 MB/s eta 0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 193.9/193.9 kB 10.2 MB/s eta 0:00:00
 Downloading zstandard-0.25.0-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (5.5 MB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.5/5.5 MB 80.1 MB/s eta 0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.5/5.5 MB 24.5 MB/s eta 0:00:00
 Downloading lz4-4.4.5-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (1.4 MB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.4/1.4 MB 118.6 MB/s eta 0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.4/1.4 MB 42.8 MB/s eta 0:00:00
 Building wheels for collected packages: vmlinux-to-elf, minilzo
   Building wheel for vmlinux-to-elf (pyproject.toml): started
   Building wheel for vmlinux-to-elf (pyproject.toml): finished with status 'done'
-  Created wheel for vmlinux-to-elf: filename=vmlinux_to_elf-1.3.6-py3-none-any.whl size=6770993 sha256=051d264855e9dae631b53f0fba704f033a6fe034650b3c967002cdd7964cbce7
-  Stored in directory: /tmp/pip-ephem-wheel-cache-8831a7yw/wheels/97/63/44/0b8f0cb74d0f3d808e557c2a776e8cced28eb88c46d3a015e9
+  Created wheel for vmlinux-to-elf: filename=vmlinux_to_elf-1.3.6-py3-none-any.whl size=6770993 sha256=5a1e9bfbd0f0ba66e0511f8abcb6472fde70d81ef143471f9aec7d42fc58b616
+  Stored in directory: /tmp/pip-ephem-wheel-cache-otag197n/wheels/97/63/44/0b8f0cb74d0f3d808e557c2a776e8cced28eb88c46d3a015e9
   Building wheel for minilzo (pyproject.toml): started
   Building wheel for minilzo (pyproject.toml): finished with status 'done'
-  Created wheel for minilzo: filename=minilzo-1.2-cp312-cp312-linux_x86_64.whl size=47478 sha256=83fc1bbce719a6d824de267e0a1751db5cd7338284c08ffc6868fcdde497b801
+  Created wheel for minilzo: filename=minilzo-1.2-cp312-cp312-linux_x86_64.whl size=47482 sha256=857e5b0f1206ee9ead85de20a8ded6e4dba71830ffb4d4a9573c2552a1d45250
   Stored in directory: /home/runner/.cache/pip/wheels/46/d8/d4/5466cb61377e7e3fce30347cd7ec67be99a201c49f05641d05
 Successfully built vmlinux-to-elf minilzo
-Installing collected packages: zstandard, peewee, minilzo, lz4, vmlinux-to-elf
-Successfully installed lz4-4.4.5 minilzo-1.2 peewee-4.5.1 vmlinux-to-elf-1.3.6 zstandard-0.25.0
+Installing collected packages: zstandard, pyelftools, peewee, minilzo, lz4, vmlinux-to-elf
+Successfully installed lz4-4.4.5 minilzo-1.2 peewee-4.5.1 pyelftools-0.33 vmlinux-to-elf-1.3.6 zstandard-0.25.0
 /home/runner/.local/bin/kallsyms-finder
 /home/runner/.local/bin/vmlinux-to-elf
+PYELFTOOLS_OK=1
 
 ===== diagnostics/05-recover.log =====
 [+] Version string: Linux version 5.4.289-qgki-g5987d69e25da (builder@pangu-build-component-vendor-782710-d7t6c-5vpwd-rmpns) (Android (6877366 based on r383902b1) clang version 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79), LLD 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79)) #1 SMP PREEMPT Sun Dec 21 12:22:29 UTC 2025 f2fs-hash:990dc88b60
@@ -195,48 +200,78 @@ Successfully installed lz4-4.4.5 minilzo-1.2 peewee-4.5.1 vmlinux-to-elf-1.3.6 z
 [+] Symbol types => ['B', 'D', 'R', 'T', 'V', 'W', 'b', 'd', 'r', 't']
 
 KALLSYMS_LINES=175483
-STOCK_IMAGE_CRC_SYMBOL_COUNT=0
-Too few __crc_ symbols recovered; oracle is not valid
+KALLSYMS_KSYMTAB_BOUNDARIES:
+ffffffc0129c8a00 R __start___ksymtab
+ffffffc0129f2f58 R __start___ksymtab_gpl
+ffffffc0129f2f58 R __stop___ksymtab
+ffffffc012a16e80 R __start___kcrctab
+ffffffc012a16e80 R __start___ksymtab_gpl_future
+ffffffc012a16e80 R __start___ksymtab_unused
+ffffffc012a16e80 R __start___ksymtab_unused_gpl
+ffffffc012a16e80 R __stop___ksymtab_gpl
+ffffffc012a16e80 R __stop___ksymtab_gpl_future
+ffffffc012a16e80 R __stop___ksymtab_unused
+ffffffc012a16e80 R __stop___ksymtab_unused_gpl
+ffffffc012a1df64 R __start___kcrctab_gpl
+ffffffc012a23f40 R __start___kcrctab_gpl_future
+ffffffc012a23f40 R __start___kcrctab_unused
+ffffffc012a23f40 R __start___kcrctab_unused_gpl
+[+] Version string: Linux version 5.4.289-qgki-g5987d69e25da (builder@pangu-build-component-vendor-782710-d7t6c-5vpwd-rmpns) (Android (6877366 based on r383902b1) clang version 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79), LLD 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79)) #1 SMP PREEMPT Sun Dec 21 12:22:29 UTC 2025 f2fs-hash:990dc88b60
+[+]   Other related strings containing the version number: [b'Linux version 5.4.289-qgki-g5987d69e25da (builder@pangu-build-component-vendor-782710-d7t6c-5vpwd-rmpns) (Android (6877366 based on r383902b1) clang version 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79), LLD 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79)) #1 SMP PREEMPT Sun Dec 21 12:22:29 UTC 2025 f2fs-hash:990dc88b60', b'5.4.289-qgki-g5987d69e25da', b'/lib/firmware/5.4.289-qgki-g5987d69e25da', b'/lib/firmware/updates/5.4.289-qgki-g5987d69e25da', b'Linux version 5.4.289-qgki-g5987d69e25da (builder@pangu-build-component-vendor-782710-d7t6c-5vpwd-rmpns) (Android (6877366 based on r383902b1) clang version 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79), LLD 11.0.2 (https://android.googlesource.com/toolchain/llvm-project b397f81060ce6d701042b782172ed13bee898b79)) #1 SMP PREEMPT Sun Dec 21 12:22:29 UTC 2025 f2fs-hash:990dc88b60', b'5.4.289-qgki-g5987d69e25da SMP preempt mod_unload modversions aarch64', b'5.4.289-qgki-g5987d69e25da']
+[+]   Architecture string: mod_unload modversions aarch64
+[+] Guessed architecture: aarch64 successfully in 0.00 seconds
+[+] Kernel found in database
+[+]   Read kernel source: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/?id=v5.4
+[+]   Download kernel: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/snapshot/v5.4.tar.gz
+[+]   Kernel release date: 2019-11-24
+[+]   Interesting files:
+[~]     - kernel/kallsyms.c: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/kernel/kallsyms.c?id=v5.4
+[~]     - scripts/kallsyms.c: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/scripts/kallsyms.c?id=v5.4
+[~]     - include/linux/elf.h: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/linux/elf.h?id=v5.4
+[~]     - include/uapi/linux/elf-em.h: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/elf-em.h?id=v5.4
+[~]     - include/uapi/linux/elf.h: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/include/uapi/linux/elf.h?id=v5.4
+[~]     - Documentation/process/changes.rst: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/process/changes.rst?id=v5.4
+[+]   Architecture arm64 (EM_AARCH64) supports 64-bit, big-endian, little-endian
+[~]     - Documentation/arm64/booting.rst: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/Documentation/arm64/booting.rst?id=v5.4
+[~]     - arch/arm64/kernel/vmlinux.lds.S: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/arch/arm64/kernel/vmlinux.lds.S?id=v5.4
+[~]     - arch/arm64/kernel/head.S: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/arch/arm64/kernel/head.S?id=v5.4
+[~]     - arch/arm64/kernel/Makefile: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/arch/arm64/kernel/Makefile?id=v5.4
+[~]     - arch/arm64/boot/Makefile: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/arch/arm64/boot/Makefile?id=v5.4
+[~]     - arch/arm64/include/asm/elf.h: https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/tree/arch/arm64/include/asm/elf.h?id=v5.4
+[+]   Suggested build environment: docker run -it debian/eol:buster (Debian 10.0 "Buster" released 2019-07-06)
+[+] Found kallsyms_token_table at file offset 0x01c36b18
+[+] Found kallsyms_token_index at file offset 0x01c36e48
+[+] Found kallsyms_markers at file offset 0x01c36060
+[+] Found kallsyms_names at file offset 0x01895610 (175483 symbols)
+[+] Found kallsyms_num_syms at file offset 0x01895608
+[+] Found relocations table at file offset 0x2b93958 - 0x2e69ee0 (count=123963)
+[+] Guessed kernel base from relocation offsets range 0xffffffc01005a0f0-0xffffffc010086800 -> 0xffffffc010080000
+[+] Successfully applied 123963 relocations.
+[!] WARNING: Less than half (0%) of offsets are negative
+             You may want to re-run this utility, overriding the relative base
+[!] WARNING: More than half (100%) of offsets look like absolute addresses
+[!]          You may want to re-run this utility, overriding the relative base
+[+] Note: sometimes there is junk at the beginning of the kernel, and the load address is not the guessed
+          base address. You may need to play around with different load addresses to get everything
+          to line up. There may be some decent tables in the kernel with known patterns that could be
+          used to line things up heuristically, but this has not been explored this yet.
+[+] Negative offsets overall: 0 %
+[+] Null addresses overall: 0 %
+[+] Found kallsyms_offsets at file offset 0x017ea010
+[+] Reconstructing ELF with guessed base address (ffffffc010080000)
+[+] Successfully wrote the new ELF kernel to stock-vmlinux.elf
+stock-vmlinux.elf: ELF 64-bit LSB executable, ARM aarch64, version 1 (SYSV), statically linked, not stripped
+Traceback (most recent call last):
+  File "/home/runner/work/android_kernel_xiaomi_lisa/android_kernel_xiaomi_lisa/scripts/extract_stock_kcrc.py", line 314, in <module>
+    main()
+  File "/home/runner/work/android_kernel_xiaomi_lisa/android_kernel_xiaomi_lisa/scripts/extract_stock_kcrc.py", line 215, in main
+    parsed, meta = extract_section(mem, syms, *section)
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/android_kernel_xiaomi_lisa/android_kernel_xiaomi_lisa/scripts/extract_stock_kcrc.py", line 144, in extract_section
+    fmt, entry_size = detect_entry_format(mem, start, stop)
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/runner/work/android_kernel_xiaomi_lisa/android_kernel_xiaomi_lisa/scripts/extract_stock_kcrc.py", line 126, in detect_entry_format
+    raise ValueError(
+ValueError: unable to infer kernel_symbol format for 0xffffffc0129c8a00-0xffffffc0129f2f58
 
 ===== diagnostics/06-compare.log =====
-stock-image: module_layout image=MISSING module=0xba39cbb8
-stock-image: device_register image=MISSING module=0xcf9bcdee
-stock-image: device_unregister image=MISSING module=0x4678e0d9
-stock-image: dev_driver_string image=MISSING module=0x22a8544f
-stock-image: device_create image=MISSING module=0xbebfb31d
-stock-image: __platform_driver_register image=MISSING module=0x8a28799a
-stock-image: platform_driver_unregister image=MISSING module=0xb1643fd1
-stock-image: platform_get_irq image=MISSING module=0xbcc683a6
-stock-image: platform_get_resource image=MISSING module=0x0b50f5aa
-stock-image: platform_get_resource_byname image=MISSING module=0x67870233
-stock-image: __pm_runtime_resume image=MISSING module=0xd7ceaec5
-stock-image: pm_runtime_enable image=MISSING module=0x69233960
-stock-image: of_find_property image=MISSING module=0x7bfb6ef3
-stock-image: of_get_property image=MISSING module=0x3f86cb17
-stock-image: of_parse_phandle image=MISSING module=0x5d8562ca
-stock-image: of_address_to_resource image=MISSING module=0x6f7055af
-stock-image: of_device_is_compatible image=MISSING module=0xb56ea40d
-stock-image: clk_get image=MISSING module=0xf8127647
-stock-image: clk_register image=MISSING module=0xab9a55da
-stock-image: iommu_attach_device image=MISSING module=0x0c54e55f
-stock-image: iommu_map image=MISSING module=0xa106c11d
-stock-image: iommu_unmap image=MISSING module=0xe1da4443
-stock-image: regulator_get image=MISSING module=0xf7c6097c
-stock-image: regulator_enable image=MISSING module=0x691df2d6
-stock-image: regulator_set_voltage image=MISSING module=0x54cdbf0a
-stock-image: kthread_create_on_node image=MISSING module=0x947eb746
-stock-image: kthread_stop image=MISSING module=0x97198f13
-stock-image: irq_domain_remove image=MISSING module=0x160aa18c
-stock-image: irq_find_mapping image=MISSING module=0x6fb78324
-stock-image: sysfs_create_group image=MISSING module=0x0965d890
-stock-image: kobject_create_and_add image=MISSING module=0x93a00376
-stock-image: __free_pages image=MISSING module=0x419e8d31
-stock-image: adjust_managed_page_count image=MISSING module=0xcf0c4b39
-stock-image: dma_direct_map_page image=MISSING module=0x803f2855
-stock-image: dma_direct_map_sg image=MISSING module=0x9e7457c3
-stock-image: dma_alloc_attrs image=MISSING module=0x1c3c2bb3
-stock-image: dma_buf_attach image=MISSING module=0x995856d1
-stock-image: dma_buf_map_attachment image=MISSING module=0x3d20e038
-STOCK_IMAGE_CRC_PRESENT=0/38
-STOCK_IMAGE_MODULE_CRC_SCORE=0/38
-Insufficient CRC coverage to draw a conclusion
