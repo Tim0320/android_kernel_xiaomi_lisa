@@ -1,0 +1,161 @@
+name: Scan lisa Android KABI reserve generations
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/abi-kabi-reserve-scan.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        module_reserves: [0, 2, 4, 6, 8]
+        device_reserves: [0, 4, 8, 12]
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y             bc bison flex build-essential libssl-dev libelf-dev             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git curl
+
+      - name: Cache AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+          curl -L --fail --retry 5             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"             -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+
+      - name: Clone reconstructed lisa
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch reconstruction/5.4.289-qgki             https://github.com/Tim0320/android_kernel_xiaomi_lisa.git kernel
+          cd kernel
+          echo "base_head=$(git rev-parse HEAD)"
+
+      - name: Rewrite selected KABI reserve counts
+        run: |
+          set -euo pipefail
+          cd kernel
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          module_n = int("${{ matrix.module_reserves }}")
+          device_n = int("${{ matrix.device_reserves }}")
+
+          # struct module: rewrite only the final contiguous reserve block.
+          p = Path("include/linux/module.h")
+          s = p.read_text()
+          m = re.search(
+              r'(struct module \{.*?)(\n(?:\s*ANDROID_KABI_RESERVE\(\d+\);\n)+)(\} ____cacheline_aligned __randomize_layout;)',
+              s,
+              flags=re.S,
+          )
+          if not m:
+              raise SystemExit("struct module reserve block not found")
+          block = "".join(f"\tANDROID_KABI_RESERVE({i});\n" for i in range(1, module_n + 1))
+          s = s[:m.start(2)] + "\n" + block + s[m.end(2):]
+          p.write_text(s)
+
+          # struct device: locate the final reserve block before its closing brace.
+          p = Path("include/linux/device.h")
+          s = p.read_text()
+          start = s.index("struct device {")
+          end = s.index("\n};", start)
+          body = s[start:end]
+          blocks = list(re.finditer(r'\n(?:\s*ANDROID_KABI_RESERVE\(\d+\);\n)+', body))
+          if not blocks:
+              raise SystemExit("struct device reserve block not found")
+          b = blocks[-1]
+          repl = "\n" + "".join(f"\tANDROID_KABI_RESERVE({i});\n" for i in range(1, device_n + 1))
+          body = body[:b.start()] + repl + body[b.end():]
+          s = s[:start] + body + s[end:]
+          p.write_text(s)
+
+          print(f"module_reserves={module_n}")
+          print(f"device_reserves={device_n}")
+          PY
+
+          grep -n 'ANDROID_KABI_RESERVE' include/linux/module.h | tail -12
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("include/linux/device.h").read_text()
+          a=s.index("struct device {")
+          b=s.index("\n};",a)
+          print("\n".join(x for x in s[a:b].splitlines() if "ANDROID_KABI_RESERVE" in x))
+          PY
+
+      - name: Apply exact stock config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          make -j"$(nproc)" O=out             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig </dev/null
+          make -j"$(nproc)" O=out             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+
+      - name: Build ABI objects
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out KBUILD_SYMTYPES=1             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- kernel/module.o drivers/base/core.o
+
+      - name: Score module and device CRCs
+        run: |
+          set -euo pipefail
+          cd kernel
+          cat out/kernel/module.o.symversions out/drivers/base/core.o.symversions > /tmp/sv
+
+          read_crc() {
+            local symbol="$1"
+            sed -n "s/^__crc_${symbol} = \(0x[0-9a-fA-F]*\);/\1/p" /tmp/sv | head -n1
+          }
+
+          ml="$(read_crc module_layout)"
+          dr="$(read_crc device_register)"
+          du="$(read_crc device_unregister)"
+          dd="$(read_crc dev_driver_string)"
+
+          echo "KABI_SCAN module=${{ matrix.module_reserves }} device=${{ matrix.device_reserves }} module_layout=${ml:-MISSING} device_register=${dr:-MISSING} device_unregister=${du:-MISSING} dev_driver_string=${dd:-MISSING}"
+
+          [[ "${ml,,}" == "0xba39cbb8" ]] && echo "MATCH module_layout"
+          [[ "${dr,,}" == "0xcf9bcdee" ]] && echo "MATCH device_register"
+          [[ "${du,,}" == "0x4678e0d9" ]] && echo "MATCH device_unregister"
+          [[ "${dd,,}" == "0x22a8544f" ]] && echo "MATCH dev_driver_string"
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kabi-scan-m${{ matrix.module_reserves }}-d${{ matrix.device_reserves }}
+          retention-days: 5
+          include-hidden-files: true
+          path: |
+            kernel/out/kernel/module.o.symversions
+            kernel/out/drivers/base/core.o.symversions
+            kernel/out/kernel/module.symtypes
+            kernel/out/drivers/base/core.symtypes
