@@ -3,6 +3,9 @@ import argparse
 import struct
 from pathlib import Path
 
+from vmlinux_to_elf.core.auto_unpack import VmlinuzDecompressor
+from vmlinux_to_elf.core.kallsyms import KallsymsFinder
+
 SECTION_SPECS = [
     (
         "normal",
@@ -66,8 +69,8 @@ def load_oracle(path):
 
 
 class ImageMemory:
-    def __init__(self, path, base):
-        self.data = Path(path).read_bytes()
+    def __init__(self, data, base):
+        self.data = bytes(data)
         self.base = base
 
     def offset(self, va, size=1):
@@ -259,7 +262,45 @@ def main():
 
     base = choose_image_base(symbols, args.image)
     print(f"STOCK_IMAGE_VA_BASE=0x{base:x}")
-    mem = ImageMemory(args.image, base)
+
+    raw_image = Path(args.image).read_bytes()
+    normal_ksymtab = symbols["__start___ksymtab"]
+    raw_off = normal_ksymtab - base
+    if 0 <= raw_off <= len(raw_image) - 24:
+        raw_words = struct.unpack_from("<QQQ", raw_image, raw_off)
+        print(
+            "RAW_KSYMTAB_ENTRY0="
+            + ",".join(f"0x{x:016x}" for x in raw_words)
+        )
+
+    # The stock arm64 Image carries absolute kernel_symbol pointers that are
+    # initialized by R_AARCH64_RELATIVE relocations during boot.  Reuse the
+    # same relocation recovery already used successfully by kallsyms-finder
+    # instead of interpreting the unrelocated raw zeros as real pointers.
+    finder = KallsymsFinder(
+        VmlinuzDecompressor(raw_image).decompressed,
+        64,
+        False,
+        base,
+    )
+    relocated_image = finder.kernel_img
+    if len(relocated_image) != len(raw_image):
+        raise ValueError(
+            f"relocated image size changed: raw={len(raw_image)} "
+            f"relocated={len(relocated_image)}"
+        )
+
+    relocated_words = struct.unpack_from("<QQQ", relocated_image, raw_off)
+    print(
+        "RELOCATED_KSYMTAB_ENTRY0="
+        + ",".join(f"0x{x:016x}" for x in relocated_words)
+    )
+    if relocated_words[1] == 0:
+        raise ValueError(
+            "first relocated ksymtab name pointer is still zero"
+        )
+
+    mem = ImageMemory(relocated_image, base)
 
     exports = {}
     for spec in SECTION_SPECS:
