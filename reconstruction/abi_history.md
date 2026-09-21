@@ -582,6 +582,31 @@ The active stock/redwood difference that matters to the genksyms type graph is t
 
 The next full-build prototype keeps the current runtime scheduler layout and exposes `min_vruntimex` only under `__GENKSYMS__`. For procfs, it keeps the current proc_ops runtime for reconstructed callers while exporting a real legacy `proc_create_data(..., const struct file_operations *, ...)` adapter for the stock QGKI module.
 
+## Six-symbol QGKI compatibility prototype builds successfully
+
+The first full build with the six-symbol compatibility layer completed the kernel build successfully.
+
+Confirmed:
+
+- full `Image modules dtbs` build: **success**
+- `GENKSYMS_VERSION_FAILURES=0`
+- exact six QGKI CRCs: **6/6**
+- current reconstructed proc_ops ABI remains exported separately as `proc_create_data_proc_ops`
+- tested rebuilt modules retain vermagic `5.4.289-qgki-g5987d69e25da`
+
+Exact six CRCs produced by the rebuilt kernel:
+
+- `proc_create_data = 0xa187c33a`
+- `proc_mkdir = 0xd8fd7935`
+- `proc_remove = 0x0420ade2`
+- `remove_proc_entry = 0x05ba4e75`
+- `sched_setscheduler = 0xe09be37d`
+- `wake_up_process = 0xfa54581b`
+
+The workflow's only failure occurred after the successful build and CRC validation, in a convenience command that attempted to read stock `msm_drm.ko` vermagic using `strings | grep '^vermagic='`. The module itself had already been located, copied, and uploaded in the evidence artifact. This did **not** invalidate the kernel build or six-symbol ABI result.
+
+A lightweight follow-up audit uses ELF `.modinfo` and `__versions` directly from that evidence artifact, avoiding another full rebuild.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
