@@ -56,13 +56,35 @@ echo "::group::Overlay MIUI UFS ABI candidate"
 # configuration enabled. Earlier Build #43 used this donor without
 # CONFIG_UFSGKI/CONFIG_UFS_WB/CONFIG_MI_UFS_FFU, so that CRC result was not a
 # valid stock-equivalence test.
-git clone --filter=blob:none --single-branch --depth=1 --branch "$UFS_ABI_REF" \
-    "$UFS_ABI_REPO" "$WORK_ROOT/ufs-abi"
+#
+# Do not checkout the donor's whole ~70k-file tree. Two previous reconstruction
+# runs reached 100% checkout and then exited 1 without a useful diagnostic.
+# Fetch the commit first, then materialize only drivers/scsi/ufs.
+UFS_WORK="$WORK_ROOT/ufs-abi"
+rm -rf "$UFS_WORK"
+git clone --filter=blob:none --no-checkout --single-branch --depth=1 \
+    --branch "$UFS_ABI_REF" "$UFS_ABI_REPO" "$UFS_WORK"
+git -C "$UFS_WORK" sparse-checkout init --cone
+git -C "$UFS_WORK" sparse-checkout set drivers/scsi/ufs
+git -C "$UFS_WORK" checkout --force HEAD
+UFS_HEAD="$(git -C "$UFS_WORK" rev-parse HEAD)"
+echo "UFS ABI donor HEAD=$UFS_HEAD ref=$UFS_ABI_REF"
+UFS_SRC="$UFS_WORK/drivers/scsi/ufs"
+if [[ ! -f "$UFS_SRC/ufshcd.h" ]]; then
+    echo "Missing UFS donor header: $UFS_SRC/ufshcd.h" >&2
+    find "$UFS_WORK/drivers/scsi" -maxdepth 2 -type f 2>/dev/null | head -80 >&2 || true
+    exit 31
+fi
+for needle in "unsigned long lrb_in_use;" "unsigned long tm_slots_in_use;"; do
+    if ! grep -Fq "$needle" "$UFS_SRC/ufshcd.h"; then
+        echo "UFS donor ABI assertion failed: $needle" >&2
+        grep -nE "lrb_in_use|tm_slots_in_use" "$UFS_SRC/ufshcd.h" >&2 || true
+        exit 32
+    fi
+done
 rm -rf drivers/scsi/ufs
-cp -a "$WORK_ROOT/ufs-abi/drivers/scsi/ufs" drivers/scsi/ufs
-test -f drivers/scsi/ufs/ufshcd.h
-grep -q 'unsigned long lrb_in_use;' drivers/scsi/ufs/ufshcd.h
-grep -q 'unsigned long tm_slots_in_use;' drivers/scsi/ufs/ufshcd.h
+cp -a "$UFS_SRC" drivers/scsi/ufs
+echo "Imported UFS donor files: $(find drivers/scsi/ufs -maxdepth 1 -type f | wc -l)"
 echo "::endgroup::"
 
 echo "::group::Repair MIUI sources for the 5.4.289 common API"
