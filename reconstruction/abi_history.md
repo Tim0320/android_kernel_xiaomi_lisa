@@ -204,6 +204,27 @@ Observed lower-layer generation boundaries:
 - `lahaina_QGKI.config`: changed between 18400.02 and 18600.02.
 - Despite the latter two file changes, the 37 observable core CRCs remained identical from 18400.02 to 20000.01.
 
+## Pre-18400 Lahaina direct-genksyms results
+
+Workflow `2f0df04c` completed successfully with a valid direct-genksyms control.
+
+| Candidate | Provenance | Result | Present | module_layout | Interpretation |
+| --- | --- | ---: | ---: | --- | --- |
+| 16700 snapshot | Skywalker cumulative snapshot `58f8584f...` | 0/38 | 37/38 | `0x9024fb67` | snapshot only; unexpectedly already in the later family |
+| 16900 snapshot | Skywalker cumulative snapshot `39350d27...` | 0/38 | 37/38 | `0xc20359c8` | different family; not proven exact Qualcomm tag-tip |
+| 17500 snapshot | Skywalker cumulative snapshot `64fb9dc6...` | 0/38 | 37/38 | `0xc20359c8` | same as 16900 snapshot; not proven exact Qualcomm tag-tip |
+| 17700 exact tag-tip | Qualcomm tag second parent `21af954d...` | 0/38 | 37/38 | `0x9024fb67` | exact; same family as all later QSSI12 tags |
+| 18300 exact tag-tip | Qualcomm tag second parent `c6b805f3...` | 0/38 | 37/38 | `0x9024fb67` | exact |
+| 18400.02 control | exact tag-tip `cc27e795...` | 0/38 | 37/38 | `0x9024fb67` | control reproduced known Lahaina family |
+
+Important correction: the Skywalker 16700/16900/17500 entries are **merge snapshots**, not guaranteed exact Qualcomm tag tips. Their non-monotonic fingerprint behavior proves that snapshot results must not be used to place the Qualcomm generation boundary by themselves.
+
+A Qualcomm vendor manifest for `LA.UM.9.14.r1-16900-LAHAINA.0` gives the exact `kernel/msm-5.4` revision:
+
+- `203d4a97455e95f81738823edbb34b17c55fec43`
+
+That commit is preserved in many public Qualcomm-derived mirrors, so the next probe will resolve early tag revisions from vendor manifests and fetch the exact commit by SHA.
+
 ## Current active direction
 
 The next useful boundary is **pre-18400 Lahaina**, not later QSSI12/QSSI14 forks.
