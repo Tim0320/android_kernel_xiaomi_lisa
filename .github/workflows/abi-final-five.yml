@@ -1,0 +1,459 @@
+name: Resolve final five Lisa ABI symbols
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-final-five.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-final-five-abi
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: current
+            repo: https://github.com/Tim0320/android_kernel_xiaomi_lisa.git
+            ref: reconstruction/5.4.289-qgki
+          - label: redwood-s
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: redwood-s-oss
+          - label: lisa-r
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: lisa-r-oss
+          - label: taoyao-s
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: taoyao-s-oss
+          - label: yzzzr-hyper14
+            repo: https://github.com/YZzZr/android_kernel_xiaomi_sm8350-miui.git
+            ref: hyper-14
+          - label: jiuge-new-rebase
+            repo: https://github.com/JiuGeFaCai/android_kernel_xiaomi_sm8350-miui.git
+            ref: new-rebase
+          - label: lahaina-18400
+            repo: https://github.com/Wcoom/kernel_xiaomi_haydn.git
+            ref: cc27e795a125d4c26bc843c34a6e6574fb5a836e
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 55
+
+    steps:
+      - name: Checkout reconstructed base
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 curl xz-utils unzip git
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+          "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
+
+      - name: Download exact stock IKHEADERS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders.zip
+          unzip -q stock-kheaders.zip -d stock-artifact
+          test -d stock-artifact/stock-kheaders
+
+      - name: Prepare exact stock-config environment
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts
+
+      - name: Fetch IPA candidate
+        env:
+          CANDIDATE_REPO: ${{ matrix.repo }}
+          CANDIDATE_REF: ${{ matrix.ref }}
+        run: |
+          set -euo pipefail
+          rm -rf candidate-src
+          git clone --filter=blob:none --no-checkout "$CANDIDATE_REPO" candidate-src
+          git -C candidate-src fetch --depth=1 origin "$CANDIDATE_REF"
+          git -C candidate-src checkout --detach FETCH_HEAD
+          echo "IPA_CANDIDATE=${{ matrix.label }}"
+          echo "IPA_CANDIDATE_COMMIT=$(git -C candidate-src rev-parse HEAD)"
+
+          src="candidate-src/techpack/dataipa/drivers/platform/msm/ipa"
+          test -d "$src"
+          rsync -a --include='*/' --include='*.c' --include='*.h' --exclude='*' \
+            "$src/" techpack/dataipa/drivers/platform/msm/ipa/
+
+      - name: Add direct IPA Kbuild probe rule
+        run: |
+          set -euo pipefail
+          printf '\n# ABI probe only\nobj-y += ipa.o\n' >> \
+            techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/Makefile
+          tail -n 8 techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/Makefile
+
+      - name: Stage stock global genksyms headers
+        env:
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+          rm -rf "$STOCK_ABI_ROOT"
+          mkdir -p "$STOCK_ABI_ROOT"
+          rsync -a stock-artifact/stock-kheaders/ "$STOCK_ABI_ROOT/"
+
+      - name: Patch direct genksyms route
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+
+          old = '    $(call cmd_gensymtypes_c,true,$@) >/dev/null;                           \\\n'
+          new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
+          if old not in s:
+              raise SystemExit("direct genksyms output rule not found")
+          s = s.replace(old, new, 1)
+
+          stock = (
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/include "
+              "-I$(STOCK_ABI_ROOT)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/generated/uapi"
+          )
+
+          lines = s.splitlines(keepends=True)
+          done = False
+          for i, line in enumerate(lines):
+              if "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line:
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {stock} -D__GENKSYMS__",
+                      1,
+                  )
+                  done = True
+                  break
+          if not done:
+              raise SystemExit("genksyms CPP rule not found")
+          p.write_text("".join(lines))
+          PY
+
+      - name: Probe IPA CRCs
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+          make -j1 O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.symtypes \
+            2>&1 | tee ipa-probe.log
+
+          sym="out/techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.symtypes.symversions"
+          test -s "$sym"
+
+          python3 - "$sym" <<'PY'
+          import re, sys
+          from pathlib import Path
+          expected = {
+              "ipa3_get_ctx": "0xc7ed42a2",
+              "ipa3_get_dma_dev": "0xb76b3f37",
+          }
+          got = {}
+          rx = re.compile(r"^__crc_([A-Za-z0-9_.$]+) = (0x[0-9a-fA-F]+);$")
+          for raw in Path(sys.argv[1]).read_text(errors="replace").splitlines():
+              m = rx.match(raw.strip())
+              if m:
+                  got[m.group(1)] = m.group(2).lower()
+
+          score = 0
+          for name, exp in expected.items():
+              val = got.get(name, "MISSING")
+              match = val == exp
+              score += int(match)
+              print(f"IPA_ABI\t{name}\tcandidate={val}\tstock={exp}\tmatch={int(match)}")
+          print(f"IPA_ABI_SCORE={score}/2")
+          PY
+
+      - name: Upload IPA evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-five-ipa-${{ matrix.label }}
+          retention-days: 10
+          if-no-files-found: warn
+          path: |
+            ipa-probe.log
+            out/techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.symtypes
+            out/techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/ipa.symtypes.symversions
+
+  lz4:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: linux-v4.14
+            repo: https://github.com/torvalds/linux.git
+            ref: v4.14
+          - label: linux-v4.19
+            repo: https://github.com/torvalds/linux.git
+            ref: v4.19
+          - label: linux-v5.4
+            repo: https://github.com/torvalds/linux.git
+            ref: v5.4
+          - label: linux-v5.10
+            repo: https://github.com/torvalds/linux.git
+            ref: v5.10
+          - label: linux-v5.15
+            repo: https://github.com/torvalds/linux.git
+            ref: v5.15
+          - label: linux-v6.1
+            repo: https://github.com/torvalds/linux.git
+            ref: v6.1
+          - label: aosp-android11-5.4
+            repo: https://github.com/aosp-mirror/kernel_common.git
+            ref: android11-5.4
+          - label: aosp-android12-5.4
+            repo: https://github.com/aosp-mirror/kernel_common.git
+            ref: android12-5.4
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout reconstructed base
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 curl xz-utils unzip git
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+
+      - name: Download exact stock IKHEADERS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders.zip
+          unzip -q stock-kheaders.zip -d stock-artifact
+
+      - name: Prepare exact stock-config environment
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts
+
+      - name: Fetch historical LZ4 implementation
+        env:
+          CANDIDATE_REPO: ${{ matrix.repo }}
+          CANDIDATE_REF: ${{ matrix.ref }}
+        run: |
+          set -euo pipefail
+          rm -rf candidate-src
+          git clone --filter=blob:none --no-checkout "$CANDIDATE_REPO" candidate-src
+          git -C candidate-src fetch --depth=1 origin "$CANDIDATE_REF"
+          git -C candidate-src checkout --detach FETCH_HEAD
+
+          test -f candidate-src/lib/lz4/lz4_compress.c
+          cp candidate-src/lib/lz4/lz4_compress.c lib/lz4/lz4_compress.c
+          cp candidate-src/lib/lz4/lz4defs.h lib/lz4/lz4defs.h
+          printf '\n# ABI probe only\nobj-y += lz4_compress.o\n' >> lib/lz4/Makefile
+
+          echo "LZ4_CANDIDATE=${{ matrix.label }}"
+          echo "LZ4_CANDIDATE_COMMIT=$(git -C candidate-src rev-parse HEAD)"
+
+      - name: Stage stock global genksyms headers
+        env:
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+          rm -rf "$STOCK_ABI_ROOT"
+          mkdir -p "$STOCK_ABI_ROOT"
+          rsync -a stock-artifact/stock-kheaders/ "$STOCK_ABI_ROOT/"
+
+      - name: Patch direct genksyms route
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+
+          old = '    $(call cmd_gensymtypes_c,true,$@) >/dev/null;                           \\\n'
+          new = '    $(call cmd_gensymtypes_c,true,$@) >$@.symversions;                      \\\n'
+          if old not in s:
+              raise SystemExit("direct genksyms output rule not found")
+          s = s.replace(old, new, 1)
+
+          stock = (
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/include "
+              "-I$(STOCK_ABI_ROOT)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/generated/uapi"
+          )
+
+          lines = s.splitlines(keepends=True)
+          done = False
+          for i, line in enumerate(lines):
+              if "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line:
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {stock} -D__GENKSYMS__",
+                      1,
+                  )
+                  done = True
+                  break
+          if not done:
+              raise SystemExit("genksyms CPP rule not found")
+          p.write_text("".join(lines))
+          PY
+
+      - name: Probe LZ4 CRCs
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+          make -j1 O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 KBUILD_SYMTYPES=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            lib/lz4/lz4_compress.symtypes 2>&1 | tee lz4-probe.log
+
+          sym="out/lib/lz4/lz4_compress.symtypes.symversions"
+          test -s "$sym"
+
+          python3 - "$sym" <<'PY'
+          import re, sys
+          from pathlib import Path
+          expected = {
+              "LZ4_compress_default": "0x4f4d78c5",
+              "LZ4_loadDict": "0x749849d8",
+              "LZ4_saveDict": "0x635ff76d",
+          }
+          got = {}
+          rx = re.compile(r"^__crc_([A-Za-z0-9_.$]+) = (0x[0-9a-fA-F]+);$")
+          for raw in Path(sys.argv[1]).read_text(errors="replace").splitlines():
+              m = rx.match(raw.strip())
+              if m:
+                  got[m.group(1)] = m.group(2).lower()
+
+          score = 0
+          for name, exp in expected.items():
+              val = got.get(name, "MISSING")
+              match = val == exp
+              score += int(match)
+              print(f"LZ4_ABI\t{name}\tcandidate={val}\tstock={exp}\tmatch={int(match)}")
+          print(f"LZ4_ABI_SCORE={score}/3")
+          PY
+
+      - name: Upload LZ4 evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-five-lz4-${{ matrix.label }}
+          retention-days: 10
+          if-no-files-found: warn
+          path: |
+            lz4-probe.log
+            out/lib/lz4/lz4_compress.symtypes
+            out/lib/lz4/lz4_compress.symtypes.symversions
