@@ -211,17 +211,128 @@ jobs:
           echo "KALLSYMS_KSYMTAB_BOUNDARIES:"
           grep -E ' (__start___ksymtab|__stop___ksymtab|__start___kcrctab)' stock.kallsyms | head -n 80 || true
 
-          vmlinux-to-elf stock-Image stock-vmlinux.elf
-          test -s stock-vmlinux.elf
-          file stock-vmlinux.elf || true
+          grep -E ' (_text|_stext|stext)
 
-          nm -n stock-vmlinux.elf > stock.elf.symbols || true
+          test -s stock.image.crcs
+          cat stock.image.crcs
 
+      - name: Summarize stock Image versus stock module ABI
+        id: compare
+        continue-on-error: true
+        run: |
+          mkdir -p diagnostics
+          exec > >(tee diagnostics/06-compare.log) 2>&1
+          set -euo pipefail
+
+          test -s stock.image.crcs
+          cat stock.image.crcs
+
+          mode="$(awk -F= '/^mode=/{print $2}' stock.image.crcs)"
+          present="$(awk -F= '/^present=/{print $2}' stock.image.crcs)"
+          score="$(awk -F= '/^score=/{print $2}' stock.image.crcs)"
+
+          echo "STOCK_IMAGE_KCRC_MODE=${mode}"
+          echo "STOCK_IMAGE_CRC_PRESENT=${present}"
+          echo "STOCK_IMAGE_MODULE_CRC_SCORE=${score}"
+
+          if [[ "${score}" == "38/38" ]]; then
+            echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=1"
+          else
+            echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=0"
+          fi
+
+      - name: Persist diagnostic report
+        if: always()
+        env:
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          FETCH_OUTCOME: ${{ steps.fetch.outcome }}
+          EXTRACT_OUTCOME: ${{ steps.extract.outcome }}
+          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          RECOVER_OUTCOME: ${{ steps.recover.outcome }}
+          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p reconstruction
+          {
+            echo "# Stock Image ABI probe diagnostic"
+            echo
+            echo "commit=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo
+            echo "install=${INSTALL_OUTCOME}"
+            echo "fetch=${FETCH_OUTCOME}"
+            echo "extract=${EXTRACT_OUTCOME}"
+            echo "tools=${TOOLS_OUTCOME}"
+            echo "recover=${RECOVER_OUTCOME}"
+            echo "compare=${COMPARE_OUTCOME}"
+            for log in diagnostics/*.log; do
+              if [[ -f "$log" ]]; then
+                echo
+                echo "===== $log ====="
+                cat "$log"
+              fi
+            done
+          } > reconstruction/last_stock_image_probe.txt
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reconstruction/last_stock_image_probe.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "ci: record stock Image ABI probe diagnostics"
+            git push
+          fi
+
+      - name: Upload stock CRC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-image-crc-oracle
+          retention-days: 7
+          path: |
+            kernel-payload.bin
+            stock-Image
+            stock.kallsyms
+            stock-vmlinux.elf
+            stock.elf.symbols
+            stock.image.crcs
+            diagnostics/
+            reconstruction/last_stock_image_probe.txt
+
+      - name: Fail job if probe stage failed
+        if: always()
+        env:
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          FETCH_OUTCOME: ${{ steps.fetch.outcome }}
+          EXTRACT_OUTCOME: ${{ steps.extract.outcome }}
+          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          RECOVER_OUTCOME: ${{ steps.recover.outcome }}
+          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
+        run: |
+          set -euo pipefail
+          for status in "$INSTALL_OUTCOME" "$FETCH_OUTCOME" "$EXTRACT_OUTCOME" "$TOOLS_OUTCOME" "$RECOVER_OUTCOME" "$COMPARE_OUTCOME"; do
+            if [[ "$status" != "success" ]]; then
+              echo "At least one probe stage failed; see reconstruction/last_stock_image_probe.txt"
+              exit 1
+            fi
+          done
+ stock.kallsyms || true
+
+          # Parse ksymtab/kcrctab directly from the raw Image.  The stock
+          # kernel uses 24-byte absolute kernel_symbol entries; using the raw
+          # Image avoids reconstructed-ELF mapping ambiguity.
           python3 scripts/extract_stock_kcrc.py \
-            --elf stock-vmlinux.elf \
+            --image stock-Image \
             --kallsyms stock.kallsyms \
             --oracle reconstruction/stock_module_oracle.txt \
             --output stock.image.crcs
+
+          # Keep reconstructed ELF only as optional secondary evidence.
+          vmlinux-to-elf stock-Image stock-vmlinux.elf || true
+          if [[ -s stock-vmlinux.elf ]]; then
+            file stock-vmlinux.elf || true
+            nm -n stock-vmlinux.elf > stock.elf.symbols || true
+          fi
 
           test -s stock.image.crcs
           cat stock.image.crcs
