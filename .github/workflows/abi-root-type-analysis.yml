@@ -1,0 +1,288 @@
+name: Analyze Lisa ABI root type dependencies
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-root-type-analysis.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-abi-root-type-analysis
+  cancel-in-progress: true
+
+jobs:
+  root-types:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout reconstructed kernel
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y             bc bison flex build-essential libssl-dev libelf-dev             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi             cpio kmod rsync python3 curl xz-utils unzip
+
+      - name: Cache stock-generation AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install stock-generation AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            "$DEST/bin/clang" --version
+            exit 0
+          fi
+
+          urls=(
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r46/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-qpr2-release/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/4c6fbc28d3b078a5308894fc175f962bb26a5718/clang-r383902b1.tar.gz"
+          )
+
+          ok=0
+          for url in "${urls[@]}"; do
+            rm -f "$ARCHIVE"
+            if curl -L --fail --retry 5 --retry-all-errors --connect-timeout 30                 "$url" -o "$ARCHIVE" && tar -tzf "$ARCHIVE" >/dev/null; then
+              ok=1
+              break
+            fi
+          done
+          test "$ok" -eq 1
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version
+          "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
+
+      - name: Generate exact Lisa config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          source reconstruction/manifest.env
+          test -s reconstruction/stock_ikconfig
+          test "$(git hash-object reconstruction/stock_ikconfig)" = "$STOCK_IKCONFIG_BLOB"
+
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out             ARCH=arm64             CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             olddefconfig
+
+          grep -qx 'CONFIG_MODVERSIONS=y' out/.config
+          release="$(make -s O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- kernelrelease)"
+          echo "kernelrelease=$release"
+          test "$release" = "$TARGET_VERMAGIC"
+
+      - name: Build vmlinux with genksyms symtypes
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" O=out             ARCH=arm64             CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             KBUILD_SYMTYPES=1             Image 2>&1 | tee symtypes-build.log
+
+          test -s out/arch/arm64/boot/Image
+          test -s out/Module.symvers
+
+          symtype_count="$(find out -type f -name '*.symtypes' | wc -l)"
+          echo "SYMTYPES_FILE_COUNT=$symtype_count"
+          test "$symtype_count" -gt 100
+
+      - name: Download full stock-vs-current ABI comparison
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ABI_ARTIFACT_ID: "10636403934"
+        run: |
+          set -euo pipefail
+          mkdir -p abi-oracle
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ABI_ARTIFACT_ID}/zip"             -o abi-oracle.zip
+          unzip -q abi-oracle.zip -d abi-oracle
+          test -s abi-oracle/full-abi-compare.txt
+
+      - name: Rank genksyms root type dependencies
+        run: |
+          set -euo pipefail
+
+          python3 - abi-oracle/full-abi-compare.txt out abi-root-types.txt <<'PY'
+          import re
+          import sys
+          from collections import Counter, defaultdict
+          from pathlib import Path
+
+          compare_path = Path(sys.argv[1])
+          out_dir = Path(sys.argv[2])
+          report_path = Path(sys.argv[3])
+
+          status = {}
+          for raw in compare_path.read_text(errors="replace").splitlines():
+              if raw.startswith("MATCH\t"):
+                  parts = raw.split("\t")
+                  status[parts[1]] = "MATCH"
+              elif raw.startswith("MISMATCH\t"):
+                  parts = raw.split("\t")
+                  status[parts[1]] = "MISMATCH"
+
+          ref_re = re.compile(r"\b([estuin]#[A-Za-z0-9_.$' :/<>,-]+)")
+          key_re = re.compile(r"^([^\s]+)\s+(.*)$")
+
+          definitions = {}
+          symbol_roots = defaultdict(set)
+          file_count = 0
+
+          for path in out_dir.rglob("*.symtypes"):
+              file_count += 1
+              try:
+                  lines = path.read_text(errors="replace").splitlines()
+              except OSError:
+                  continue
+
+              local_defs = {}
+              for raw in lines:
+                  raw = raw.strip()
+                  if not raw:
+                      continue
+                  m = key_re.match(raw)
+                  if not m:
+                      continue
+                  key, body = m.groups()
+                  local_defs[key] = body
+                  if "#" in key:
+                      definitions.setdefault(key, set()).add(body)
+
+              for key, body in local_defs.items():
+                  if key in status:
+                      for ref in ref_re.findall(body):
+                          symbol_roots[key].add(ref)
+
+          # Build a conservative global type graph. Multiple conditional
+          # definitions are unioned so a type is not missed merely because
+          # the same name appears in more than one translation unit.
+          graph = defaultdict(set)
+          for key, bodies in definitions.items():
+              for body in bodies:
+                  for ref in ref_re.findall(body):
+                      if ref != key:
+                          graph[key].add(ref)
+
+          def closure(roots, limit=10000):
+              seen = set()
+              stack = list(roots)
+              while stack and len(seen) < limit:
+                  ref = stack.pop()
+                  if ref in seen:
+                      continue
+                  seen.add(ref)
+                  stack.extend(graph.get(ref, ()))
+              return seen
+
+          counts = defaultdict(Counter)
+          mapped_symbols = 0
+          no_root = Counter()
+
+          for symbol, st in status.items():
+              roots = symbol_roots.get(symbol)
+              if not roots:
+                  no_root[st] += 1
+                  continue
+              mapped_symbols += 1
+              for ref in closure(roots):
+                  counts[ref][st] += 1
+
+          rows = []
+          for ref, c in counts.items():
+              match = c["MATCH"]
+              mismatch = c["MISMATCH"]
+              total = match + mismatch
+              if total < 5:
+                  continue
+              mismatch_rate = mismatch / total
+              score = mismatch * mismatch_rate
+              rows.append((score, mismatch, match, total, mismatch_rate, ref))
+          rows.sort(key=lambda x: (-x[0], -x[1], x[5]))
+
+          print(f"SYMTYPES_FILES={file_count}")
+          print(f"ABI_SYMBOLS_WITH_STATUS={len(status)}")
+          print(f"ABI_SYMBOLS_WITH_TYPE_ROOTS={mapped_symbols}")
+          print(f"NO_ROOT_MATCH={no_root['MATCH']}")
+          print(f"NO_ROOT_MISMATCH={no_root['MISMATCH']}")
+          print("TOP_ABI_ROOT_TYPES:")
+          for score, mismatch, match, total, rate, ref in rows[:120]:
+              print(
+                  f"ABI_ROOT\t{ref}\ttotal={total}\tmatch={match}\t"
+                  f"mismatch={mismatch}\tmismatch_rate={rate:.4f}\t"
+                  f"score={score:.2f}"
+              )
+
+          # Focus on likely structural roots instead of primitive typedef noise.
+          structural = [
+              r for r in rows
+              if r[5].startswith(("s#", "u#", "e#"))
+              and r[3] >= 10
+          ]
+
+          lines = [
+              "# Lisa ABI root type dependency ranking",
+              "",
+              f"symtypes_files={file_count}",
+              f"abi_symbols={len(status)}",
+              f"symbols_with_roots={mapped_symbols}",
+              f"no_root_match={no_root['MATCH']}",
+              f"no_root_mismatch={no_root['MISMATCH']}",
+              "",
+              "## Top all type references",
+              "type\ttotal\tmatch\tmismatch\tmismatch_rate\tscore",
+          ]
+          for score, mismatch, match, total, rate, ref in rows[:300]:
+              lines.append(
+                  f"{ref}\t{total}\t{match}\t{mismatch}\t"
+                  f"{rate:.6f}\t{score:.2f}"
+              )
+
+          lines += [
+              "",
+              "## Top structural types",
+              "type\ttotal\tmatch\tmismatch\tmismatch_rate\tscore",
+          ]
+          for score, mismatch, match, total, rate, ref in structural[:250]:
+              lines.append(
+                  f"{ref}\t{total}\t{match}\t{mismatch}\t"
+                  f"{rate:.6f}\t{score:.2f}"
+              )
+
+          report_path.write_text("\n".join(lines) + "\n")
+          PY
+
+          test -s abi-root-types.txt
+          sed -n '1,180p' abi-root-types.txt
+
+      - name: Upload ABI root-type evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-abi-root-type-analysis
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            abi-root-types.txt
+            symtypes-build.log
+            out/Module.symvers
+            out/**/*.symtypes
