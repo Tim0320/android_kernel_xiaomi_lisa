@@ -210,6 +210,20 @@ jobs:
               "-I$(STOCK_ABI_ROOT)/include/generated/uapi"
           )
 
+          # Complete stock IKHEADERS is correct for most genksyms inputs, but
+          # two donor translation-unit families depend on source-local/API
+          # generations not reconstructable from IKHEADERS alone:
+          #   lib/zstd/*.c
+          #   drivers/android/vendor_hooks.c
+          # Route those specific TUs through donor headers so genksyms emits a
+          # valid CRC instead of leaving unresolved __crc_* relocations.
+          conditional_stock_flags = (
+              "$(if $(or "
+              "$(findstring /lib/zstd/,$<),"
+              "$(findstring /drivers/android/vendor_hooks.c,$<)"
+              f"),,{stock_flags})"
+          )
+
           lines = s.splitlines(keepends=True)
           c_done = False
           asm_done = False
@@ -218,7 +232,7 @@ jobs:
               if not c_done and "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line:
                   lines[i] = line.replace(
                       "$(CPP) -D__GENKSYMS__",
-                      f"$(CPP) {stock_flags} -D__GENKSYMS__",
+                      f"$(CPP) {conditional_stock_flags} -D__GENKSYMS__",
                       1,
                   )
                   c_done = True
@@ -242,6 +256,9 @@ jobs:
           PY
 
           grep -n 'STOCK_ABI_ROOT.*D__GENKSYMS__' scripts/Makefile.build
+          grep -n 'lib/zstd' scripts/Makefile.build
+          grep -n 'drivers/android/vendor_hooks.c' scripts/Makefile.build
+          echo "FULL_GENKSYMS_FALLBACK_TUS=lib/zstd/*,drivers/android/vendor_hooks.c"
 
       - name: Build Image modules and DTBs
         env:
@@ -256,6 +273,16 @@ jobs:
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- \
             Image modules dtbs 2>&1 | tee build-full-stock-genksyms.log
+
+      - name: Summarize genksyms version-generation warnings
+        if: always()
+        run: |
+          set -euo pipefail
+          if [[ -f build-full-stock-genksyms.log ]]; then
+            grep 'version generation failed' build-full-stock-genksyms.log > genksyms-version-failures.txt || true
+            echo "GENKSYMS_VERSION_FAILURES=$(wc -l < genksyms-version-failures.txt)"
+            cat genksyms-version-failures.txt || true
+          fi
 
       - name: Validate core outputs
         run: |
@@ -466,3 +493,4 @@ jobs:
             full-stock-genksyms-compare.txt
             full-stock-genksyms-subsystems.txt
             export-definitions.txt
+            genksyms-version-failures.txt
