@@ -1,0 +1,229 @@
+name: Rank runtime type roots used by stock QGKI msm_drm
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-msm-drm-root-types.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  rank:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+
+    steps:
+      - name: Install audit tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3 unzip curl
+
+      - name: Download exact msm_drm imports and symtypes evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VENDOR_BOOT_ARTIFACT_ID: "10648361196"
+          ROOT_TYPES_ARTIFACT_ID: "10638196198"
+        run: |
+          set -euo pipefail
+          mkdir -p vendor-evidence root-evidence
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${VENDOR_BOOT_ARTIFACT_ID}/zip" \
+            -o vendor-evidence.zip
+          unzip -q vendor-evidence.zip -d vendor-evidence
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${ROOT_TYPES_ARTIFACT_ID}/zip" \
+            -o root-evidence.zip
+          unzip -q root-evidence.zip -d root-evidence
+
+          imports="$(find vendor-evidence -type f -name stock-vendor-boot-module-imports.tsv -print -quit)"
+          test -n "$imports"
+          cp "$imports" msm-drm-vendor-imports.tsv
+
+          count="$(find root-evidence -type f -name '*.symtypes' | wc -l)"
+          echo "MSM_DRM_SYMTYPES_FILES=$count"
+          test "$count" -gt 1000
+
+      - name: Rank structural type dependencies of the 736 real imports
+        run: |
+          set -euo pipefail
+
+          python3 - msm-drm-vendor-imports.tsv root-evidence msm-drm-root-types.txt msm-drm-symbol-roots.tsv <<'PY'
+          import re
+          import sys
+          from collections import Counter, defaultdict
+          from pathlib import Path
+
+          imports_path = Path(sys.argv[1])
+          symtypes_root = Path(sys.argv[2])
+          report_path = Path(sys.argv[3])
+          symbol_map_path = Path(sys.argv[4])
+
+          imports = set()
+          for raw in imports_path.read_text(errors="replace").splitlines():
+              if not raw.strip():
+                  continue
+              p = raw.split("\t")
+              if len(p) < 5:
+                  continue
+              module, vermagic, layout, symbol, crc = p[:5]
+              if module.endswith("/lib/modules/msm_drm.ko"):
+                  imports.add(symbol)
+
+          if len(imports) != 736:
+              raise SystemExit(f"expected 736 msm_drm imports, got {len(imports)}")
+
+          ref_re = re.compile(r"\b([estuin]#[A-Za-z0-9_.$' :/<>,-]+)")
+          key_re = re.compile(r"^([^\s]+)\s+(.*)$")
+
+          definitions = defaultdict(set)
+          symbol_roots = defaultdict(set)
+          file_count = 0
+
+          for path in symtypes_root.rglob("*.symtypes"):
+              file_count += 1
+              try:
+                  rows = path.read_text(errors="replace").splitlines()
+              except OSError:
+                  continue
+
+              local_defs = {}
+              for raw in rows:
+                  raw = raw.strip()
+                  if not raw:
+                      continue
+                  m = key_re.match(raw)
+                  if not m:
+                      continue
+                  key, body = m.groups()
+                  local_defs[key] = body
+                  if "#" in key:
+                      definitions[key].add(body)
+
+              for key, body in local_defs.items():
+                  if key in imports:
+                      for ref in ref_re.findall(body):
+                          symbol_roots[key].add(ref)
+
+          graph = defaultdict(set)
+          for key, bodies in definitions.items():
+              for body in bodies:
+                  for ref in ref_re.findall(body):
+                      if ref != key:
+                          graph[key].add(ref)
+
+          def closure(roots):
+              seen = set()
+              stack = list(roots)
+              while stack and len(seen) < 20000:
+                  ref = stack.pop()
+                  if ref in seen:
+                      continue
+                  seen.add(ref)
+                  stack.extend(graph.get(ref, ()))
+              return seen
+
+          direct_counts = Counter()
+          closure_counts = Counter()
+          no_root = []
+
+          symbol_lines = []
+
+          for symbol in sorted(imports):
+              roots = symbol_roots.get(symbol, set())
+              if not roots:
+                  no_root.append(symbol)
+                  symbol_lines.append(f"{symbol}\tNO_ROOT")
+                  continue
+
+              for ref in roots:
+                  direct_counts[ref] += 1
+
+              closed = closure(roots)
+              for ref in closed:
+                  closure_counts[ref] += 1
+
+              structural = sorted(
+                  r for r in closed if r.startswith(("s#", "u#", "e#"))
+              )
+              symbol_lines.append(
+                  f"{symbol}\t" + ",".join(structural)
+              )
+
+          def structural_rows(counter):
+              rows = [
+                  (count, ref)
+                  for ref, count in counter.items()
+                  if ref.startswith(("s#", "u#", "e#"))
+              ]
+              rows.sort(key=lambda x: (-x[0], x[1]))
+              return rows
+
+          direct_struct = structural_rows(direct_counts)
+          closure_struct = structural_rows(closure_counts)
+
+          print(f"MSM_DRM_IMPORTS={len(imports)}")
+          print(f"MSM_DRM_IMPORTS_WITH_ROOTS={len(imports)-len(no_root)}")
+          print(f"MSM_DRM_IMPORTS_NO_ROOT={len(no_root)}")
+          print(f"MSM_DRM_DIRECT_STRUCT_TYPES={len(direct_struct)}")
+          print(f"MSM_DRM_CLOSURE_STRUCT_TYPES={len(closure_struct)}")
+
+          print("MSM_DRM_TOP_STRUCT_TYPES:")
+          for count, ref in closure_struct[:80]:
+              print(f"MSM_DRM_STRUCT\t{ref}\timports={count}")
+
+          lines = [
+              "# Structural type dependencies reachable from stock QGKI msm_drm imports",
+              "",
+              f"symtypes_files={file_count}",
+              f"imports={len(imports)}",
+              f"imports_with_roots={len(imports)-len(no_root)}",
+              f"imports_no_root={len(no_root)}",
+              "",
+              "## Top closure structural types",
+              "type\timport_count",
+          ]
+          for count, ref in closure_struct:
+              lines.append(f"{ref}\t{count}")
+
+          lines += [
+              "",
+              "## Direct structural types",
+              "type\timport_count",
+          ]
+          for count, ref in direct_struct:
+              lines.append(f"{ref}\t{count}")
+
+          lines += [
+              "",
+              "## Imports without mapped type roots",
+          ]
+          lines += no_root
+
+          report_path.write_text("\n".join(lines) + "\n")
+          symbol_map_path.write_text("\n".join(symbol_lines) + "\n")
+          PY
+
+          sed -n '1,180p' msm-drm-root-types.txt
+
+      - name: Upload msm_drm type-root evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-msm-drm-root-types
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            msm-drm-root-types.txt
+            msm-drm-symbol-roots.tsv
