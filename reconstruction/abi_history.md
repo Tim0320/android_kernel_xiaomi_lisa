@@ -607,6 +607,37 @@ The workflow's only failure occurred after the successful build and CRC validati
 
 A lightweight follow-up audit uses ELF `.modinfo` and `__versions` directly from that evidence artifact, avoiding another full rebuild.
 
+## Stock QGKI msm_drm module ABI reaches 736/736
+
+The final audit used the exact `vendor_boot.img` module-version evidence and the successful six-symbol compatibility build.
+
+Verified stock module metadata:
+
+- module: `vendor-root/fragment-0/lib/modules/msm_drm.ko`
+- architecture: `EM_AARCH64`
+- vermagic: `5.4.289-qgki-g5987d69e25da SMP preempt mod_unload modversions aarch64`
+- `module_layout = 0xba39cbb8`
+- `__versions` entries: **736**
+- parse status: **OK**
+
+The rebuilt kernel matches every stock QGKI module import:
+
+- imports: **736**
+- exact CRC matches: **736**
+- CRC mismatches: **0**
+- missing exports: **0**
+- match rate: **100%**
+
+The six formerly blocking symbols also remain exact: **6/6**.
+
+This closes the modversion/import-ABI gate for the stock QGKI `msm_drm.ko`.
+
+### Remaining safety gate
+
+A 736/736 modversion result is necessary but not sufficient to call the kernel runtime-safe. The reconstruction still uses stock-facing genksyms views for some types, so actual runtime structure layouts must be checked separately.
+
+The next audit intersects the 736 real `msm_drm.ko` imports with the previously generated 1,533 current-tree `.symtypes` files. This produces a ranked list of structural type dependencies actually reachable from the stock module's imported kernel APIs. Runtime record-layout comparison will then be limited to those high-impact types instead of the entire kernel.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
