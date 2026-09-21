@@ -51,17 +51,12 @@ fi
 printf '%s\n' "$BASE_SHA" > "$WORK_ROOT/base-before-stable.txt"
 echo "::endgroup::"
 
-echo "::group::Overlay MIUI UFS ABI candidate"
-# Keep the proven lisa-capable base, but test the older Lahaina MIUI UFS
-# implementation independently. This isolates the ABI-sensitive UFS layout
-# from the device-specific lisa DTS/config/audio/touch sources.
-git clone --filter=blob:none --single-branch --depth=1 --branch "$UFS_ABI_REF" \
-    "$UFS_ABI_REPO" "$WORK_ROOT/ufs-abi"
-rm -rf drivers/scsi/ufs
-cp -a "$WORK_ROOT/ufs-abi/drivers/scsi/ufs" drivers/scsi/ufs
+echo "::group::Keep merged MIUI/common UFS core"
+# Do not replace the complete UFS subtree with an older donor here.
+# Build #43 proved that the miui-t overlay still misses all six stock UFS
+# symbol CRCs. Keep the 5.4.289 merged UFS core so the next build provides a
+# clean A/B ABI measurement against the same stock CRC evidence.
 test -f drivers/scsi/ufs/ufshcd.h
-grep -q 'unsigned long lrb_in_use;' drivers/scsi/ufs/ufshcd.h
-grep -q 'unsigned long tm_slots_in_use;' drivers/scsi/ufs/ufshcd.h
 echo "::endgroup::"
 
 echo "::group::Repair MIUI sources for the 5.4.289 common API"
