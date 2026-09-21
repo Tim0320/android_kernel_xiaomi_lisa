@@ -170,27 +170,22 @@ jobs:
             CLANG_TRIPLE=aarch64-linux-gnu- \
             kernel/module.o drivers/misc/lisa_abi_probe.o
 
-      - name: Compare oracle CRCs with HyperOS stock
+      - name: Inspect generated symbol-version evidence
         run: |
           set -euo pipefail
           cd kernel
 
-          crc_from_object() {
-            local obj="$1"
-            local symbol="$2"
-            local expected="$3"
-            local actual
-            actual="$(aarch64-linux-gnu-nm "$obj" | awk -v s="__crc_$symbol" '$3 == s {print "0x" tolower($1); found=1} END {if (!found) exit 1}')" || actual="MISSING"
-            echo "$symbol: oracle=$actual stock=$expected"
-          }
+          echo "=== probe object symbols ==="
+          aarch64-linux-gnu-nm -a out/drivers/misc/lisa_abi_probe.o | grep -E '(__crc_|get_ufs_|ufs_.*desc|ufshcd_read_desc)' || true
+          echo "=== module object symbols ==="
+          aarch64-linux-gnu-nm -a out/kernel/module.o | grep -E '(__crc_module_layout|module_layout)' || true
 
-          crc_from_object out/drivers/misc/lisa_abi_probe.o get_ufs_data 0xfa507f92
-          crc_from_object out/drivers/misc/lisa_abi_probe.o get_ufs_hba_data 0xc40eabac
-          crc_from_object out/drivers/misc/lisa_abi_probe.o get_ufs_sdev_data 0xc5bbd8a8
-          crc_from_object out/drivers/misc/lisa_abi_probe.o ufs_get_string_desc 0x479d5ded
-          crc_from_object out/drivers/misc/lisa_abi_probe.o ufs_read_desc_param 0x16548413
-          crc_from_object out/drivers/misc/lisa_abi_probe.o ufshcd_read_desc 0xa93e3b58
-          crc_from_object out/kernel/module.o module_layout 0xba39cbb8
+          echo "=== generated command/version files ==="
+          find out/drivers/misc out/kernel -maxdepth 2 -type f \
+            \( -name '*lisa_abi_probe*' -o -name '*module*.cmd' -o -name '*.symversions' \) \
+            -print | sort
+          grep -R -n -E '__crc_(get_ufs_data|get_ufs_hba_data|get_ufs_sdev_data|ufs_get_string_desc|ufs_read_desc_param|ufshcd_read_desc|module_layout)|get_ufs_data|module_layout' \
+            out/drivers/misc out/kernel 2>/dev/null | head -240 || true
 
       - name: Upload oracle evidence
         if: always()
