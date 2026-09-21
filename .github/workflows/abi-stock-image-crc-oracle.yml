@@ -1,0 +1,208 @@
+name: Compare stock Image CRCs with stock QGKI module ABI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/abi-stock-image-crc-oracle.yml
+
+permissions:
+  contents: read
+
+jobs:
+  stock-image-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xz-utils binutils python3-pip git git-lfs
+          git lfs install
+
+      - name: Fetch public stock boot image
+        run: |
+          set -euo pipefail
+          url="https://raw.githubusercontent.com/Jiovanni-dump/xiaomi_lisa_dump/2dbe7b5569ed49cc2c6649a7b313d4a092755034/boot.img.xz"
+
+          if ! curl -L --fail --retry 5 --retry-delay 2 "$url" -o boot.img.xz; then
+            rm -f boot.img.xz
+          fi
+
+          if [[ ! -s boot.img.xz ]] || ! xz -t boot.img.xz 2>/dev/null; then
+            echo "Raw path did not yield a valid xz; falling back to sparse Git/LFS fetch"
+            rm -rf dump boot.img.xz
+            git init dump
+            git -C dump remote add origin https://github.com/Jiovanni-dump/xiaomi_lisa_dump.git
+            git -C dump config core.sparseCheckout true
+            echo "boot.img.xz" > dump/.git/info/sparse-checkout
+            GIT_LFS_SKIP_SMUDGE=1 git -C dump fetch --depth=1 origin 2dbe7b5569ed49cc2c6649a7b313d4a092755034
+            GIT_LFS_SKIP_SMUDGE=1 git -C dump checkout FETCH_HEAD
+            git -C dump lfs pull --include="boot.img.xz"
+            cp dump/boot.img.xz boot.img.xz
+          fi
+
+          xz -t boot.img.xz
+          xz -dc boot.img.xz > boot.img
+          ls -lh boot.img.xz boot.img
+          sha256sum boot.img.xz boot.img
+
+      - name: Extract raw ARM64 Image from Android boot image
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+
+          data = Path("boot.img").read_bytes()
+          if data[:8] != b"ANDROID!":
+              raise SystemExit("Not an Android boot image")
+
+          kernel_size = struct.unpack_from("<I", data, 8)[0]
+          page_size = 4096
+          start = page_size
+          end = start + kernel_size
+
+          print(f"BOOT_KERNEL_SIZE={kernel_size}")
+          print(f"BOOT_KERNEL_OFFSET=0x{start:x}")
+
+          if end > len(data):
+              raise SystemExit("Kernel payload extends past boot image")
+
+          image = data[start:end]
+          magic = struct.unpack_from("<I", image, 0x38)[0]
+          print(f"ARM64_IMAGE_MAGIC=0x{magic:08x}")
+          if magic != 0x644d5241:
+              raise SystemExit("ARM64 Image magic mismatch")
+
+          Path("stock-Image").write_bytes(image)
+          PY
+
+          strings -a stock-Image | grep -F "Linux version 5.4.289-qgki-g5987d69e25da"
+          strings -a stock-Image | grep -F "5.4.289-qgki-g5987d69e25da" | head -n 20
+          ls -lh stock-Image
+
+      - name: Install kallsyms recovery tool
+        run: |
+          set -euo pipefail
+          python3 -m pip install --break-system-packages             git+https://github.com/marin-m/vmlinux-to-elf.git
+          command -v kallsyms-finder
+          command -v vmlinux-to-elf
+
+      - name: Recover stock Image kallsyms and CRC symbols
+        run: |
+          set -euo pipefail
+
+          kallsyms-finder stock-Image > stock.kallsyms
+          test -s stock.kallsyms
+
+          echo "KALLSYMS_LINES=$(wc -l < stock.kallsyms)"
+          grep -E ' __crc_(module_layout|device_register|device_unregister|dev_driver_string|iommu_map|dma_buf_attach)$' stock.kallsyms || true
+
+          crc_count="$(grep -c ' __crc_' stock.kallsyms || true)"
+          echo "STOCK_IMAGE_CRC_SYMBOL_COUNT=$crc_count"
+          if [[ "$crc_count" -lt 100 ]]; then
+            echo "Too few __crc_ symbols recovered; oracle is not valid"
+            exit 30
+          fi
+
+          # ELF reconstruction is a secondary cross-check. The kallsyms
+          # output above is the primary source for absolute __crc_* values.
+          vmlinux-to-elf stock-Image stock-vmlinux.elf || true
+          if [[ -s stock-vmlinux.elf ]]; then
+            nm -n stock-vmlinux.elf | grep ' __crc_' > stock.elf.crcs || true
+            head -n 20 stock.elf.crcs || true
+          fi
+
+      - name: Compare stock Image CRCs to stock msm_drm QGKI oracle
+        run: |
+          set -euo pipefail
+
+          score=0
+          total=0
+          present=0
+
+          check() {
+            local symbol="$1" expected="$2"
+            local raw actual
+
+            total=$((total+1))
+            raw="$(awk -v s="__crc_$symbol" '$NF == s {print $1; exit}' stock.kallsyms)"
+
+            if [[ -n "$raw" ]]; then
+              present=$((present+1))
+              raw="${raw#0x}"
+              raw="${raw,,}"
+              actual="0x${raw: -8}"
+            else
+              actual="MISSING"
+            fi
+
+            echo "stock-image: $symbol image=$actual module=$expected"
+            [[ "$actual" == "$expected" ]] && score=$((score+1)) || true
+          }
+
+          check module_layout 0xba39cbb8
+          check device_register 0xcf9bcdee
+          check device_unregister 0x4678e0d9
+          check dev_driver_string 0x22a8544f
+          check device_create 0xbebfb31d
+          check __platform_driver_register 0x8a28799a
+          check platform_driver_unregister 0xb1643fd1
+          check platform_get_irq 0xbcc683a6
+          check platform_get_resource 0x0b50f5aa
+          check platform_get_resource_byname 0x67870233
+          check __pm_runtime_resume 0xd7ceaec5
+          check pm_runtime_enable 0x69233960
+          check of_find_property 0x7bfb6ef3
+          check of_get_property 0x3f86cb17
+          check of_parse_phandle 0x5d8562ca
+          check of_address_to_resource 0x6f7055af
+          check of_device_is_compatible 0xb56ea40d
+          check clk_get 0xf8127647
+          check clk_register 0xab9a55da
+          check iommu_attach_device 0x0c54e55f
+          check iommu_map 0xa106c11d
+          check iommu_unmap 0xe1da4443
+          check regulator_get 0xf7c6097c
+          check regulator_enable 0x691df2d6
+          check regulator_set_voltage 0x54cdbf0a
+          check kthread_create_on_node 0x947eb746
+          check kthread_stop 0x97198f13
+          check irq_domain_remove 0x160aa18c
+          check irq_find_mapping 0x6fb78324
+          check sysfs_create_group 0x0965d890
+          check kobject_create_and_add 0x93a00376
+          check __free_pages 0x419e8d31
+          check adjust_managed_page_count 0xcf0c4b39
+          check dma_direct_map_page 0x803f2855
+          check dma_direct_map_sg 0x9e7457c3
+          check dma_alloc_attrs 0x1c3c2bb3
+          check dma_buf_attach 0x995856d1
+          check dma_buf_map_attachment 0x3d20e038
+
+          echo "STOCK_IMAGE_CRC_PRESENT=$present/$total"
+          echo "STOCK_IMAGE_MODULE_CRC_SCORE=$score/$total"
+
+          if [[ "$present" -lt 35 ]]; then
+            echo "Insufficient CRC coverage to draw a conclusion"
+            exit 31
+          fi
+
+          if [[ "$score" -eq "$total" ]]; then
+            echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=1"
+          else
+            echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=0"
+          fi
+
+      - name: Upload stock CRC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stock-image-crc-oracle
+          retention-days: 7
+          path: |
+            stock.kallsyms
+            stock.elf.crcs
