@@ -20,7 +20,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xz-utils binutils python3-pip git git-lfs
+          sudo apt-get install -y xz-utils gzip bzip2 lz4 zstd binutils python3-pip git git-lfs
           git lfs install
 
       - name: Fetch public stock boot image
@@ -50,40 +50,113 @@ jobs:
           ls -lh boot.img.xz boot.img
           sha256sum boot.img.xz boot.img
 
-      - name: Extract raw ARM64 Image from Android boot image
+      - name: Extract and decompress ARM64 Image from Android boot image
         run: |
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
+          import bz2
+          import lzma
           import struct
+          import subprocess
+          import zlib
 
           data = Path("boot.img").read_bytes()
           if data[:8] != b"ANDROID!":
               raise SystemExit("Not an Android boot image")
 
           kernel_size = struct.unpack_from("<I", data, 8)[0]
-          page_size = 4096
+          header_version = struct.unpack_from("<I", data, 40)[0]
+          if header_version >= 3:
+              page_size = 4096
+          else:
+              page_size = struct.unpack_from("<I", data, 36)[0]
+              if page_size == 0:
+                  raise SystemExit("Invalid legacy boot page size")
+
           start = page_size
           end = start + kernel_size
-
-          print(f"BOOT_KERNEL_SIZE={kernel_size}")
-          print(f"BOOT_KERNEL_OFFSET=0x{start:x}")
-
           if end > len(data):
               raise SystemExit("Kernel payload extends past boot image")
 
-          image = data[start:end]
-          magic = struct.unpack_from("<I", image, 0x38)[0]
-          print(f"ARM64_IMAGE_MAGIC=0x{magic:08x}")
-          if magic != 0x644d5241:
-              raise SystemExit("ARM64 Image magic mismatch")
+          payload = data[start:end]
+          Path("kernel-payload.bin").write_bytes(payload)
 
+          print(f"BOOT_HEADER_VERSION={header_version}")
+          print(f"BOOT_PAGE_SIZE={page_size}")
+          print(f"BOOT_KERNEL_SIZE={kernel_size}")
+          print(f"BOOT_KERNEL_OFFSET=0x{start:x}")
+          print(f"KERNEL_PAYLOAD_MAGIC={payload[:8].hex()}")
+
+          ARM64_MAGIC = 0x644D5241
+
+          def is_arm64_image(blob):
+              return len(blob) >= 0x3c and struct.unpack_from("<I", blob, 0x38)[0] == ARM64_MAGIC
+
+          compression = "unknown"
+          image = None
+
+          if is_arm64_image(payload):
+              compression = "raw"
+              image = payload
+          elif payload.startswith(b"\x1f\x8b"):
+              compression = "gzip"
+              d = zlib.decompressobj(16 + zlib.MAX_WBITS)
+              image = d.decompress(payload) + d.flush()
+          elif payload.startswith(b"\xfd7zXZ\x00"):
+              compression = "xz"
+              d = lzma.LZMADecompressor()
+              image = d.decompress(payload)
+          elif payload.startswith(b"BZh"):
+              compression = "bzip2"
+              image = bz2.decompress(payload)
+          elif payload.startswith(b"\x04\x22\x4d\x18") or payload.startswith(b"\x02\x21\x4c\x18"):
+              compression = "lz4"
+              proc = subprocess.run(
+                  ["lz4", "-dc", "kernel-payload.bin"],
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+              )
+              if proc.returncode != 0:
+                  print(proc.stderr.decode("utf-8", "replace"))
+                  raise SystemExit(f"lz4 decompression failed: {proc.returncode}")
+              image = proc.stdout
+          elif payload.startswith(b"\x28\xb5\x2f\xfd"):
+              compression = "zstd"
+              proc = subprocess.run(
+                  ["zstd", "-dc", "kernel-payload.bin"],
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+              )
+              if proc.returncode != 0:
+                  print(proc.stderr.decode("utf-8", "replace"))
+                  raise SystemExit(f"zstd decompression failed: {proc.returncode}")
+              image = proc.stdout
+
+          print(f"KERNEL_COMPRESSION={compression}")
+          if image is None:
+              raise SystemExit(
+                  "Unsupported kernel payload format; keep kernel-payload.bin artifact for inspection"
+              )
+
+          if not is_arm64_image(image):
+              got = (
+                  struct.unpack_from("<I", image, 0x38)[0]
+                  if len(image) >= 0x3c else None
+              )
+              raise SystemExit(
+                  f"Decompressed payload is not an ARM64 Image; magic={got!r}"
+              )
+
+          print(f"ARM64_IMAGE_MAGIC=0x{ARM64_MAGIC:08x}")
+          print(f"ARM64_IMAGE_SIZE={len(image)}")
           Path("stock-Image").write_bytes(image)
           PY
 
+          file kernel-payload.bin stock-Image || true
           strings -a stock-Image | grep -F "Linux version 5.4.289-qgki-g5987d69e25da"
           strings -a stock-Image | grep -F "5.4.289-qgki-g5987d69e25da" | head -n 20
-          ls -lh stock-Image
+          ls -lh kernel-payload.bin stock-Image
 
       - name: Install kallsyms recovery tool
         run: |
@@ -205,5 +278,7 @@ jobs:
           name: stock-image-crc-oracle
           retention-days: 7
           path: |
+            kernel-payload.bin
+            stock-Image
             stock.kallsyms
             stock.elf.crcs
