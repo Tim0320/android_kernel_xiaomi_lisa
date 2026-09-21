@@ -1,0 +1,238 @@
+name: Probe lisa forced-stock config ABI matrix
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-config-force-matrix.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        mode:
+          - baseline
+          - restore-missing-stock
+          - remove-generated-extra
+          - strict-stock-shape
+
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git curl
+
+      - name: Cache AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+          curl -L --fail --retry 5 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+
+      - name: Clone reconstructed lisa
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch reconstruction/5.4.289-qgki \
+            https://github.com/Tim0320/android_kernel_xiaomi_lisa.git kernel
+
+      - name: Generate current effective config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            olddefconfig </dev/null
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            prepare scripts
+
+      - name: Force stock preprocessor shape
+        run: |
+          set -euo pipefail
+          cd kernel
+          hdr=out/include/generated/autoconf.h
+          mode="${{ matrix.mode }}"
+
+          if [[ "$mode" == "restore-missing-stock" || "$mode" == "strict-stock-shape" ]]; then
+            cat >> "$hdr" <<'EOF'
+          #define CONFIG_BQ2597X 1
+          #define CONFIG_DEBUG_POLICY_STATUS 1
+          #define CONFIG_DEBUG_POWER_MI 1
+          #define CONFIG_F2FS_CP_OPT 1
+          #define CONFIG_FASTBOOT_CMD_CTRL_UART 1
+          #define CONFIG_IIO_TRIGGERED_BUFFER 1
+          #define CONFIG_MIGT 1
+          #define CONFIG_MILLET 1
+          #define CONFIG_MIUI_ZRAM_MEMORY_TRACKING 1
+          #define CONFIG_MIUS_PROXIMITY 1
+          #define CONFIG_MI_UFS_FFU 1
+          #define CONFIG_OEM_KERNEL 1
+          #define CONFIG_PACKAGE_RUNTIME_INFO 1
+          #define CONFIG_PASSTHROUGH_SYSTEM 1
+          #define CONFIG_PERF_CRITICAL_RT_TASK 1
+          #define CONFIG_PERF_HUMANTASK 1
+          #define CONFIG_QCOM_MINIDUMP_ENCRYPT 1
+          #define CONFIG_QTI_TZ_LOG 1
+          #define CONFIG_SF_BINDER 1
+          #define CONFIG_UFSGKI 1
+          #define CONFIG_UFS_WB 1
+          #define CONFIG_EROFS_FS_CLUSTER_PAGE_LIMIT 1
+          EOF
+
+            sed -i 's/^#define CONFIG_QCOM_WATCHDOG_BARK_TIME .*/#define CONFIG_QCOM_WATCHDOG_BARK_TIME 20000/' "$hdr" || true
+            sed -i 's/^#define CONFIG_QCOM_WATCHDOG_PET_TIME .*/#define CONFIG_QCOM_WATCHDOG_PET_TIME 15000/' "$hdr" || true
+          fi
+
+          if [[ "$mode" == "remove-generated-extra" || "$mode" == "strict-stock-shape" ]]; then
+            for sym in \
+              ARM64_USE_LSE_ATOMICS COMPAT_VDSO GENERIC_COMPAT_VDSO RELR \
+              TOOLS_SUPPORT_RELR BOARD_XIAOMI_LISA ZRAM_DEF_COMP_LZORLE; do
+              sed -i "/^#define CONFIG_${sym} /d" "$hdr"
+            done
+          fi
+
+          echo "mode=$mode"
+          grep -E 'CONFIG_(OEM_KERNEL|UFSGKI|UFS_WB|MI_UFS_FFU|PASSTHROUGH_SYSTEM|ARM64_USE_LSE_ATOMICS|RELR|BOARD_XIAOMI_LISA)' "$hdr" || true
+
+      - name: Inject ABI probe
+        run: |
+          set -euo pipefail
+          cd kernel
+          cat > drivers/misc/lisa_abi_probe.c <<'EOF'
+          #include <linux/module.h>
+          #include <linux/types.h>
+          #include <scsi/scsi_device.h>
+          #include "../scsi/ufs/ufshcd.h"
+          #include "../scsi/ufs/ufs.h"
+
+          struct ufs_err_state_debug {
+              u64 err_occurred;
+              char err_reason[10][32];
+          };
+          struct ufs_data {
+              struct ufs_hba *hba;
+              struct scsi_device *sdev;
+              struct ufs_err_state_debug ufs_err_state;
+          };
+
+          struct ufs_hba *get_ufs_hba_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_hba_data);
+          struct scsi_device *get_ufs_sdev_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_sdev_data);
+          struct ufs_data *get_ufs_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_data);
+
+          int ufs_get_string_desc(struct ufs_hba *hba, void *buf, int size,
+                                  enum device_desc_param pname, bool ascii_std)
+          { return 0; }
+          EXPORT_SYMBOL(ufs_get_string_desc);
+          int ufs_read_desc_param(struct ufs_hba *hba, enum desc_idn desc_id,
+                                  u8 desc_index, u8 param_offset,
+                                  void *buf, u8 param_size)
+          { return 0; }
+          EXPORT_SYMBOL(ufs_read_desc_param);
+          int ufshcd_read_desc(struct ufs_hba *hba, enum desc_idn desc_id,
+                               int desc_index, void *buf, u32 size)
+          { return 0; }
+          EXPORT_SYMBOL(ufshcd_read_desc);
+          EOF
+          printf '\nobj-y += lisa_abi_probe.o\n' >> drivers/misc/Makefile
+
+      - name: Build ABI-bearing objects
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          rm -f out/kernel/module.o out/kernel/module.o.symversions
+          rm -f out/drivers/misc/lisa_abi_probe.o out/drivers/misc/lisa_abi_probe.o.symversions
+          make -j"$(nproc)" KBUILD_SYMTYPES=1 O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            kernel/module.o drivers/misc/lisa_abi_probe.o
+
+      - name: Score against HyperOS stock
+        run: |
+          set -euo pipefail
+          cd kernel
+          p=out/drivers/misc/lisa_abi_probe.o.symversions
+          m=out/kernel/module.o.symversions
+          mode="${{ matrix.mode }}"
+          score=0
+
+          check() {
+            local file="$1" symbol="$2" expected="$3"
+            local actual
+            actual="$(sed -n "s/^__crc_${symbol} = \(0x[0-9a-fA-F]*\);/\1/p" "$file" | head -n1)"
+            actual="${actual,,}"
+            echo "$mode: $symbol candidate=${actual:-MISSING} stock=$expected"
+            [[ "$actual" == "$expected" ]] && score=$((score+1)) || true
+          }
+
+          check "$p" get_ufs_data 0xfa507f92
+          check "$p" get_ufs_hba_data 0xc40eabac
+          check "$p" get_ufs_sdev_data 0xc5bbd8a8
+          check "$p" ufs_get_string_desc 0x479d5ded
+          check "$p" ufs_read_desc_param 0x16548413
+          check "$p" ufshcd_read_desc 0xa93e3b58
+          check "$m" module_layout 0xba39cbb8
+          echo "ABI_SCORE=$score/7"
+
+          echo "=== symtype files ==="
+          find out/kernel out/drivers/misc -maxdepth 2 -name '*.symtypes' -print | sort || true
+          for f in out/kernel/module.o.symtypes out/drivers/misc/lisa_abi_probe.o.symtypes; do
+            if [[ -s "$f" ]]; then
+              echo "=== $f ==="
+              grep -E '^(module_layout|get_ufs_|ufs_get_string_desc|ufs_read_desc_param|ufshcd_read_desc|s#module|s#scsi_device|s#ufs_hba)' "$f" | head -120 || true
+            fi
+          done
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: abi-config-${{ matrix.mode }}
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            kernel/out/include/generated/autoconf.h
+            kernel/out/kernel/module.o.symversions
+            kernel/out/kernel/module.o.symtypes
+            kernel/out/drivers/misc/lisa_abi_probe.o.symversions
+            kernel/out/drivers/misc/lisa_abi_probe.o.symtypes
