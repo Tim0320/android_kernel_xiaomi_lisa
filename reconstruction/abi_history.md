@@ -169,6 +169,40 @@ The lineage workflow was corrected to:
 
 Corrected workflow commit: `ceefc4e3`.
 
+## Exact stock header overlay and effective-config divergence
+
+A controlled direct-genksyms experiment compared the current reconstruction against a temporary overlay of the exact stock IKHEADERS source headers.
+
+Results:
+
+| Mode | Present | Stock CRC matches |
+| --- | ---: | ---: |
+| control | 37/38 | 0/38 |
+| exact stock source-header overlay | 37/38 | 0/38 |
+
+The source-header overlay changed essentially every tested CRC, proving that the recovered stock headers participate in the ABI graph, but **source headers alone are not sufficient** to reproduce the stock CRC family.
+
+A second root cause is now explicit in Build #53 configuration evidence. Although the runtime stock IKCONFIG contains **5,600** config entries, the reconstructed donor tree resolves it through `olddefconfig` to **5,570** entries with **92 differences**.
+
+Important stock settings lost because the donor source/Kconfig does not preserve them include:
+
+- `CONFIG_UFSGKI=y`
+- `CONFIG_UFS_WB=y`
+- `CONFIG_MI_UFS_FFU=y`
+- `CONFIG_OEM_KERNEL=y`
+- `CONFIG_PASSTHROUGH_SYSTEM=y`
+- `CONFIG_MIGT=y`
+- `CONFIG_MILLET=y`
+- `CONFIG_MIUI_ZRAM_MEMORY_TRACKING=y`
+- `CONFIG_QCOM_MINIDUMP_ENCRYPT=y`
+- `CONFIG_QTI_TZ_LOG=y`
+
+The donor additionally enables options absent from the stock IKCONFIG, including `CONFIG_ARM64_USE_LSE_ATOMICS=y`, `CONFIG_COMPAT_VDSO=y`, `CONFIG_RELR=y`, and related generated settings.
+
+Therefore the current build cannot be described as using an exact effective stock configuration, even though it starts from the exact stock IKCONFIG text. The source tree's Kconfig generation changes the effective preprocessor environment used by genksyms.
+
+The next probe overlays **all** recovered stock IKHEADERS after `prepare`, including generated/config headers, to test whether the stock generated preprocessor environment materially restores the 38-symbol CRC fingerprint.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
