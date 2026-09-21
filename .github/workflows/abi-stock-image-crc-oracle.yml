@@ -9,7 +9,7 @@ on:
       - .github/workflows/abi-stock-image-crc-oracle.yml
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   stock-image-oracle:
@@ -17,14 +17,27 @@ jobs:
     timeout-minutes: 30
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Install dependencies
+        id: install
+        continue-on-error: true
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xz-utils gzip bzip2 lz4 zstd binutils python3-pip git git-lfs
-          git lfs install
+          mkdir -p diagnostics
+          {
+            set -euo pipefail
+            sudo apt-get update
+            sudo apt-get install -y xz-utils gzip bzip2 lz4 zstd binutils python3-pip git git-lfs
+            git lfs install
+          } 2>&1 | tee diagnostics/01-install.log
 
       - name: Fetch public stock boot image
+        id: fetch
+        continue-on-error: true
         run: |
+          mkdir -p diagnostics
+          {
           set -euo pipefail
           url="https://raw.githubusercontent.com/Jiovanni-dump/xiaomi_lisa_dump/2dbe7b5569ed49cc2c6649a7b313d4a092755034/boot.img.xz"
 
@@ -49,9 +62,14 @@ jobs:
           xz -dc boot.img.xz > boot.img
           ls -lh boot.img.xz boot.img
           sha256sum boot.img.xz boot.img
+          } 2>&1 | tee diagnostics/02-fetch.log
 
       - name: Extract and decompress ARM64 Image from Android boot image
+        id: extract
+        continue-on-error: true
         run: |
+          mkdir -p diagnostics
+          {
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
@@ -157,16 +175,26 @@ jobs:
           strings -a stock-Image | grep -F "Linux version 5.4.289-qgki-g5987d69e25da"
           strings -a stock-Image | grep -F "5.4.289-qgki-g5987d69e25da" | head -n 20
           ls -lh kernel-payload.bin stock-Image
+          } 2>&1 | tee diagnostics/03-extract.log
 
       - name: Install kallsyms recovery tool
+        id: tools
+        continue-on-error: true
         run: |
-          set -euo pipefail
-          python3 -m pip install --break-system-packages             git+https://github.com/marin-m/vmlinux-to-elf.git
-          command -v kallsyms-finder
-          command -v vmlinux-to-elf
+          mkdir -p diagnostics
+          {
+            set -euo pipefail
+            python3 -m pip install --break-system-packages git+https://github.com/marin-m/vmlinux-to-elf.git
+            command -v kallsyms-finder
+            command -v vmlinux-to-elf
+          } 2>&1 | tee diagnostics/04-tools.log
 
       - name: Recover stock Image kallsyms and CRC symbols
+        id: recover
+        continue-on-error: true
         run: |
+          mkdir -p diagnostics
+          {
           set -euo pipefail
 
           kallsyms-finder stock-Image > stock.kallsyms
@@ -189,9 +217,14 @@ jobs:
             nm -n stock-vmlinux.elf | grep ' __crc_' > stock.elf.crcs || true
             head -n 20 stock.elf.crcs || true
           fi
+          } 2>&1 | tee diagnostics/05-recover.log
 
       - name: Compare stock Image CRCs to stock msm_drm QGKI oracle
+        id: compare
+        continue-on-error: true
         run: |
+          mkdir -p diagnostics
+          {
           set -euo pipefail
 
           score=0
@@ -270,6 +303,49 @@ jobs:
           else
             echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=0"
           fi
+          } 2>&1 | tee diagnostics/06-compare.log
+
+      - name: Persist diagnostic report
+        if: always()
+        env:
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          FETCH_OUTCOME: ${{ steps.fetch.outcome }}
+          EXTRACT_OUTCOME: ${{ steps.extract.outcome }}
+          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          RECOVER_OUTCOME: ${{ steps.recover.outcome }}
+          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p reconstruction
+          {
+            echo "# Stock Image ABI probe diagnostic"
+            echo
+            echo "commit=${GITHUB_SHA}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo
+            echo "install=${INSTALL_OUTCOME}"
+            echo "fetch=${FETCH_OUTCOME}"
+            echo "extract=${EXTRACT_OUTCOME}"
+            echo "tools=${TOOLS_OUTCOME}"
+            echo "recover=${RECOVER_OUTCOME}"
+            echo "compare=${COMPARE_OUTCOME}"
+            for log in diagnostics/*.log; do
+              if [[ -f "$log" ]]; then
+                echo
+                echo "===== $log ====="
+                cat "$log"
+              fi
+            done
+          } > reconstruction/last_stock_image_probe.txt
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reconstruction/last_stock_image_probe.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "ci: record stock Image ABI probe diagnostics"
+            git push
+          fi
 
       - name: Upload stock CRC evidence
         if: always()
@@ -282,3 +358,23 @@ jobs:
             stock-Image
             stock.kallsyms
             stock.elf.crcs
+            diagnostics/
+            reconstruction/last_stock_image_probe.txt
+
+      - name: Fail job if probe stage failed
+        if: always()
+        env:
+          INSTALL_OUTCOME: ${{ steps.install.outcome }}
+          FETCH_OUTCOME: ${{ steps.fetch.outcome }}
+          EXTRACT_OUTCOME: ${{ steps.extract.outcome }}
+          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
+          RECOVER_OUTCOME: ${{ steps.recover.outcome }}
+          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
+        run: |
+          set -euo pipefail
+          for status in "$INSTALL_OUTCOME" "$FETCH_OUTCOME" "$EXTRACT_OUTCOME" "$TOOLS_OUTCOME" "$RECOVER_OUTCOME" "$COMPARE_OUTCOME"; do
+            if [[ "$status" != "success" ]]; then
+              echo "At least one probe stage failed; see reconstruction/last_stock_image_probe.txt"
+              exit 1
+            fi
+          done
