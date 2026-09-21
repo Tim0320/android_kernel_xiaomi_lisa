@@ -117,6 +117,42 @@ This confirms that the 9,158 CRC mismatches are highly correlated through a rela
 
 A new high-value lead is present in the exact stock configuration: **`CONFIG_IKHEADERS=y`**. Linux embeds the build-time header archive as `kernel_headers_data ... kernel_headers_data_end` in the kernel image. Recovering that archive from the exact stock Image may expose the actual Xiaomi/Qualcomm headers used to build HyperOS, allowing direct comparison of the dominant root types instead of inferring them from public forks.
 
+## Exact stock IKHEADERS recovered
+
+The exact stock `boot.img` has `CONFIG_IKHEADERS=y`, and the embedded header archive was successfully recovered directly from the stock ARM64 Image.
+
+Recovered evidence:
+
+- `kernel_headers_data` VA: `0xffffffc01150d3e1`
+- `kernel_headers_data_end` VA: `0xffffffc01186a009`
+- compressed archive size: **3,525,672 bytes**
+- extracted header files: **7,804**
+- archive format: valid `tar.xz`
+
+The highest-impact root-type headers are all different from the current reconstruction. Exact SHA-256 comparison:
+
+| Header | Stock vs reconstruction |
+| --- | --- |
+| `include/linux/device.h` | different |
+| `include/linux/fs.h` | different |
+| `include/linux/mm_types.h` | different |
+| `include/linux/of.h` | different |
+| `include/linux/module.h` | different |
+| `include/linux/skbuff.h` | different |
+| `include/linux/netdevice.h` | different |
+| `include/linux/blkdev.h` | different |
+| `include/linux/bio.h` | different |
+| `include/net/sock.h` | different |
+| `include/net/net_namespace.h` | different |
+| `include/scsi/scsi_device.h` | different |
+| `include/drm/drm_device.h` | different |
+
+This directly corroborates the genksyms root-type analysis. The current dominant ABI mismatch is therefore supported by binary-extracted build-time stock headers, not merely inferred from CRC patterns.
+
+Important limitation: IKHEADERS does not necessarily contain every private driver-local header. For example `include/ufs/ufshcd.h` is absent from the recovered stock archive, so UFS-local type recovery still needs another method.
+
+The next step is a **header-lineage fingerprint**: compare all 7,804 recovered stock headers against the previously tested Qualcomm/Xiaomi/public candidate trees and rank them by exact file identity and by critical root-type-header similarity. This is safer than copying stock headers wholesale into a source tree whose implementations may not match them.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
