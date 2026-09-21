@@ -11,6 +11,22 @@ Target stock kernel:
 
 > Important: percentages from different probe sets are not directly comparable. The 38-symbol core probe, 7-symbol UFS/module probe, and 17-symbol selected vendor probe measure different parts of the ABI.
 
+## Stock Image oracle validation
+
+The exact OS2.0.16.0.UKOCNXM stock `boot.img` was uploaded and its raw ARM64 Image was verified as:
+
+- kernel: `5.4.289-qgki-g5987d69e25da`
+- stock Image exported symbols recovered: **13,360**
+- tested module-oracle symbols present in stock Image: **38 / 38**
+- direct `__kcrctab` CRC matches against stock `msm_drm.ko`: **38 / 38**
+- relative-CRC interpretation: **0 / 38**
+- `module_layout`: stock Image `0xba39cbb8` = stock module `0xba39cbb8`
+- conclusion: **the 38-symbol stock module oracle is binary-validated and authoritative for subsequent source-family comparisons**
+
+The stock ARM64 binary uses 24-byte absolute `struct kernel_symbol` entries in the observed export tables. Their pointers are populated through ARM64 dynamic relocations, so the Image must be relocated before parsing `__ksymtab`; CRC values themselves are direct 32-bit entries because the exact stock configuration has `CONFIG_MODVERSIONS=y` and does not enable `CONFIG_MODULE_REL_CRCS`.
+
+This validation means the historical 0/38 results for tested public source families cannot be explained by an incorrect `msm_drm.ko` oracle.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
