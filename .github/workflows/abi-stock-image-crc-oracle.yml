@@ -1,10 +1,10 @@
 name: Compare uploaded exact Lisa stock Image CRCs with stock QGKI module ABI
-# CI retrigger marker: stock-image ABI oracle
 
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
     paths:
       - .github/workflows/abi-stock-image-crc-oracle.yml
       - reconstruction/stock/stock-Image/**
@@ -12,12 +12,12 @@ on:
       - scripts/extract_stock_kcrc.py
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   stock-image-oracle:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -27,60 +27,47 @@ jobs:
 
       - name: Install dependencies
         id: install
-        continue-on-error: true
         run: |
+          set -euo pipefail
           mkdir -p diagnostics
           exec > >(tee diagnostics/01-install.log) 2>&1
-          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y xz-utils gzip bzip2 lz4 zstd binutils python3-pip git git-lfs
+          sudo apt-get install -y binutils python3-pip git-lfs
           git lfs install
+          python3 -m pip install --break-system-packages git+https://github.com/marin-m/vmlinux-to-elf.git
+          command -v kallsyms-finder
 
       - name: Use uploaded exact Lisa stock images
         id: fetch
-        continue-on-error: true
         run: |
+          set -euo pipefail
           mkdir -p diagnostics
           exec > >(tee diagnostics/02-fetch.log) 2>&1
-          set -euo pipefail
 
           stock_dir="reconstruction/stock/stock-Image"
+          for file in boot.img vendor_boot.img dtbo.img odm.img; do
+            test -f "$stock_dir/$file"
+            if grep -q '^version https://git-lfs.github.com/spec/v1' "$stock_dir/$file"; then
+              echo "$file is still a Git LFS pointer"
+              exit 23
+            fi
+          done
 
-          test -f "${stock_dir}/boot.img"
-          test -f "${stock_dir}/vendor_boot.img"
-          test -f "${stock_dir}/dtbo.img"
-          test -f "${stock_dir}/odm.img"
+          cp "$stock_dir/boot.img" boot.img
+          file boot.img "$stock_dir/vendor_boot.img" "$stock_dir/dtbo.img" "$stock_dir/odm.img" || true
+          ls -lh boot.img "$stock_dir/vendor_boot.img" "$stock_dir/dtbo.img" "$stock_dir/odm.img"
+          sha256sum boot.img "$stock_dir/vendor_boot.img" "$stock_dir/dtbo.img" "$stock_dir/odm.img"
 
-          if grep -q '^version https://git-lfs.github.com/spec/v1' "${stock_dir}/boot.img"; then
-            echo "boot.img is still an LFS pointer; checkout did not materialize LFS content"
-            exit 23
-          fi
-
-          cp "${stock_dir}/boot.img" boot.img
-
-          echo "STOCK_BOOT_SOURCE=${stock_dir}/boot.img"
-          echo "STOCK_VENDOR_BOOT=${stock_dir}/vendor_boot.img"
-          echo "STOCK_DTBO=${stock_dir}/dtbo.img"
-          echo "STOCK_ODM=${stock_dir}/odm.img"
-
-          file boot.img "${stock_dir}/vendor_boot.img" "${stock_dir}/dtbo.img" "${stock_dir}/odm.img" || true
-          ls -lh boot.img "${stock_dir}/vendor_boot.img" "${stock_dir}/dtbo.img" "${stock_dir}/odm.img"
-          sha256sum boot.img "${stock_dir}/vendor_boot.img" "${stock_dir}/dtbo.img" "${stock_dir}/odm.img"
-
-      - name: Extract and decompress ARM64 Image from Android boot image
+      - name: Extract exact ARM64 stock Image
         id: extract
-        continue-on-error: true
         run: |
+          set -euo pipefail
           mkdir -p diagnostics
           exec > >(tee diagnostics/03-extract.log) 2>&1
-          set -euo pipefail
+
           python3 - <<'PY'
           from pathlib import Path
-          import bz2
-          import lzma
           import struct
-          import subprocess
-          import zlib
 
           data = Path("boot.img").read_bytes()
           if data[:8] != b"ANDROID!":
@@ -88,305 +75,103 @@ jobs:
 
           kernel_size = struct.unpack_from("<I", data, 8)[0]
           header_version = struct.unpack_from("<I", data, 40)[0]
-          if header_version >= 3:
-              page_size = 4096
-          else:
-              page_size = struct.unpack_from("<I", data, 36)[0]
-              if page_size == 0:
-                  raise SystemExit("Invalid legacy boot page size")
+          page_size = 4096 if header_version >= 3 else struct.unpack_from("<I", data, 36)[0]
+          if not page_size:
+              raise SystemExit("Invalid boot page size")
 
           start = page_size
           end = start + kernel_size
           if end > len(data):
               raise SystemExit("Kernel payload extends past boot image")
 
-          payload = data[start:end]
-          Path("kernel-payload.bin").write_bytes(payload)
+          image = data[start:end]
+          if len(image) < 0x3c or struct.unpack_from("<I", image, 0x38)[0] != 0x644D5241:
+              raise SystemExit("Kernel payload is not a raw ARM64 Image")
 
+          Path("stock-Image").write_bytes(image)
           print(f"BOOT_HEADER_VERSION={header_version}")
           print(f"BOOT_PAGE_SIZE={page_size}")
           print(f"BOOT_KERNEL_SIZE={kernel_size}")
-          print(f"BOOT_KERNEL_OFFSET=0x{start:x}")
-          print(f"KERNEL_PAYLOAD_MAGIC={payload[:8].hex()}")
-
-          ARM64_MAGIC = 0x644D5241
-
-          def is_arm64_image(blob):
-              return len(blob) >= 0x3c and struct.unpack_from("<I", blob, 0x38)[0] == ARM64_MAGIC
-
-          compression = "unknown"
-          image = None
-
-          if is_arm64_image(payload):
-              compression = "raw"
-              image = payload
-          elif payload.startswith(b"\x1f\x8b"):
-              compression = "gzip"
-              d = zlib.decompressobj(16 + zlib.MAX_WBITS)
-              image = d.decompress(payload) + d.flush()
-          elif payload.startswith(b"\xfd7zXZ\x00"):
-              compression = "xz"
-              d = lzma.LZMADecompressor()
-              image = d.decompress(payload)
-          elif payload.startswith(b"BZh"):
-              compression = "bzip2"
-              image = bz2.decompress(payload)
-          elif payload.startswith(b"\x04\x22\x4d\x18") or payload.startswith(b"\x02\x21\x4c\x18"):
-              compression = "lz4"
-              proc = subprocess.run(
-                  ["lz4", "-dc", "kernel-payload.bin"],
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.PIPE,
-              )
-              if proc.returncode != 0:
-                  print(proc.stderr.decode("utf-8", "replace"))
-                  raise SystemExit(f"lz4 decompression failed: {proc.returncode}")
-              image = proc.stdout
-          elif payload.startswith(b"\x28\xb5\x2f\xfd"):
-              compression = "zstd"
-              proc = subprocess.run(
-                  ["zstd", "-dc", "kernel-payload.bin"],
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.PIPE,
-              )
-              if proc.returncode != 0:
-                  print(proc.stderr.decode("utf-8", "replace"))
-                  raise SystemExit(f"zstd decompression failed: {proc.returncode}")
-              image = proc.stdout
-
-          print(f"KERNEL_COMPRESSION={compression}")
-          if image is None:
-              raise SystemExit(
-                  "Unsupported kernel payload format; keep kernel-payload.bin artifact for inspection"
-              )
-
-          if not is_arm64_image(image):
-              got = (
-                  struct.unpack_from("<I", image, 0x38)[0]
-                  if len(image) >= 0x3c else None
-              )
-              raise SystemExit(
-                  f"Decompressed payload is not an ARM64 Image; magic={got!r}"
-              )
-
-          print(f"ARM64_IMAGE_MAGIC=0x{ARM64_MAGIC:08x}")
           print(f"ARM64_IMAGE_SIZE={len(image)}")
-          Path("stock-Image").write_bytes(image)
           PY
 
-          file kernel-payload.bin stock-Image || true
-          detected_version="$(strings -a stock-Image | grep -m1 '^Linux version ' || true)"
-          echo "DETECTED_KERNEL_VERSION=${detected_version}"
-          if [[ "${detected_version}" != *"5.4.289-qgki-g5987d69e25da"* ]]; then
-            echo "Wrong stock kernel: expected 5.4.289-qgki-g5987d69e25da"
-            exit 22
-          fi
+          version="$(strings -a stock-Image | grep -m1 '^Linux version ' || true)"
+          echo "DETECTED_KERNEL_VERSION=$version"
+          [[ "$version" == *"5.4.289-qgki-g5987d69e25da"* ]]
           echo "TARGET_KERNEL_VERSION_CONFIRMED=1"
-          ls -lh kernel-payload.bin stock-Image
 
-      - name: Install kallsyms recovery tool
-        id: tools
-        continue-on-error: true
-        run: |
-          mkdir -p diagnostics
-          exec > >(tee diagnostics/04-tools.log) 2>&1
-          set -euo pipefail
-          python3 -m pip install --break-system-packages pyelftools git+https://github.com/marin-m/vmlinux-to-elf.git
-          command -v kallsyms-finder
-          command -v vmlinux-to-elf
-          python3 -c "import elftools; print('PYELFTOOLS_OK=1')"
-
-      - name: Recover stock Image kallsyms and kcrctab CRCs
+      - name: Recover kallsyms and stock kcrctab CRCs
         id: recover
-        continue-on-error: true
         run: |
-          mkdir -p diagnostics
-          exec > >(tee diagnostics/05-recover.log) 2>&1
           set -euo pipefail
+          mkdir -p diagnostics
+          exec > >(tee diagnostics/04-recover.log) 2>&1
 
           kallsyms-finder stock-Image > stock.kallsyms
           test -s stock.kallsyms
           echo "KALLSYMS_LINES=$(wc -l < stock.kallsyms)"
 
-          echo "KALLSYMS_KSYMTAB_BOUNDARIES:"
+          grep -E ' (_text|_stext|stext)$' stock.kallsyms || true
           grep -E ' (__start___ksymtab|__stop___ksymtab|__start___kcrctab)' stock.kallsyms | head -n 80 || true
 
-          grep -E ' (_text|_stext|stext)
-
-          test -s stock.image.crcs
-          cat stock.image.crcs
-
-      - name: Summarize stock Image versus stock module ABI
-        id: compare
-        continue-on-error: true
-        run: |
-          mkdir -p diagnostics
-          exec > >(tee diagnostics/06-compare.log) 2>&1
-          set -euo pipefail
-
-          test -s stock.image.crcs
-          cat stock.image.crcs
-
-          mode="$(awk -F= '/^mode=/{print $2}' stock.image.crcs)"
-          present="$(awk -F= '/^present=/{print $2}' stock.image.crcs)"
-          score="$(awk -F= '/^score=/{print $2}' stock.image.crcs)"
-
-          echo "STOCK_IMAGE_KCRC_MODE=${mode}"
-          echo "STOCK_IMAGE_CRC_PRESENT=${present}"
-          echo "STOCK_IMAGE_MODULE_CRC_SCORE=${score}"
-
-          if [[ "${score}" == "38/38" ]]; then
-            echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=1"
-          else
-            echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=0"
-          fi
-
-      - name: Persist diagnostic report
-        if: always()
-        env:
-          INSTALL_OUTCOME: ${{ steps.install.outcome }}
-          FETCH_OUTCOME: ${{ steps.fetch.outcome }}
-          EXTRACT_OUTCOME: ${{ steps.extract.outcome }}
-          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
-          RECOVER_OUTCOME: ${{ steps.recover.outcome }}
-          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
-        run: |
-          set -euo pipefail
-          mkdir -p reconstruction
-          {
-            echo "# Stock Image ABI probe diagnostic"
-            echo
-            echo "commit=${GITHUB_SHA}"
-            echo "run_id=${GITHUB_RUN_ID}"
-            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
-            echo
-            echo "install=${INSTALL_OUTCOME}"
-            echo "fetch=${FETCH_OUTCOME}"
-            echo "extract=${EXTRACT_OUTCOME}"
-            echo "tools=${TOOLS_OUTCOME}"
-            echo "recover=${RECOVER_OUTCOME}"
-            echo "compare=${COMPARE_OUTCOME}"
-            for log in diagnostics/*.log; do
-              if [[ -f "$log" ]]; then
-                echo
-                echo "===== $log ====="
-                cat "$log"
-              fi
-            done
-          } > reconstruction/last_stock_image_probe.txt
-
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add reconstruction/last_stock_image_probe.txt
-          if ! git diff --cached --quiet; then
-            git commit -m "ci: record stock Image ABI probe diagnostics"
-            git push
-          fi
-
-      - name: Upload stock CRC evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: stock-image-crc-oracle
-          retention-days: 7
-          path: |
-            kernel-payload.bin
-            stock-Image
-            stock.kallsyms
-            stock-vmlinux.elf
-            stock.elf.symbols
-            stock.image.crcs
-            diagnostics/
-            reconstruction/last_stock_image_probe.txt
-
-      - name: Fail job if probe stage failed
-        if: always()
-        env:
-          INSTALL_OUTCOME: ${{ steps.install.outcome }}
-          FETCH_OUTCOME: ${{ steps.fetch.outcome }}
-          EXTRACT_OUTCOME: ${{ steps.extract.outcome }}
-          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
-          RECOVER_OUTCOME: ${{ steps.recover.outcome }}
-          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
-        run: |
-          set -euo pipefail
-          for status in "$INSTALL_OUTCOME" "$FETCH_OUTCOME" "$EXTRACT_OUTCOME" "$TOOLS_OUTCOME" "$RECOVER_OUTCOME" "$COMPARE_OUTCOME"; do
-            if [[ "$status" != "success" ]]; then
-              echo "At least one probe stage failed; see reconstruction/last_stock_image_probe.txt"
-              exit 1
-            fi
-          done
- stock.kallsyms || true
-
-          # Parse ksymtab/kcrctab directly from the raw Image.  The stock
-          # kernel uses 24-byte absolute kernel_symbol entries; using the raw
-          # Image avoids reconstructed-ELF mapping ambiguity.
           python3 scripts/extract_stock_kcrc.py \
             --image stock-Image \
             --kallsyms stock.kallsyms \
             --oracle reconstruction/stock_module_oracle.txt \
             --output stock.image.crcs
 
-          # Keep reconstructed ELF only as optional secondary evidence.
-          vmlinux-to-elf stock-Image stock-vmlinux.elf || true
-          if [[ -s stock-vmlinux.elf ]]; then
-            file stock-vmlinux.elf || true
-            nm -n stock-vmlinux.elf > stock.elf.symbols || true
-          fi
-
           test -s stock.image.crcs
           cat stock.image.crcs
 
       - name: Summarize stock Image versus stock module ABI
         id: compare
-        continue-on-error: true
         run: |
-          mkdir -p diagnostics
-          exec > >(tee diagnostics/06-compare.log) 2>&1
           set -euo pipefail
+          mkdir -p diagnostics
+          exec > >(tee diagnostics/05-compare.log) 2>&1
 
           test -s stock.image.crcs
-          cat stock.image.crcs
-
           mode="$(awk -F= '/^mode=/{print $2}' stock.image.crcs)"
           present="$(awk -F= '/^present=/{print $2}' stock.image.crcs)"
           score="$(awk -F= '/^score=/{print $2}' stock.image.crcs)"
 
-          echo "STOCK_IMAGE_KCRC_MODE=${mode}"
-          echo "STOCK_IMAGE_CRC_PRESENT=${present}"
-          echo "STOCK_IMAGE_MODULE_CRC_SCORE=${score}"
+          echo "STOCK_IMAGE_KCRC_MODE=$mode"
+          echo "STOCK_IMAGE_CRC_PRESENT=$present"
+          echo "STOCK_IMAGE_MODULE_CRC_SCORE=$score"
 
-          if [[ "${score}" == "38/38" ]]; then
-            echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=1"
-          else
-            echo "STOCK_IMAGE_MODULE_ABI_IDENTICAL=0"
-          fi
+          cat stock.image.crcs
 
-      - name: Persist diagnostic report
+          {
+            echo "## Stock Image ABI oracle"
+            echo
+            echo "- Kernel: 5.4.289-qgki-g5987d69e25da"
+            echo "- CRC mode: $mode"
+            echo "- Present: $present"
+            echo "- Match score: $score"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Write diagnostic report
         if: always()
         env:
           INSTALL_OUTCOME: ${{ steps.install.outcome }}
           FETCH_OUTCOME: ${{ steps.fetch.outcome }}
           EXTRACT_OUTCOME: ${{ steps.extract.outcome }}
-          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
           RECOVER_OUTCOME: ${{ steps.recover.outcome }}
           COMPARE_OUTCOME: ${{ steps.compare.outcome }}
         run: |
-          set -euo pipefail
-          mkdir -p reconstruction
+          mkdir -p reconstruction diagnostics
           {
             echo "# Stock Image ABI probe diagnostic"
             echo
-            echo "commit=${GITHUB_SHA}"
-            echo "run_id=${GITHUB_RUN_ID}"
-            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "commit=$GITHUB_SHA"
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "run_attempt=$GITHUB_RUN_ATTEMPT"
             echo
-            echo "install=${INSTALL_OUTCOME}"
-            echo "fetch=${FETCH_OUTCOME}"
-            echo "extract=${EXTRACT_OUTCOME}"
-            echo "tools=${TOOLS_OUTCOME}"
-            echo "recover=${RECOVER_OUTCOME}"
-            echo "compare=${COMPARE_OUTCOME}"
+            echo "install=$INSTALL_OUTCOME"
+            echo "fetch=$FETCH_OUTCOME"
+            echo "extract=$EXTRACT_OUTCOME"
+            echo "recover=$RECOVER_OUTCOME"
+            echo "compare=$COMPARE_OUTCOME"
             for log in diagnostics/*.log; do
               if [[ -f "$log" ]]; then
                 echo
@@ -396,44 +181,15 @@ jobs:
             done
           } > reconstruction/last_stock_image_probe.txt
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add reconstruction/last_stock_image_probe.txt
-          if ! git diff --cached --quiet; then
-            git commit -m "ci: record stock Image ABI probe diagnostics"
-            git push
-          fi
-
-      - name: Upload stock CRC evidence
+      - name: Upload stock ABI evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: stock-image-crc-oracle
           retention-days: 7
+          if-no-files-found: warn
           path: |
-            kernel-payload.bin
-            stock-Image
             stock.kallsyms
-            stock-vmlinux.elf
-            stock.elf.symbols
             stock.image.crcs
             diagnostics/
             reconstruction/last_stock_image_probe.txt
-
-      - name: Fail job if probe stage failed
-        if: always()
-        env:
-          INSTALL_OUTCOME: ${{ steps.install.outcome }}
-          FETCH_OUTCOME: ${{ steps.fetch.outcome }}
-          EXTRACT_OUTCOME: ${{ steps.extract.outcome }}
-          TOOLS_OUTCOME: ${{ steps.tools.outcome }}
-          RECOVER_OUTCOME: ${{ steps.recover.outcome }}
-          COMPARE_OUTCOME: ${{ steps.compare.outcome }}
-        run: |
-          set -euo pipefail
-          for status in "$INSTALL_OUTCOME" "$FETCH_OUTCOME" "$EXTRACT_OUTCOME" "$TOOLS_OUTCOME" "$RECOVER_OUTCOME" "$COMPARE_OUTCOME"; do
-            if [[ "$status" != "success" ]]; then
-              echo "At least one probe stage failed; see reconstruction/last_stock_image_probe.txt"
-              exit 1
-            fi
-          done
