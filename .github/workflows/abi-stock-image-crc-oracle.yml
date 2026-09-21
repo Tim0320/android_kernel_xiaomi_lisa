@@ -75,6 +75,18 @@ jobs:
           elif src.startswith(b"\x1f\x8b"):
               print("STOCK_BOOT_CONTAINER=gzip")
               boot = gzip.decompress(src)
+          elif src.startswith(b"\x28\xb5\x2f\xfd"):
+              print("STOCK_BOOT_CONTAINER=zstd")
+              import subprocess
+              proc = subprocess.run(
+                  ["zstd", "-dc", "stock-boot-download"],
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.PIPE,
+              )
+              if proc.returncode != 0:
+                  print(proc.stderr.decode("utf-8", "replace"))
+                  raise SystemExit(f"zstd decompression failed: {proc.returncode}")
+              boot = proc.stdout
           elif src.startswith(b"version https://git-lfs.github.com/spec/v1"):
               raise SystemExit("Received a Git LFS pointer instead of file payload")
           else:
