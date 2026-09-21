@@ -80,12 +80,24 @@ jobs:
 
             mapfile -t unresolved < <(git diff --name-only --diff-filter=U)
             for p in "${unresolved[@]}"; do
-              if git cat-file -e ":2:$p" 2>/dev/null; then
+              # merge-ort uses *~HEAD as a temporary path for directory/file
+              # collisions. It is not a normal stage-2 blob and must not be
+              # materialized with "git show :2:path".
+              if [[ "$p" == *"~HEAD"* ]]; then
+                rm -rf -- "$p"
+                git rm -r -f --cached --ignore-unmatch -- "$p" 2>/dev/null || true
+                continue
+              fi
+
+              # For ordinary modify/delete conflicts, preserve the Xiaomi side:
+              # restore stage 2 when it exists; otherwise keep the deletion.
+              if git ls-files -u -- "$p" | awk '$3 == 2 {found=1} END {exit !found}'; then
                 mkdir -p "$(dirname "$p")"
-                git show ":2:$p" > "$p"
+                git checkout-index --stage=2 --force -- "$p"
                 git add -- "$p"
               else
-                git rm -f --ignore-unmatch -- "$p" || true
+                rm -rf -- "$p"
+                git rm -r -f --cached --ignore-unmatch -- "$p" 2>/dev/null || true
               fi
             done
 
