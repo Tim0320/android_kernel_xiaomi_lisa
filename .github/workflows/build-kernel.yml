@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   build:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' || (github.event.workflow_run.conclusion == 'success' && !startsWith(github.event.workflow_run.head_commit.message, 'ci: record stock Image ABI probe diagnostics')) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
 
