@@ -1,0 +1,146 @@
+name: Fast lisa core ABI CRC probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-probe-lisa-core-fast.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-core-fast-abi-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    steps:
+      - name: Install host and cross build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git
+
+      - name: Clone lisa-specific stock-derived core
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch main https://github.com/CannedShroud/kernel_xiaomi_lisa.git kernel
+          cd kernel
+          test "$(git rev-parse HEAD)" = "fc6ec759ef1a5513c2576c11c463bb96145e7f36"
+
+      - name: Generate stock-derived config
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- lisa_stock_defconfig
+          scripts/config --file out/.config --enable MODVERSIONS
+          scripts/config --file out/.config --enable UFSGKI
+          scripts/config --file out/.config --enable UFS_WB
+          scripts/config --file out/.config --enable MI_UFS_FFU
+          scripts/config --file out/.config --disable SCSI_SKHPB
+          make -j"$(nproc)" O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -E '^(CONFIG_MODVERSIONS|CONFIG_MODULE_REL_CRCS|CONFIG_UFSGKI|CONFIG_UFS_WB|CONFIG_MI_UFS_FFU|CONFIG_SCSI_SKHPB)=' out/.config || true
+
+      - name: Inject ABI-only UFS providers
+        run: |
+          set -euo pipefail
+          cd kernel
+          cat > drivers/misc/lisa_abi_probe.c <<'EOF'
+          #include <linux/module.h>
+          #include <linux/types.h>
+          #include <scsi/scsi_device.h>
+          #include "../scsi/ufs/ufshcd.h"
+          #include "../scsi/ufs/ufs.h"
+
+          struct ufs_err_state_debug {
+              u64 err_occurred;
+              char err_reason[10][32];
+          };
+
+          struct ufs_data {
+              struct ufs_hba *hba;
+              struct scsi_device *sdev;
+              struct ufs_err_state_debug ufs_err_state;
+          };
+
+          struct ufs_hba *get_ufs_hba_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_hba_data);
+
+          struct scsi_device *get_ufs_sdev_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_sdev_data);
+
+          struct ufs_data *get_ufs_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_data);
+
+          int ufs_get_string_desc(struct ufs_hba *hba, void *buf, int size,
+                                  enum device_desc_param pname, bool ascii_std)
+          {
+              return 0;
+          }
+          EXPORT_SYMBOL(ufs_get_string_desc);
+
+          int ufs_read_desc_param(struct ufs_hba *hba, enum desc_idn desc_id,
+                                  u8 desc_index, u8 param_offset,
+                                  void *buf, u8 param_size)
+          {
+              return 0;
+          }
+          EXPORT_SYMBOL(ufs_read_desc_param);
+
+          int ufshcd_read_desc(struct ufs_hba *hba, enum desc_idn desc_id,
+                               int desc_index, void *buf, u32 size)
+          {
+              return 0;
+          }
+          EXPORT_SYMBOL(ufshcd_read_desc);
+          EOF
+          printf '\nobj-y += lisa_abi_probe.o\n' >> drivers/misc/Makefile
+
+      - name: Build only CRC-bearing objects
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- prepare scripts
+          make -j"$(nproc)" O=out ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- \
+            kernel/module.o drivers/misc/lisa_abi_probe.o
+
+      - name: Read genksyms CRCs
+        run: |
+          set -euo pipefail
+          cd kernel
+
+          crc_from_object() {
+            local obj="$1"
+            local symbol="$2"
+            local expected="$3"
+            local actual
+            actual="$(aarch64-linux-gnu-nm "$obj" | awk -v s="__crc_$symbol" '$3 == s {print "0x" tolower($1); found=1} END {if (!found) exit 1}')" || actual="MISSING"
+            echo "$symbol: probe=$actual stock=$expected"
+          }
+
+          crc_from_object out/drivers/misc/lisa_abi_probe.o get_ufs_data 0xfa507f92
+          crc_from_object out/drivers/misc/lisa_abi_probe.o get_ufs_hba_data 0xc40eabac
+          crc_from_object out/drivers/misc/lisa_abi_probe.o get_ufs_sdev_data 0xc5bbd8a8
+          crc_from_object out/drivers/misc/lisa_abi_probe.o ufs_get_string_desc 0x479d5ded
+          crc_from_object out/drivers/misc/lisa_abi_probe.o ufs_read_desc_param 0x16548413
+          crc_from_object out/drivers/misc/lisa_abi_probe.o ufshcd_read_desc 0xa93e3b58
+          crc_from_object out/kernel/module.o module_layout 0xba39cbb8
+
+      - name: Upload fast probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-core-fast-abi-probe
+          retention-days: 14
+          include-hidden-files: true
+          path: |
+            kernel/out/.config
+            kernel/out/kernel/module.o
+            kernel/out/drivers/misc/lisa_abi_probe.o
