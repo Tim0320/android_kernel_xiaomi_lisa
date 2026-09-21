@@ -199,7 +199,9 @@ jobs:
               crc, name, section = line.split("\t")[:3]
               stock[name] = (int(crc, 16), section)
 
-          current = {}
+          current_all = {}
+          current_vmlinux = {}
+          current_modules = {}
           for line in Path(symvers_path).read_text(errors="replace").splitlines():
               parts = line.split()
               if len(parts) < 2:
@@ -210,34 +212,49 @@ jobs:
                   continue
               name = parts[1]
               module = parts[2] if len(parts) >= 3 else "-"
-              current[name] = (crc, module)
+              current_all[name] = (crc, module)
+              if module == "vmlinux":
+                  current_vmlinux[name] = (crc, module)
+              else:
+                  current_modules[name] = (crc, module)
 
           stock_names = set(stock)
-          current_names = set(current)
+          current_names = set(current_vmlinux)
           overlap = stock_names & current_names
           matches = sorted(
-              name for name in overlap if stock[name][0] == current[name][0]
+              name for name in overlap if stock[name][0] == current_vmlinux[name][0]
           )
           mismatches = sorted(
-              name for name in overlap if stock[name][0] != current[name][0]
+              name for name in overlap if stock[name][0] != current_vmlinux[name][0]
           )
           stock_only = sorted(stock_names - current_names)
           current_only = sorted(current_names - stock_names)
 
+          module_name_counts = {}
+          for _name, (_crc, module) in current_modules.items():
+              module_name_counts[module] = module_name_counts.get(module, 0) + 1
+
           print(f"FULL_STOCK_EXPORTS={len(stock)}")
-          print(f"FULL_CURRENT_SYMVERS={len(current)}")
+          print(f"FULL_CURRENT_SYMVERS_ALL={len(current_all)}")
+          print(f"FULL_CURRENT_VMLINUX={len(current_vmlinux)}")
+          print(f"FULL_CURRENT_MODULE_EXPORTS={len(current_modules)}")
           print(f"FULL_SYMBOL_OVERLAP={len(overlap)}")
           print(f"FULL_CRC_MATCHES={len(matches)}")
           print(f"FULL_CRC_MISMATCHES={len(mismatches)}")
           print(f"FULL_STOCK_ONLY={len(stock_only)}")
-          print(f"FULL_CURRENT_ONLY={len(current_only)}")
+          print(f"FULL_CURRENT_ONLY_VMLINUX={len(current_only)}")
           if overlap:
               print(f"FULL_OVERLAP_MATCH_RATE={len(matches)/len(overlap):.6f}")
+          print("FULL_TOP_MODULE_EXPORT_COUNTS:")
+          for module, count in sorted(module_name_counts.items(), key=lambda kv: (-kv[1], kv[0]))[:30]:
+              print(f"MODULE_EXPORT_COUNT={count}\t{module}")
 
           lines = [
               "# Full stock Image vs Build #53 Module.symvers",
               f"stock_exports={len(stock)}",
-              f"current_symvers={len(current)}",
+              f"current_symvers_all={len(current_all)}",
+              f"current_vmlinux={len(current_vmlinux)}",
+              f"current_module_exports={len(current_modules)}",
               f"overlap={len(overlap)}",
               f"matches={len(matches)}",
               f"mismatches={len(mismatches)}",
@@ -248,14 +265,14 @@ jobs:
           ]
           for name in matches:
               scrc, section = stock[name]
-              ccrc, module = current[name]
+              ccrc, module = current_vmlinux[name]
               lines.append(
                   f"MATCH\t{name}\t0x{scrc:08x}\t{section}\t{module}"
               )
           lines += ["", "## MISMATCHES"]
           for name in mismatches:
               scrc, section = stock[name]
-              ccrc, module = current[name]
+              ccrc, module = current_vmlinux[name]
               lines.append(
                   f"MISMATCH\t{name}\tstock=0x{scrc:08x}\t"
                   f"current=0x{ccrc:08x}\t{section}\t{module}"
@@ -263,7 +280,12 @@ jobs:
           lines += ["", "## STOCK_ONLY"]
           lines.extend(f"STOCK_ONLY\t{name}\t0x{stock[name][0]:08x}\t{stock[name][1]}" for name in stock_only)
           lines += ["", "## CURRENT_ONLY"]
-          lines.extend(f"CURRENT_ONLY\t{name}\t0x{current[name][0]:08x}\t{current[name][1]}" for name in current_only)
+          lines.extend(f"CURRENT_ONLY_VMLINUX\t{name}\t0x{current_vmlinux[name][0]:08x}\tvmlinux" for name in current_only)
+          lines += ["", "## MODULE_EXPORTS"]
+          lines.extend(
+              f"MODULE_EXPORT\t{name}\t0x{current_modules[name][0]:08x}\t{current_modules[name][1]}"
+              for name in sorted(current_modules)
+          )
 
           Path(out_path).write_text("\n".join(lines) + "\n")
           PY
