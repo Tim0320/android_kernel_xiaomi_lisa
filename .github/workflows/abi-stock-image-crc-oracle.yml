@@ -1,4 +1,4 @@
-name: Compare stock Image CRCs with stock QGKI module ABI
+name: Compare exact Lisa OS2.0.16.0 stock Image CRCs with stock QGKI module ABI
 # CI retrigger marker: stock-image ABI oracle
 
 on:
@@ -14,7 +14,7 @@ permissions:
 jobs:
   stock-image-oracle:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 90
 
     steps:
       - name: Checkout repository
@@ -31,7 +31,7 @@ jobs:
           sudo apt-get install -y xz-utils gzip bzip2 lz4 zstd binutils python3-pip git git-lfs
           git lfs install
 
-      - name: Fetch public stock boot image
+      - name: Fetch exact target boot from official OS2.0.16.0.UKOCNXM fastboot ROM
         id: fetch
         continue-on-error: true
         run: |
@@ -39,71 +39,41 @@ jobs:
           exec > >(tee diagnostics/02-fetch.log) 2>&1
           set -euo pipefail
 
-          url="https://raw.githubusercontent.com/Jiovanni-dump/xiaomi_lisa_dump/2dbe7b5569ed49cc2c6649a7b313d4a092755034/boot.img.xz"
-          rm -f stock-boot-download boot.img
+          version="OS2.0.16.0.UKOCNXM"
+          archive="lisa_images_OS2.0.16.0.UKOCNXM_20251221.0000.00_14.0_cn_48554e03ca.tgz"
+          expected_archive_md5="48554e03ca0ad00d3b4cd7f32a1de4f3"
 
-          if ! curl -L --fail --retry 5 --retry-delay 2 "$url" -o stock-boot-download; then
-            echo "Raw download failed; falling back to sparse Git/LFS fetch"
-            rm -rf dump stock-boot-download
-            git init dump
-            git -C dump remote add origin https://github.com/Jiovanni-dump/xiaomi_lisa_dump.git
-            git -C dump config core.sparseCheckout true
-            echo "boot.img.xz" > dump/.git/info/sparse-checkout
-            GIT_LFS_SKIP_SMUDGE=1 git -C dump fetch --depth=1 origin 2dbe7b5569ed49cc2c6649a7b313d4a092755034
-            GIT_LFS_SKIP_SMUDGE=1 git -C dump checkout FETCH_HEAD
-            git -C dump lfs pull --include="boot.img.xz"
-            cp dump/boot.img.xz stock-boot-download
+          urls=(
+            "https://bigota.d.miui.com/${version}/${archive}"
+            "https://hugeota.d.miui.com/${version}/${archive}"
+          )
+
+          rm -f boot.img
+          success=0
+
+          for url in "${urls[@]}"; do
+            echo "Trying official ROM: $url"
+
+            if curl -L --fail --retry 3 --retry-delay 3 --connect-timeout 30 "$url" \
+              | tar -xzO --wildcards --no-anchored 'boot.img' > boot.img; then
+              if [[ -s boot.img ]] && [[ "$(head -c 8 boot.img)" == "ANDROID!" ]]; then
+                success=1
+                echo "TARGET_BOOT_SOURCE=$url"
+                break
+              fi
+            fi
+
+            rm -f boot.img
+          done
+
+          if [[ "$success" -ne 1 ]]; then
+            echo "Unable to extract boot.img from official target fastboot ROM"
+            exit 21
           fi
 
-          ls -lh stock-boot-download
-          file stock-boot-download || true
-          sha256sum stock-boot-download
-          python3 - <<'PY'
-          from pathlib import Path
-          import gzip
-          import lzma
-
-          src = Path("stock-boot-download").read_bytes()
-          print("DOWNLOAD_MAGIC=" + src[:16].hex())
-
-          if src.startswith(b"ANDROID!"):
-              print("STOCK_BOOT_CONTAINER=raw-android-boot")
-              boot = src
-          elif src.startswith(b"\xfd7zXZ\x00"):
-              print("STOCK_BOOT_CONTAINER=xz")
-              boot = lzma.decompress(src)
-          elif src.startswith(b"\x1f\x8b"):
-              print("STOCK_BOOT_CONTAINER=gzip")
-              boot = gzip.decompress(src)
-          elif src.startswith(b"\x28\xb5\x2f\xfd"):
-              print("STOCK_BOOT_CONTAINER=zstd")
-              import subprocess
-              proc = subprocess.run(
-                  ["zstd", "-dc", "stock-boot-download"],
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.PIPE,
-              )
-              if proc.returncode != 0:
-                  print(proc.stderr.decode("utf-8", "replace"))
-                  raise SystemExit(f"zstd decompression failed: {proc.returncode}")
-              boot = proc.stdout
-          elif src.startswith(b"version https://git-lfs.github.com/spec/v1"):
-              raise SystemExit("Received a Git LFS pointer instead of file payload")
-          else:
-              raise SystemExit(
-                  "Unknown stock boot container; first16=" + src[:16].hex()
-              )
-
-          if not boot.startswith(b"ANDROID!"):
-              raise SystemExit(
-                  "Normalized payload is not an Android boot image; first16="
-                  + boot[:16].hex()
-              )
-
-          Path("boot.img").write_bytes(boot)
-          print(f"BOOT_IMG_SIZE={len(boot)}")
-          PY
-
+          echo "TARGET_ROM=${version}"
+          echo "TARGET_FASTBOOT_ARCHIVE=${archive}"
+          echo "TARGET_FASTBOOT_ARCHIVE_MD5=${expected_archive_md5}"
           file boot.img || true
           ls -lh boot.img
           sha256sum boot.img
@@ -216,8 +186,13 @@ jobs:
           PY
 
           file kernel-payload.bin stock-Image || true
-          strings -a stock-Image | grep -F "Linux version 5.4.289-qgki-g5987d69e25da"
-          strings -a stock-Image | grep -F "5.4.289-qgki-g5987d69e25da" | head -n 20
+          detected_version="$(strings -a stock-Image | grep -m1 '^Linux version ' || true)"
+          echo "DETECTED_KERNEL_VERSION=${detected_version}"
+          if [[ "${detected_version}" != *"5.4.289-qgki-g5987d69e25da"* ]]; then
+            echo "Wrong stock kernel: expected 5.4.289-qgki-g5987d69e25da"
+            exit 22
+          fi
+          echo "TARGET_KERNEL_VERSION_CONFIRMED=1"
           ls -lh kernel-payload.bin stock-Image
 
       - name: Install kallsyms recovery tool
