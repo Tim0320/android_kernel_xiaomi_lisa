@@ -216,7 +216,7 @@ jobs:
 
           echo "=== symtype files ==="
           find out/kernel out/drivers/misc -maxdepth 2 -name '*.symtypes' -print | sort || true
-          for f in out/kernel/module.o.symtypes out/drivers/misc/lisa_abi_probe.o.symtypes; do
+          for f in out/kernel/module.symtypes out/drivers/misc/lisa_abi_probe.symtypes; do
             if [[ -s "$f" ]]; then
               echo "=== $f ==="
               grep -E '^(module_layout|get_ufs_|ufs_get_string_desc|ufs_read_desc_param|ufshcd_read_desc|s#module|s#scsi_device|s#ufs_hba)' "$f" | head -120 || true
@@ -233,6 +233,6 @@ jobs:
           path: |
             kernel/out/include/generated/autoconf.h
             kernel/out/kernel/module.o.symversions
-            kernel/out/kernel/module.o.symtypes
+            kernel/out/kernel/module.symtypes
             kernel/out/drivers/misc/lisa_abi_probe.o.symversions
-            kernel/out/drivers/misc/lisa_abi_probe.o.symtypes
+            kernel/out/drivers/misc/lisa_abi_probe.symtypes
