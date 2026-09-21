@@ -20,6 +20,15 @@ jobs:
           - label: lineage-lisa-22.2
             repo: https://github.com/LineageOS/android_kernel_xiaomi_sm8350.git
             ref: lineage-22.2
+          - label: lineage-pre-5.4.289
+            repo: https://github.com/LineageOS/android_kernel_xiaomi_sm8350.git
+            ref: eeafe4140ae3b7a8d1db40d5d2668cdc902737ca
+          - label: lineage-merge-5.4.289
+            repo: https://github.com/LineageOS/android_kernel_xiaomi_sm8350.git
+            ref: f2c008f94007f3a6fc2481327a53275ab0f8f990
+          - label: lineage-integrated-5.4.289
+            repo: https://github.com/LineageOS/android_kernel_xiaomi_sm8350.git
+            ref: bb60c83293d466a6b99c577bb682ff9dd3bb7191
           - label: qcom-lahaina-qssi14
             repo: https://github.com/fangkuaixiaoqiao/android_kernel_msm-5.4.git
             ref: msm-5.4-LA.UM.9.14.r1-25000.02-LAHAINA.QSSI14.0
@@ -70,8 +79,11 @@ jobs:
       - name: Clone candidate
         run: |
           set -euo pipefail
-          git clone --filter=blob:none --single-branch --depth=1 \
-            --branch "${{ matrix.ref }}" "${{ matrix.repo }}" kernel
+          mkdir kernel
+          git -C kernel init
+          git -C kernel remote add origin "${{ matrix.repo }}"
+          git -C kernel fetch --depth=1 origin "${{ matrix.ref }}"
+          git -C kernel checkout --detach FETCH_HEAD
           cd kernel
           echo "candidate=${{ matrix.label }}"
           echo "head=$(git rev-parse HEAD)"
