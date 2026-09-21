@@ -18,109 +18,108 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Install ELF parser
+      - name: Install audit tools
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y python3 python3-pyelftools unzip curl
+          sudo apt-get install -y python3 unzip curl
 
-      - name: Download successful six-symbol build evidence
+      - name: Download successful build and exact vendor_boot ABI evidence
         env:
           GH_TOKEN: ${{ github.token }}
-          EVIDENCE_ARTIFACT_ID: "10653097819"
+          BUILD_ARTIFACT_ID: "10653097819"
+          VENDOR_BOOT_ARTIFACT_ID: "10648361196"
         run: |
           set -euo pipefail
-          mkdir -p evidence
+          mkdir -p build-evidence vendor-evidence
 
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${EVIDENCE_ARTIFACT_ID}/zip" \
-            -o evidence.zip
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BUILD_ARTIFACT_ID}/zip" \
+            -o build-evidence.zip
+          unzip -q build-evidence.zip -d build-evidence
 
-          unzip -q evidence.zip -d evidence
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${VENDOR_BOOT_ARTIFACT_ID}/zip" \
+            -o vendor-evidence.zip
+          unzip -q vendor-evidence.zip -d vendor-evidence
 
-          find evidence -maxdepth 4 -type f -print | sort
-
-          symvers="$(find evidence -type f -name Module.symvers -print -quit)"
-          msm="$(find evidence -type f -name msm_drm.ko -print -quit)"
-          image="$(find evidence -type f -path '*/arch/arm64/boot/Image' -print -quit)"
+          symvers="$(find build-evidence -type f -name Module.symvers -print -quit)"
+          imports="$(find vendor-evidence -type f -name stock-vendor-boot-module-imports.tsv -print -quit)"
+          summary="$(find vendor-evidence -type f -name stock-vendor-boot-module-summary.tsv -print -quit)"
 
           test -n "$symvers"
-          test -n "$msm"
-          test -n "$image"
+          test -n "$imports"
+          test -n "$summary"
 
           cp "$symvers" final.Module.symvers
-          cp "$msm" final.stock.msm_drm.ko
-          cp "$image" final.Image
+          cp "$imports" final.stock-vendor-boot-module-imports.tsv
+          cp "$summary" final.stock-vendor-boot-module-summary.tsv
 
           test -s final.Module.symvers
-          test -s final.stock.msm_drm.ko
-          test -s final.Image
+          test -s final.stock-vendor-boot-module-imports.tsv
+          test -s final.stock-vendor-boot-module-summary.tsv
 
-      - name: Read stock msm_drm ELF metadata
+          echo "FINAL_BUILD_SYMVERS_LINES=$(wc -l < final.Module.symvers)"
+          echo "FINAL_VENDOR_IMPORT_ROWS=$(wc -l < final.stock-vendor-boot-module-imports.tsv)"
+
+      - name: Verify stock msm_drm cohort metadata from exact vendor_boot audit
         run: |
           set -euo pipefail
 
-          python3 - final.stock.msm_drm.ko stock-msm-drm-metadata.txt <<'PY'
+          python3 - final.stock-vendor-boot-module-summary.tsv stock-msm-drm-metadata.txt <<'PY'
           import sys
           from pathlib import Path
-          from elftools.elf.elffile import ELFFile
 
-          module = Path(sys.argv[1])
-          out = Path(sys.argv[2])
+          rows = []
+          for raw in Path(sys.argv[1]).read_text(errors="replace").splitlines():
+              if not raw.strip():
+                  continue
+              parts = raw.split("\t")
+              if len(parts) < 6:
+                  continue
+              path, machine, vermagic, layout, count, status = parts[:6]
+              if path.endswith("/lib/modules/msm_drm.ko"):
+                  rows.append((path, machine, vermagic, layout, int(count), status))
 
-          with module.open("rb") as f:
-              elf = ELFFile(f)
-              modinfo = elf.get_section_by_name(".modinfo")
-              versions = elf.get_section_by_name("__versions")
+          if len(rows) != 1:
+              raise SystemExit(f"expected exactly one msm_drm.ko row, got {len(rows)}")
 
-              if modinfo is None:
-                  raise SystemExit("stock msm_drm.ko has no .modinfo")
-              if versions is None:
-                  raise SystemExit("stock msm_drm.ko has no __versions")
+          path, machine, vermagic, layout, count, status = rows[0]
 
-              fields = {}
-              for raw in modinfo.data().split(b"\0"):
-                  if b"=" not in raw:
-                      continue
-                  k, v = raw.split(b"=", 1)
-                  fields.setdefault(
-                      k.decode("utf-8", "replace"),
-                      []
-                  ).append(v.decode("utf-8", "replace"))
-
-              vermagic = fields.get("vermagic", [""])[0]
-              if not vermagic:
-                  raise SystemExit("no vermagic entry in .modinfo")
-
-              data = versions.data()
-
-          if len(data) % 64:
-              raise SystemExit(f"unexpected __versions size: {len(data)}")
-
-          entries = len(data) // 64
           expected_vermagic = (
               "5.4.289-qgki-g5987d69e25da "
               "SMP preempt mod_unload modversions aarch64"
           )
+          expected_layout = "0xba39cbb8"
 
+          print(f"STOCK_MSM_DRM_PATH={path}")
+          print(f"STOCK_MSM_DRM_MACHINE={machine}")
           print(f"STOCK_MSM_DRM_VERMAGIC={vermagic}")
-          print(f"STOCK_MSM_DRM_VERSION_ENTRIES={entries}")
+          print(f"STOCK_MSM_DRM_MODULE_LAYOUT={layout}")
+          print(f"STOCK_MSM_DRM_VERSION_ENTRIES={count}")
+          print(f"STOCK_MSM_DRM_PARSE_STATUS={status}")
 
           if vermagic.strip() != expected_vermagic:
-              raise SystemExit(
-                  f"unexpected vermagic: {vermagic!r}"
-              )
-          if entries != 736:
-              raise SystemExit(
-                  f"expected 736 __versions entries, got {entries}"
-              )
+              raise SystemExit(f"unexpected vermagic: {vermagic!r}")
+          if layout.lower() != expected_layout:
+              raise SystemExit(f"unexpected module_layout: {layout}")
+          if count != 736:
+              raise SystemExit(f"expected 736 version entries, got {count}")
+          if status != "OK":
+              raise SystemExit(f"unexpected module parse status: {status}")
 
-          out.write_text(
+          Path(sys.argv[2]).write_text(
+              f"path={path}\n"
               f"vermagic={vermagic}\n"
-              f"version_entries={entries}\n"
+              f"module_layout={layout}\n"
+              f"version_entries={count}\n"
+              f"status={status}\n"
           )
           PY
 
@@ -179,32 +178,38 @@ jobs:
         run: |
           set -euo pipefail
 
-          python3 - final.stock.msm_drm.ko final.Module.symvers qgki-msm-drm-final-audit.txt <<'PY'
+          python3 - final.stock-vendor-boot-module-imports.tsv final.Module.symvers qgki-msm-drm-final-audit.txt <<'PY'
           import sys
           from pathlib import Path
-          from elftools.elf.elffile import ELFFile
 
-          module_path = Path(sys.argv[1])
+          imports_path = Path(sys.argv[1])
           symvers_path = Path(sys.argv[2])
           report_path = Path(sys.argv[3])
 
-          with module_path.open("rb") as f:
-              elf = ELFFile(f)
-              sec = elf.get_section_by_name("__versions")
-              if sec is None:
-                  raise SystemExit("missing __versions")
-              data = sec.data()
-
-          if len(data) % 64:
-              raise SystemExit(f"bad __versions size: {len(data)}")
-
           required = {}
-          for off in range(0, len(data), 64):
-              chunk = data[off:off + 64]
-              crc = int.from_bytes(chunk[:8], "little") & 0xffffffff
-              name = chunk[8:].split(b"\0", 1)[0].decode("ascii", "replace")
-              if name:
-                  required[name] = crc
+          module_rows = 0
+
+          for raw in imports_path.read_text(errors="replace").splitlines():
+              if not raw.strip():
+                  continue
+              parts = raw.split("\t")
+              if len(parts) < 5:
+                  continue
+
+              module, vermagic, layout, symbol, crc_text = parts[:5]
+              if not module.endswith("/lib/modules/msm_drm.ko"):
+                  continue
+
+              module_rows += 1
+              crc = int(crc_text, 16)
+
+              previous = required.get(symbol)
+              if previous is not None and previous != crc:
+                  raise SystemExit(
+                      f"conflicting msm_drm CRC for {symbol}: "
+                      f"0x{previous:08x} vs 0x{crc:08x}"
+                  )
+              required[symbol] = crc
 
           current = {}
           for raw in symvers_path.read_text(errors="replace").splitlines():
@@ -229,6 +234,7 @@ jobs:
               else:
                   mismatches.append((symbol, stock_crc, got))
 
+          print(f"FINAL_MSM_DRM_VERSION_ROWS={module_rows}")
           print(f"FINAL_MSM_DRM_IMPORTS={len(required)}")
           print(f"FINAL_MSM_DRM_MATCHES={len(matches)}")
           print(f"FINAL_MSM_DRM_MISMATCHES={len(mismatches)}")
@@ -241,6 +247,7 @@ jobs:
 
           lines = [
               "# Final stock QGKI msm_drm ABI audit",
+              f"version_rows={module_rows}",
               f"imports={len(required)}",
               f"matches={len(matches)}",
               f"mismatches={len(mismatches)}",
@@ -265,9 +272,13 @@ jobs:
 
           report_path.write_text("\n".join(lines) + "\n")
 
+          if module_rows != 736:
+              raise SystemExit(
+                  f"expected 736 msm_drm version rows, got {module_rows}"
+              )
           if len(required) != 736:
               raise SystemExit(
-                  f"expected 736 imports, got {len(required)}"
+                  f"expected 736 unique imports, got {len(required)}"
               )
           if mismatches or missing:
               raise SystemExit(
@@ -289,3 +300,4 @@ jobs:
             stock-msm-drm-metadata.txt
             qgki-six-final.txt
             qgki-msm-drm-final-audit.txt
+            final.stock-vendor-boot-module-summary.tsv
