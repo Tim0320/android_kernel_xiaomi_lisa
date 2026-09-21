@@ -250,6 +250,12 @@ jobs:
                       continue
                   if not rel.startswith(("include/", "arch/arm64/include/")):
                       continue
+                  if (
+                      rel.startswith("include/generated/")
+                      or rel.startswith("include/config/")
+                      or rel.startswith("arch/arm64/include/generated/")
+                  ):
+                      continue
                   if (stock / rel).is_file():
                       candidates.add(rel)
 
@@ -326,9 +332,14 @@ jobs:
                   generated_count += 1
 
           source_count = 0
+          closure_generated_skipped = 0
           for raw in closure.read_text().splitlines():
               rel = raw.strip()
               if not rel:
+                  continue
+              rel_path = Path(rel)
+              if generated(rel_path):
+                  closure_generated_skipped += 1
                   continue
               src = stock / rel
               if not src.is_file():
@@ -340,6 +351,16 @@ jobs:
 
           print(f"MINIMAL_STOCK_GENERATED_HEADERS={generated_count}")
           print(f"MINIMAL_STOCK_SOURCE_HEADERS={source_count}")
+          print(f"MINIMAL_CLOSURE_GENERATED_SKIPPED={closure_generated_skipped}")
+
+          # O=out build must remain clean after the minimal source overlay.
+          if (src_root / "include/config").exists():
+              raise SystemExit("minimal overlay dirtied source include/config")
+          if (src_root / "arch/arm64/include/generated").exists():
+              raise SystemExit("minimal overlay dirtied source arch generated tree")
+          if (src_root / ".config").exists():
+              raise SystemExit("minimal overlay dirtied source .config")
+          print("MINIMAL_SOURCE_TREE_CLEAN=1")
           PY
 
           python3 - <<'PY'
