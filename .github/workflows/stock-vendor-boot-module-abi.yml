@@ -181,9 +181,10 @@ jobs:
                 ;;
             esac
 
+            work_abs="$(realpath "$work")"
             (
               cd "$out"
-              cpio --quiet -idm --no-absolute-filenames < "../../../$work"
+              cpio --quiet -idm --no-absolute-filenames < "$work_abs"
             )
 
             echo "RAMDISK_FRAGMENT_EXTRACTED[$idx]=$(find "$out" -type f | wc -l)"
