@@ -51,12 +51,20 @@ fi
 printf '%s\n' "$BASE_SHA" > "$WORK_ROOT/base-before-stable.txt"
 echo "::endgroup::"
 
-echo "::group::Keep merged MIUI/common UFS core"
-# Do not replace the complete UFS subtree with an older donor here.
-# Build #43 proved that the miui-t overlay still misses all six stock UFS
-# symbol CRCs. Keep the 5.4.289 merged UFS core so the next build provides a
-# clean A/B ABI measurement against the same stock CRC evidence.
+echo "::group::Overlay Xiaomi sweet UFS ABI probe donor"
+# Third ABI experiment: use the exact Xiaomi downstream donor already pinned
+# in manifest.env. This is an evidence-only A/B probe, not a final provenance
+# choice. Build #43 (miui-t UFS) and #45 (merged 5.4.289 UFS) both missed all
+# six stock UFS CRCs.
+mkdir -p "$WORK_ROOT/mi-memory-abi"
+git -C "$WORK_ROOT/mi-memory-abi" init
+git -C "$WORK_ROOT/mi-memory-abi" remote add origin "$MI_MEMORY_ABI_REPO"
+git -C "$WORK_ROOT/mi-memory-abi" fetch --depth=1 origin "$MI_MEMORY_ABI_COMMIT"
+git -C "$WORK_ROOT/mi-memory-abi" checkout --detach FETCH_HEAD
+rm -rf drivers/scsi/ufs
+cp -a "$WORK_ROOT/mi-memory-abi/drivers/scsi/ufs" drivers/scsi/ufs
 test -f drivers/scsi/ufs/ufshcd.h
+grep -q 'Copyright (C) 2021 XiaoMi' drivers/scsi/ufs/ufshcd.h
 echo "::endgroup::"
 
 echo "::group::Repair MIUI sources for the 5.4.289 common API"
