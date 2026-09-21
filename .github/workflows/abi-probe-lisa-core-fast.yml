@@ -17,6 +17,10 @@ concurrency:
 
 jobs:
   probe:
+    # Retired: this probe can enter an interactive Kconfig EOF loop and emit
+    # unbounded logs on this downstream tree. Use the main reconstruction/build
+    # pipeline with the exact stock IKCONFIG instead.
+    if: ${{ false }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
