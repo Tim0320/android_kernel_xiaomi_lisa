@@ -198,6 +198,7 @@ jobs:
           stock = Path(sys.argv[2])
           report = Path(sys.argv[3])
           repo_root = Path.cwd().resolve()
+          out_root = (repo_root / "out").resolve()
 
           logs = sorted(trace_root.glob("*.log"))
           print(f"ABI_INCLUDE_TRACE_LOGS={len(logs)}")
@@ -227,9 +228,15 @@ jobs:
                       except ValueError:
                           continue
                   else:
-                      rel = token
-                      if rel.startswith("./"):
-                          rel = rel[2:]
+                      if token.startswith("../"):
+                          try:
+                              rel = (out_root / token).resolve().relative_to(repo_root).as_posix()
+                          except ValueError:
+                              continue
+                      else:
+                          rel = token
+                          if rel.startswith("./"):
+                              rel = rel[2:]
 
                   if rel.startswith("out/"):
                       continue
