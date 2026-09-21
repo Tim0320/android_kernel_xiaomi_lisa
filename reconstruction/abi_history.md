@@ -222,6 +222,23 @@ All 38 core oracle symbols now reproduce the exact stock CRCs under the full exa
 
 This is strong experimental proof that the dominant KABI divergence comes from the **effective generated preprocessor/config environment**. It does **not yet mean the normal reconstructed kernel build is ABI-correct**: the normal build still resolves the donor Kconfig and generated headers differently. The next isolation probe tests stock generated/config headers without replacing source headers, so the minimum required stock environment can be identified before changing the reconstruction pipeline.
 
+## Source/generated isolation result
+
+A four-way direct-genksyms isolation probe completed successfully:
+
+| Mode | Present | Stock CRC matches |
+| --- | ---: | ---: |
+| control | 38/38 | 0/38 |
+| exact stock source headers only | 38/38 | 0/38 |
+| exact stock generated/config headers only | 38/38 | 0/38 |
+| exact stock source + generated/config headers | 38/38 | **38/38** |
+
+The generated-only probe overlaid **2,120** stock generated/config headers while leaving all **5,686** source headers untouched; it still scored 0/38. Conversely, source-only also scores 0/38.
+
+Therefore the stock KABI reproduction is an interaction effect: stock source-header type definitions must be interpreted under the stock generated/Kconfig preprocessor environment. Neither half reproduces the ABI independently.
+
+The next step is to derive the **minimal source-header closure** actually consumed by the 18 direct-genksyms targets from Kbuild dependency files, then test stock generated/config headers plus only that dependency-closed source subset. This avoids treating all 5,686 source headers as required when most are unrelated to the 38-symbol core oracle.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
