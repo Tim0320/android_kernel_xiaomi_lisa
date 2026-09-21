@@ -1,0 +1,291 @@
+name: Compare current full build with Lisa stock full ABI oracle
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-current-full-stock-oracle.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-current-full-stock-abi
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout reconstructed source
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Download exact stock full oracle and current full build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ORACLE_ARTIFACT_ID: "10636403934"
+          CURRENT_BUILD_ARTIFACT_ID: "10642672238"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-oracle current-build
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_ORACLE_ARTIFACT_ID}/zip" \
+            -o stock-oracle.zip
+          unzip -q stock-oracle.zip -d stock-oracle
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CURRENT_BUILD_ARTIFACT_ID}/zip" \
+            -o current-build.zip
+          unzip -q current-build.zip -d current-build
+
+          stock_crc="$(find stock-oracle -type f -name stock.full.crcs -print -quit)"
+          current_symvers="$(find current-build -type f -name Module.symvers -print -quit)"
+          test -n "$stock_crc"
+          test -n "$current_symvers"
+
+          cp "$stock_crc" stock.full.crcs
+          cp "$current_symvers" current.Module.symvers
+
+          echo "STOCK_FULL_CRC_LINES=$(grep -cv '^#\|^$' stock.full.crcs)"
+          echo "CURRENT_SYMVERS_LINES=$(wc -l < current.Module.symvers)"
+
+      - name: Compare full stock export CRC oracle
+        run: |
+          set -euo pipefail
+
+          python3 - stock.full.crcs current.Module.symvers full-current-abi-compare.txt <<'PY'
+          import sys
+          from pathlib import Path
+
+          stock_path, current_path, out_path = sys.argv[1:]
+
+          stock = {}
+          for raw in Path(stock_path).read_text(errors="replace").splitlines():
+              if not raw or raw.startswith("#"):
+                  continue
+              parts = raw.split("\t")
+              if len(parts) < 2:
+                  continue
+              crc = int(parts[0], 16)
+              name = parts[1]
+              section = parts[2] if len(parts) >= 3 else "-"
+              stock[name] = (crc, section)
+
+          current_all = {}
+          current_vmlinux = {}
+          current_modules = {}
+          for raw in Path(current_path).read_text(errors="replace").splitlines():
+              parts = raw.split()
+              if len(parts) < 2:
+                  continue
+              try:
+                  crc = int(parts[0], 16)
+              except ValueError:
+                  continue
+              name = parts[1]
+              owner = parts[2] if len(parts) >= 3 else "-"
+              current_all[name] = (crc, owner)
+              if owner == "vmlinux":
+                  current_vmlinux[name] = (crc, owner)
+              else:
+                  current_modules[name] = (crc, owner)
+
+          def compare(current):
+              stock_names = set(stock)
+              current_names = set(current)
+              overlap = stock_names & current_names
+              matches = sorted(
+                  n for n in overlap if stock[n][0] == current[n][0]
+              )
+              mismatches = sorted(
+                  n for n in overlap if stock[n][0] != current[n][0]
+              )
+              return {
+                  "overlap": overlap,
+                  "matches": matches,
+                  "mismatches": mismatches,
+                  "stock_only": sorted(stock_names - current_names),
+                  "current_only": sorted(current_names - stock_names),
+              }
+
+          v = compare(current_vmlinux)
+          a = compare(current_all)
+
+          print(f"FULL_STOCK_EXPORTS={len(stock)}")
+          print(f"FULL_CURRENT_SYMVERS_ALL={len(current_all)}")
+          print(f"FULL_CURRENT_VMLINUX={len(current_vmlinux)}")
+          print(f"FULL_CURRENT_MODULE_EXPORTS={len(current_modules)}")
+
+          print(f"FULL_VMLINUX_OVERLAP={len(v['overlap'])}")
+          print(f"FULL_VMLINUX_CRC_MATCHES={len(v['matches'])}")
+          print(f"FULL_VMLINUX_CRC_MISMATCHES={len(v['mismatches'])}")
+          print(f"FULL_VMLINUX_STOCK_ONLY={len(v['stock_only'])}")
+          print(f"FULL_VMLINUX_CURRENT_ONLY={len(v['current_only'])}")
+          if v["overlap"]:
+              print(
+                  "FULL_VMLINUX_MATCH_RATE="
+                  f"{len(v['matches'])/len(v['overlap']):.6f}"
+              )
+
+          print(f"FULL_ALL_OVERLAP={len(a['overlap'])}")
+          print(f"FULL_ALL_CRC_MATCHES={len(a['matches'])}")
+          print(f"FULL_ALL_CRC_MISMATCHES={len(a['mismatches'])}")
+          print(f"FULL_ALL_STOCK_ONLY={len(a['stock_only'])}")
+          if a["overlap"]:
+              print(
+                  "FULL_ALL_MATCH_RATE="
+                  f"{len(a['matches'])/len(a['overlap']):.6f}"
+              )
+
+          lines = [
+              "# Exact stock full ABI oracle vs current genksyms-routed build",
+              f"stock_exports={len(stock)}",
+              f"current_all={len(current_all)}",
+              f"current_vmlinux={len(current_vmlinux)}",
+              f"current_module_exports={len(current_modules)}",
+              f"vmlinux_overlap={len(v['overlap'])}",
+              f"vmlinux_matches={len(v['matches'])}",
+              f"vmlinux_mismatches={len(v['mismatches'])}",
+              f"vmlinux_stock_only={len(v['stock_only'])}",
+              f"vmlinux_current_only={len(v['current_only'])}",
+              f"all_overlap={len(a['overlap'])}",
+              f"all_matches={len(a['matches'])}",
+              f"all_mismatches={len(a['mismatches'])}",
+              f"all_stock_only={len(a['stock_only'])}",
+              "",
+              "## VMLINUX_MISMATCHES",
+          ]
+
+          for name in v["mismatches"]:
+              scrc, section = stock[name]
+              ccrc, owner = current_vmlinux[name]
+              lines.append(
+                  f"MISMATCH\t{name}\tstock=0x{scrc:08x}\t"
+                  f"current=0x{ccrc:08x}\t{section}\t{owner}"
+              )
+
+          lines += ["", "## VMLINUX_MATCHES"]
+          for name in v["matches"]:
+              scrc, section = stock[name]
+              lines.append(
+                  f"MATCH\t{name}\t0x{scrc:08x}\t{section}\tvmlinux"
+              )
+
+          lines += ["", "## STOCK_ONLY_VMLINUX"]
+          for name in v["stock_only"]:
+              lines.append(
+                  f"STOCK_ONLY\t{name}\t0x{stock[name][0]:08x}\t{stock[name][1]}"
+              )
+
+          lines += ["", "## CURRENT_ONLY_VMLINUX"]
+          for name in v["current_only"]:
+              lines.append(
+                  f"CURRENT_ONLY\t{name}\t0x{current_vmlinux[name][0]:08x}\tvmlinux"
+              )
+
+          Path(out_path).write_text("\n".join(lines) + "\n")
+          PY
+
+          test -s full-current-abi-compare.txt
+
+      - name: Classify remaining vmlinux CRC mismatches by subsystem
+        run: |
+          set -euo pipefail
+
+          git grep -n -E 'EXPORT_SYMBOL[A-Z0-9_]*[[:space:]]*\(' -- '*.c' '*.h' \
+            > export-definitions.txt || true
+
+          python3 - full-current-abi-compare.txt export-definitions.txt abi-current-subsystem-summary.txt <<'PY'
+          import re
+          import sys
+          from collections import Counter, defaultdict
+          from pathlib import Path
+
+          compare_path, defs_path, out_path = sys.argv[1:]
+
+          mismatches = set()
+          for raw in Path(compare_path).read_text(errors="replace").splitlines():
+              if raw.startswith("MISMATCH\t"):
+                  mismatches.add(raw.split("\t")[1])
+
+          symbol_paths = defaultdict(set)
+          rx = re.compile(
+              r'^(.*?):\d+:(?:.*?)(?:EXPORT_SYMBOL[A-Z0-9_]*)\s*\(\s*([A-Za-z0-9_.$]+)\s*\)'
+          )
+          for raw in Path(defs_path).read_text(errors="replace").splitlines():
+              m = rx.search(raw)
+              if m:
+                  path, symbol = m.groups()
+                  symbol_paths[symbol].add(path)
+
+          top = Counter()
+          deep = Counter()
+          unmapped = []
+
+          for symbol in sorted(mismatches):
+              paths = sorted(symbol_paths.get(symbol, []))
+              if not paths:
+                  unmapped.append(symbol)
+                  continue
+              parts = paths[0].split("/")
+              top[parts[0] if parts else "<unknown>"] += 1
+              if parts and parts[0] in {
+                  "drivers","fs","net","arch","sound","kernel",
+                  "mm","lib","security","crypto","block"
+              }:
+                  key = "/".join(parts[:2]) if len(parts) > 1 else parts[0]
+              else:
+                  key = parts[0] if parts else "<unknown>"
+              deep[key] += 1
+
+          print(f"FULL_MISMATCH_CLASSIFIED={sum(top.values())}")
+          print(f"FULL_MISMATCH_UNMAPPED={len(unmapped)}")
+          for name, count in top.most_common():
+              print(f"FULL_MISMATCH_TOP\t{name}\t{count}")
+          for name, count in deep.most_common(80):
+              print(f"FULL_MISMATCH_DEEP\t{name}\t{count}")
+
+          lines = [
+              "# Remaining full-oracle CRC mismatches by subsystem",
+              f"mismatch_total={len(mismatches)}",
+              f"classified={sum(top.values())}",
+              f"unmapped={len(unmapped)}",
+              "",
+              "## Top",
+          ]
+          lines += [f"{name}\t{count}" for name, count in top.most_common()]
+          lines += ["", "## Deep"]
+          lines += [f"{name}\t{count}" for name, count in deep.most_common()]
+          lines += ["", "## Unmapped"]
+          lines += unmapped
+          Path(out_path).write_text("\n".join(lines) + "\n")
+          PY
+
+      - name: Upload full ABI comparison evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-current-full-stock-abi-comparison
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            stock.full.crcs
+            current.Module.symvers
+            full-current-abi-compare.txt
+            export-definitions.txt
+            abi-current-subsystem-summary.txt
