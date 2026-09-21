@@ -32,6 +32,9 @@ jobs:
           - label: lisa-stock-derived
             repo: https://github.com/CannedShroud/kernel_xiaomi_lisa.git
             ref: main
+          - label: micode-lisa-r
+            repo: https://github.com/MiCode/Xiaomi_Kernel_OpenSource.git
+            ref: lisa-r-oss
 
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -82,6 +85,14 @@ jobs:
           echo "candidate_head=$(git rev-parse HEAD)"
           sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 289/' Makefile
           printf '%s\n' '-g5987d69e25da' > .scmversion
+
+          # Many public Xiaomi forks keep a KernelSU Kconfig entry while the
+          # KernelSU submodule/symlink is absent. It is unrelated to stock
+          # HyperOS ABI and otherwise prevents olddefconfig from running.
+          sed -i '/source "drivers\/kernelsu\/Kconfig"/d' drivers/Kconfig 2>/dev/null || true
+          sed -i '/CONFIG_KSU.*kernelsu\//d' drivers/Makefile 2>/dev/null || true
+          rm -f drivers/kernelsu
+          rm -rf KernelSU
 
       - name: Apply exact stock lisa IKCONFIG
         env:
