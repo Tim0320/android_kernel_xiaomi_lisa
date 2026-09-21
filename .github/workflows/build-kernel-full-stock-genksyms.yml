@@ -1,0 +1,468 @@
+name: Build Lisa with full stock genksyms header root
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-kernel-full-stock-genksyms.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-full-stock-genksyms-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout reconstructed kernel
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            cpio kmod rsync python3 curl xz-utils unzip
+
+      - name: Cache stock-generation AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install stock-generation AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            "$DEST/bin/clang" --version | tee clang-version.txt
+            exit 0
+          fi
+
+          curl -L --fail --retry 5 --retry-all-errors \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Download exact stock IKHEADERS and full stock CRC oracle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+          STOCK_ORACLE_ARTIFACT_ID: "10636403934"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact stock-oracle
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders-artifact.zip
+          unzip -q stock-kheaders-artifact.zip -d stock-artifact
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_ORACLE_ARTIFACT_ID}/zip" \
+            -o stock-oracle.zip
+          unzip -q stock-oracle.zip -d stock-oracle
+
+          test -d stock-artifact/stock-kheaders
+          stock_crc="$(find stock-oracle -type f -name stock.full.crcs -print -quit)"
+          test -n "$stock_crc"
+          cp "$stock_crc" stock.full.crcs
+
+          echo "STOCK_KHEADERS_FILES=$(find stock-artifact/stock-kheaders -type f | wc -l)"
+          echo "STOCK_FULL_CRC_LINES=$(grep -cv '^#\|^$' stock.full.crcs)"
+
+      - name: Generate donor build environment from exact stock IKCONFIG
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          source reconstruction/manifest.env
+          test -s reconstruction/stock_ikconfig
+          test "$(git hash-object reconstruction/stock_ikconfig)" = "$STOCK_IKCONFIG_BLOB"
+
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+
+      - name: Stage complete stock IKHEADERS for genksyms only
+        env:
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -euo pipefail
+          rm -rf "$STOCK_ABI_ROOT"
+          mkdir -p "$STOCK_ABI_ROOT"
+
+          python3 - stock-artifact/stock-kheaders "$STOCK_ABI_ROOT" full-genksyms-manifest.txt <<'PY'
+          import shutil
+          import sys
+          from pathlib import Path
+
+          stock = Path(sys.argv[1])
+          root = Path(sys.argv[2])
+          manifest = Path(sys.argv[3])
+
+          source_paths = []
+          generated_paths = []
+
+          def is_generated(rel):
+              s = rel.as_posix()
+              return (
+                  s.startswith("include/generated/")
+                  or s.startswith("include/config/")
+                  or s.startswith("arch/arm64/include/generated/")
+              )
+
+          for src in sorted(p for p in stock.rglob("*.h") if p.is_file()):
+              rel = src.relative_to(stock)
+              target = root / rel
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(src, target)
+              if is_generated(rel):
+                  generated_paths.append(rel.as_posix())
+              else:
+                  source_paths.append(rel.as_posix())
+
+          manifest.write_text(
+              "\n".join(
+                  [
+                      f"source_headers={len(source_paths)}",
+                      f"generated_headers={len(generated_paths)}",
+                      f"total_headers={len(source_paths)+len(generated_paths)}",
+                      "",
+                      "## SOURCE",
+                      *source_paths,
+                      "",
+                      "## GENERATED",
+                      *generated_paths,
+                  ]
+              ) + "\n"
+          )
+
+          print(f"FULL_GENKSYMS_STOCK_SOURCE_HEADERS={len(source_paths)}")
+          print(f"FULL_GENKSYMS_STOCK_GENERATED_HEADERS={len(generated_paths)}")
+          print(f"FULL_GENKSYMS_STOCK_TOTAL_HEADERS={len(source_paths)+len(generated_paths)}")
+          PY
+
+          grep -qx 'source_headers=5686' full-genksyms-manifest.txt
+          grep -qx 'generated_headers=2120' full-genksyms-manifest.txt
+          grep -qx 'total_headers=7806' full-genksyms-manifest.txt
+
+          test ! -d include/config
+          test ! -d arch/arm64/include/generated
+          test ! -f .config
+          echo "NORMAL_COMPILE_SOURCE_TREE_UNMODIFIED=1"
+
+      - name: Route only genksyms preprocessing through complete stock headers
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+
+          stock_flags = (
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/include "
+              "-I$(STOCK_ABI_ROOT)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/generated/uapi"
+          )
+
+          lines = s.splitlines(keepends=True)
+          c_done = False
+          asm_done = False
+
+          for i, line in enumerate(lines):
+              if not c_done and "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line:
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {stock_flags} -D__GENKSYMS__",
+                      1,
+                  )
+                  c_done = True
+                  continue
+
+              if not asm_done and "$(CPP) -D__GENKSYMS__ $(c_flags) -xc - |" in line:
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {stock_flags} -D__GENKSYMS__",
+                      1,
+                  )
+                  asm_done = True
+
+          if not c_done:
+              raise SystemExit("C genksyms rule not found")
+          if not asm_done:
+              raise SystemExit("ASM genksyms rule not found")
+
+          p.write_text("".join(lines))
+          print("FULL_GENKSYMS_STOCK_INCLUDE_ROUTING=1")
+          PY
+
+          grep -n 'STOCK_ABI_ROOT.*D__GENKSYMS__' scripts/Makefile.build
+
+      - name: Build Image modules and DTBs
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: |
+          set -o pipefail
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 \
+            CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            Image modules dtbs 2>&1 | tee build-full-stock-genksyms.log
+
+      - name: Validate core outputs
+        run: |
+          set -euo pipefail
+          test -s out/arch/arm64/boot/Image
+          test -s out/Module.symvers
+          test -s out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko
+          test -s out/drivers/input/touchscreen/gt9897t/goodix_core.ko
+          test -s out/drivers/misc/mi-memory/mi_memory.ko
+          test -s out/drivers/net/wireless/mi_cnss_statistic/mi_cnss_statistic.ko
+
+          source reconstruction/manifest.env
+          for ko in \
+            out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko \
+            out/drivers/input/touchscreen/gt9897t/goodix_core.ko \
+            out/drivers/misc/mi-memory/mi_memory.ko \
+            out/drivers/net/wireless/mi_cnss_statistic/mi_cnss_statistic.ko; do
+            actual="$(strings -a "$ko" | sed -n 's/^vermagic=//p' | head -n1 | awk '{print $1}')"
+            echo "FULL_GENKSYMS_VERMAGIC\t$ko\t$actual"
+            test "$actual" = "$TARGET_VERMAGIC"
+          done
+
+      - name: Compare complete stock CRC oracle with rebuilt Module.symvers
+        run: |
+          set -euo pipefail
+
+          python3 - stock.full.crcs out/Module.symvers full-stock-genksyms-compare.txt <<'PY'
+          import sys
+          from pathlib import Path
+
+          stock_path, current_path, out_path = sys.argv[1:]
+
+          stock = {}
+          for raw in Path(stock_path).read_text(errors="replace").splitlines():
+              if not raw or raw.startswith("#"):
+                  continue
+              parts = raw.split("\t")
+              if len(parts) < 2:
+                  continue
+              stock[parts[1]] = (int(parts[0], 16), parts[2] if len(parts) >= 3 else "-")
+
+          current = {}
+          vmlinux = {}
+          modules = {}
+          for raw in Path(current_path).read_text(errors="replace").splitlines():
+              parts = raw.split()
+              if len(parts) < 2:
+                  continue
+              try:
+                  crc = int(parts[0], 16)
+              except ValueError:
+                  continue
+              name = parts[1]
+              owner = parts[2] if len(parts) >= 3 else "-"
+              current[name] = (crc, owner)
+              if owner == "vmlinux":
+                  vmlinux[name] = (crc, owner)
+              else:
+                  modules[name] = (crc, owner)
+
+          stock_names = set(stock)
+          names = set(vmlinux)
+          overlap = stock_names & names
+          matches = sorted(n for n in overlap if stock[n][0] == vmlinux[n][0])
+          mismatches = sorted(n for n in overlap if stock[n][0] != vmlinux[n][0])
+          stock_only = sorted(stock_names - names)
+          current_only = sorted(names - stock_names)
+
+          print(f"FULL_STOCK_EXPORTS={len(stock)}")
+          print(f"FULL_CURRENT_SYMVERS_ALL={len(current)}")
+          print(f"FULL_CURRENT_VMLINUX={len(vmlinux)}")
+          print(f"FULL_CURRENT_MODULE_EXPORTS={len(modules)}")
+          print(f"FULL_VMLINUX_OVERLAP={len(overlap)}")
+          print(f"FULL_VMLINUX_CRC_MATCHES={len(matches)}")
+          print(f"FULL_VMLINUX_CRC_MISMATCHES={len(mismatches)}")
+          print(f"FULL_VMLINUX_STOCK_ONLY={len(stock_only)}")
+          print(f"FULL_VMLINUX_CURRENT_ONLY={len(current_only)}")
+          if overlap:
+              print(f"FULL_VMLINUX_MATCH_RATE={len(matches)/len(overlap):.6f}")
+
+          lines = [
+              "# Full stock Image vs full-stock-genksyms build",
+              f"stock_exports={len(stock)}",
+              f"current_vmlinux={len(vmlinux)}",
+              f"overlap={len(overlap)}",
+              f"matches={len(matches)}",
+              f"mismatches={len(mismatches)}",
+              f"stock_only={len(stock_only)}",
+              f"current_only={len(current_only)}",
+              "",
+              "## MISMATCHES",
+          ]
+          for name in mismatches:
+              lines.append(
+                  f"MISMATCH\t{name}\tstock=0x{stock[name][0]:08x}\t"
+                  f"current=0x{vmlinux[name][0]:08x}\t{stock[name][1]}"
+              )
+          lines += ["", "## STOCK_ONLY"]
+          for name in stock_only:
+              lines.append(
+                  f"STOCK_ONLY\t{name}\t0x{stock[name][0]:08x}\t{stock[name][1]}"
+              )
+          lines += ["", "## CURRENT_ONLY"]
+          for name in current_only:
+              lines.append(
+                  f"CURRENT_ONLY\t{name}\t0x{vmlinux[name][0]:08x}"
+              )
+
+          Path(out_path).write_text("\n".join(lines) + "\n")
+          PY
+
+          test -s full-stock-genksyms-compare.txt
+
+      - name: Classify any remaining mismatches
+        run: |
+          set -euo pipefail
+
+          git grep -n -E 'EXPORT_SYMBOL[A-Z0-9_]*[[:space:]]*\(' -- '*.c' '*.h' \
+            > export-definitions.txt || true
+
+          python3 - full-stock-genksyms-compare.txt export-definitions.txt full-stock-genksyms-subsystems.txt <<'PY'
+          import re
+          import sys
+          from collections import Counter, defaultdict
+          from pathlib import Path
+
+          compare_path, defs_path, out_path = sys.argv[1:]
+
+          mismatches = set()
+          for raw in Path(compare_path).read_text(errors="replace").splitlines():
+              if raw.startswith("MISMATCH\t"):
+                  mismatches.add(raw.split("\t")[1])
+
+          symbol_paths = defaultdict(set)
+          rx = re.compile(
+              r'^(.*?):\d+:(?:.*?)(?:EXPORT_SYMBOL[A-Z0-9_]*)\s*\(\s*([A-Za-z0-9_.$]+)\s*\)'
+          )
+          for raw in Path(defs_path).read_text(errors="replace").splitlines():
+              m = rx.search(raw)
+              if m:
+                  path, symbol = m.groups()
+                  symbol_paths[symbol].add(path)
+
+          top = Counter()
+          deep = Counter()
+          unmapped = []
+
+          for symbol in sorted(mismatches):
+              paths = sorted(symbol_paths.get(symbol, []))
+              if not paths:
+                  unmapped.append(symbol)
+                  continue
+              parts = paths[0].split("/")
+              top[parts[0] if parts else "<unknown>"] += 1
+              if parts and parts[0] in {
+                  "drivers","fs","net","arch","sound","kernel",
+                  "mm","lib","security","crypto","block"
+              }:
+                  key = "/".join(parts[:2]) if len(parts) > 1 else parts[0]
+              else:
+                  key = parts[0] if parts else "<unknown>"
+              deep[key] += 1
+
+          print(f"FULL_GENKSYMS_MISMATCH_TOTAL={len(mismatches)}")
+          print(f"FULL_GENKSYMS_MISMATCH_CLASSIFIED={sum(top.values())}")
+          print(f"FULL_GENKSYMS_MISMATCH_UNMAPPED={len(unmapped)}")
+          for name, count in top.most_common():
+              print(f"FULL_GENKSYMS_MISMATCH_TOP\t{name}\t{count}")
+          for name, count in deep.most_common(80):
+              print(f"FULL_GENKSYMS_MISMATCH_DEEP\t{name}\t{count}")
+
+          Path(out_path).write_text(
+              "\n".join(
+                  [
+                      f"mismatch_total={len(mismatches)}",
+                      f"classified={sum(top.values())}",
+                      f"unmapped={len(unmapped)}",
+                      "",
+                      "## TOP",
+                      *[f"{k}\t{v}" for k,v in top.most_common()],
+                      "",
+                      "## DEEP",
+                      *[f"{k}\t{v}" for k,v in deep.most_common()],
+                      "",
+                      "## UNMAPPED",
+                      *unmapped,
+                  ]
+              ) + "\n"
+          )
+          PY
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-full-stock-genksyms-build-evidence
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            clang-version.txt
+            stock.full.crcs
+            full-genksyms-manifest.txt
+            build-full-stock-genksyms.log
+            out/.config
+            out/Module.symvers
+            out/arch/arm64/boot/Image
+            full-stock-genksyms-compare.txt
+            full-stock-genksyms-subsystems.txt
+            export-definitions.txt
