@@ -320,6 +320,7 @@ jobs:
             drivers/of/base.symtypes
             drivers/of/address.symtypes
             drivers/clk/clk.symtypes
+            drivers/clk/clkdev.symtypes
             drivers/iommu/iommu.symtypes
             drivers/regulator/core.symtypes
             kernel/kthread.symtypes
