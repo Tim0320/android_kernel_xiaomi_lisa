@@ -137,12 +137,20 @@ jobs:
               raise SystemExit("direct genksyms rule not found")
           s = s.replace(old, new, 1)
 
-          cpp_old = '    $(CPP) -D__GENKSYMS__ $(c_flags) $< |                             \\\n'
-          cpp_new = '    $(CPP) -H -D__GENKSYMS__ $(c_flags) $< |                          \\\n'
-          if cpp_old not in s:
+          lines = s.splitlines(keepends=True)
+          found_cpp = False
+          for idx, line in enumerate(lines):
+              if "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line:
+                  lines[idx] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      "$(CPP) -H -D__GENKSYMS__",
+                      1,
+                  )
+                  found_cpp = True
+                  break
+          if not found_cpp:
               raise SystemExit("genksyms CPP rule not found")
-          s = s.replace(cpp_old, cpp_new, 1)
-          p.write_text(s)
+          p.write_text("".join(lines))
           PY
 
           targets=(
