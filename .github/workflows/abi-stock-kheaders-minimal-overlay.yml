@@ -295,7 +295,8 @@ jobs:
           if len(candidates) < 50:
               raise SystemExit(
                   f"dependency closure implausibly small: {len(candidates)}"
-              )          PY
+              )
+          PY
 
           test -s abi-source-header-closure.txt
           echo "ABI_SOURCE_HEADER_CLOSURE_FILE=$(wc -l < abi-source-header-closure.txt)"
