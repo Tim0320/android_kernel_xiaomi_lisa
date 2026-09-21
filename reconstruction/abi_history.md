@@ -438,6 +438,53 @@ Combined with the previous private-lineage matrix, every one of the final 69 mis
 
 The next validation is a real full kernel build with these source families overlaid, followed by the complete 13,360-export stock Image CRC comparison.
 
+## Exact vendor_boot cohort audit reduces boot-critical ABI gap to six symbols
+
+The exact stock `vendor_boot.img` was unpacked and all **46** kernel modules were parsed from their ELF `__versions` sections.
+
+Two distinct module ABI cohorts are present:
+
+- **45 modules** under `lib/modules/5.4-gki/`
+  - vermagic: `5.4.289-g5987d69e25da SMP preempt mod_unload modversions aarch64`
+  - `module_layout = 0x1e5b7ab7`
+- **1 module**, `lib/modules/msm_drm.ko`
+  - vermagic: `5.4.289-qgki-g5987d69e25da SMP preempt mod_unload modversions aarch64`
+  - `module_layout = 0xba39cbb8`
+
+The root `lib/modules/modules.load` explicitly lists `msm_drm.ko`, confirming that this is the stock QGKI module relevant to the reconstructed QGKI kernel rather than the alternate 5.4-gki module cohort.
+
+Against the exact stock Image export oracle:
+
+- `msm_drm.ko` kernel imports: **736**
+- stock Image matches: **736/736**
+- current 99.4795% build matches: **730/736**
+- current missing exports: **0**
+- current CRC mismatches: **6**
+
+The only QGKI boot-critical ABI mismatches are:
+
+- `proc_create_data`
+- `proc_mkdir`
+- `proc_remove`
+- `remove_proc_entry`
+- `sched_setscheduler`
+- `wake_up_process`
+
+Exact stock vs current CRCs:
+
+- `proc_create_data`: stock `0xa187c33a`, current `0x2f8cd0e1`
+- `proc_mkdir`: stock `0xd8fd7935`, current `0xb1ea2572`
+- `proc_remove`: stock `0x0420ade2`, current `0x5c1ed45a`
+- `remove_proc_entry`: stock `0x05ba4e75`, current `0x9a087f14`
+- `sched_setscheduler`: stock `0xe09be37d`, current `0xe92eb5f9`
+- `wake_up_process`: stock `0xfa54581b`, current `0x1fc82c75`
+
+MiCode redwood-s reproduces all six CRCs under the exact stock global IKHEADERS environment.
+
+The four procfs mismatches correspond to a real API-generation difference: the exact stock `include/linux/proc_fs.h` uses `struct file_operations *`, while the current reconstructed common core uses the later `struct proc_ops *` API. CRC spoofing is therefore not a safe fix because the pointed-to operation structures are not runtime-layout compatible.
+
+The next diagnostic separates redwood source files from redwood private headers for `fs/proc/generic.c` and `kernel/sched/core.c`, and inventories the current tree's proc_ops migration scope before any source-generation rollback is attempted.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
