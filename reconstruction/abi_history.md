@@ -355,6 +355,51 @@ This pattern matches the construction of stock IKHEADERS: the archive contains `
 
 Therefore the remaining 69 symbols should be treated as a **private implementation/header lineage problem**, not a global Kconfig/header problem. The next experiment compares public Xiaomi/Qualcomm/Lisa source lineages only for the 19 translation units that own those 69 exports while retaining the exact stock global IKHEADERS environment.
 
+## Remaining 69 private ABI symbols: public lineage matrix
+
+A targeted matrix replaced only the private implementation/header regions that own the final 69 CRC mismatches while retaining the exact stock global IKHEADERS environment.
+
+Best per-family matches:
+
+- **MiCode redwood-s**
+  - `kernel/sched`: **25/25**
+  - `fs/proc`: **19/19**
+  - KGSL: **2/2**
+  - QRTR: **1/1**
+- **YZzZr hyper-14**
+  - USB DWC3/xHCI: **16/16**
+  - TSENS: **1/1**
+  - QRTR: **1/1**
+- CannedShroud lisa:
+  - `fs/proc`: **19/19**
+  - KGSL: **2/2**
+- MiCode lisa-r / taoyao-s:
+  - `kernel/sched`: **25/25**
+  - `fs/proc`: **18/19**
+  - KGSL: **2/2**
+- Lineage lisa QGKI 5.4.289:
+  - `fs/proc`: **19/19**
+  - KGSL: **2/2**
+  - QRTR: **1/1**
+  - TSENS: **1/1**
+  - USB: **5/16**
+
+Combining redwood-s for sched/proc/KGSL/QRTR with YZzZr hyper-14 for USB/TSENS covers **64/69** remaining symbols exactly.
+
+Five symbols remain unresolved:
+
+- LZ4: **3**
+  - `LZ4_compress_default`
+  - `LZ4_loadDict`
+  - `LZ4_saveDict`
+- IPA: **2**
+  - `ipa3_get_ctx`
+  - `ipa3_get_dma_dev`
+
+The IPA score of 0/2 in the first matrix was a probe bug rather than ABI evidence: `ipa.c` is aggregated into `ipam-y` by the parent Makefile, so `ipa_v3/ipa.symtypes` had no direct Kbuild rule.
+
+All tested Xiaomi/Lahaina candidates produced the same three incorrect LZ4 CRCs. The reconstructed tree uses a newer standalone `lib/lz4/lz4.c` implementation, while Linux/Android 5.4-era trees commonly use `lz4_compress.c + lz4defs.h`. The next probe therefore separates the final five symbols into a corrected IPA direct-genksyms test and an upstream/AOSP historical LZ4 implementation matrix.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
