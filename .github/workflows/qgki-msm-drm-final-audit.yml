@@ -1,0 +1,291 @@
+name: Final audit stock QGKI msm_drm ABI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-msm-drm-final-audit.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Install ELF parser
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3 python3-pyelftools unzip curl
+
+      - name: Download successful six-symbol build evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVIDENCE_ARTIFACT_ID: "10653097819"
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${EVIDENCE_ARTIFACT_ID}/zip" \
+            -o evidence.zip
+
+          unzip -q evidence.zip -d evidence
+
+          find evidence -maxdepth 4 -type f -print | sort
+
+          symvers="$(find evidence -type f -name Module.symvers -print -quit)"
+          msm="$(find evidence -type f -name msm_drm.ko -print -quit)"
+          image="$(find evidence -type f -path '*/arch/arm64/boot/Image' -print -quit)"
+
+          test -n "$symvers"
+          test -n "$msm"
+          test -n "$image"
+
+          cp "$symvers" final.Module.symvers
+          cp "$msm" final.stock.msm_drm.ko
+          cp "$image" final.Image
+
+          test -s final.Module.symvers
+          test -s final.stock.msm_drm.ko
+          test -s final.Image
+
+      - name: Read stock msm_drm ELF metadata
+        run: |
+          set -euo pipefail
+
+          python3 - final.stock.msm_drm.ko stock-msm-drm-metadata.txt <<'PY'
+          import sys
+          from pathlib import Path
+          from elftools.elf.elffile import ELFFile
+
+          module = Path(sys.argv[1])
+          out = Path(sys.argv[2])
+
+          with module.open("rb") as f:
+              elf = ELFFile(f)
+              modinfo = elf.get_section_by_name(".modinfo")
+              versions = elf.get_section_by_name("__versions")
+
+              if modinfo is None:
+                  raise SystemExit("stock msm_drm.ko has no .modinfo")
+              if versions is None:
+                  raise SystemExit("stock msm_drm.ko has no __versions")
+
+              fields = {}
+              for raw in modinfo.data().split(b"\0"):
+                  if b"=" not in raw:
+                      continue
+                  k, v = raw.split(b"=", 1)
+                  fields.setdefault(
+                      k.decode("utf-8", "replace"),
+                      []
+                  ).append(v.decode("utf-8", "replace"))
+
+              vermagic = fields.get("vermagic", [""])[0]
+              if not vermagic:
+                  raise SystemExit("no vermagic entry in .modinfo")
+
+              data = versions.data()
+
+          if len(data) % 64:
+              raise SystemExit(f"unexpected __versions size: {len(data)}")
+
+          entries = len(data) // 64
+          expected_vermagic = (
+              "5.4.289-qgki-g5987d69e25da "
+              "SMP preempt mod_unload modversions aarch64"
+          )
+
+          print(f"STOCK_MSM_DRM_VERMAGIC={vermagic}")
+          print(f"STOCK_MSM_DRM_VERSION_ENTRIES={entries}")
+
+          if vermagic.strip() != expected_vermagic:
+              raise SystemExit(
+                  f"unexpected vermagic: {vermagic!r}"
+              )
+          if entries != 736:
+              raise SystemExit(
+                  f"expected 736 __versions entries, got {entries}"
+              )
+
+          out.write_text(
+              f"vermagic={vermagic}\n"
+              f"version_entries={entries}\n"
+          )
+          PY
+
+          cat stock-msm-drm-metadata.txt
+
+      - name: Verify exact six boot-critical CRCs
+        run: |
+          set -euo pipefail
+
+          python3 - final.Module.symvers qgki-six-final.txt <<'PY'
+          import sys
+          from pathlib import Path
+
+          expected = {
+              "proc_create_data": 0xa187c33a,
+              "proc_mkdir": 0xd8fd7935,
+              "proc_remove": 0x0420ade2,
+              "remove_proc_entry": 0x05ba4e75,
+              "sched_setscheduler": 0xe09be37d,
+              "wake_up_process": 0xfa54581b,
+          }
+
+          current = {}
+          for raw in Path(sys.argv[1]).read_text(errors="replace").splitlines():
+              p = raw.split()
+              if len(p) < 3:
+                  continue
+              try:
+                  current[p[1]] = int(p[0], 16)
+              except ValueError:
+                  pass
+
+          score = 0
+          lines = []
+          for symbol, stock in expected.items():
+              got = current.get(symbol)
+              match = got == stock
+              score += int(match)
+              line = (
+                  f"{symbol}\tstock=0x{stock:08x}\t"
+                  f"current="
+                  + (f"0x{got:08x}" if got is not None else "MISSING")
+                  + f"\tmatch={int(match)}"
+              )
+              print("FINAL_QGKI_SIX\t" + line)
+              lines.append(line)
+
+          print(f"FINAL_QGKI_SIX_SCORE={score}/6")
+          Path(sys.argv[2]).write_text("\n".join(lines) + "\n")
+
+          if score != 6:
+              raise SystemExit(f"six-symbol score is {score}/6")
+          PY
+
+      - name: Audit all 736 stock msm_drm imports
+        run: |
+          set -euo pipefail
+
+          python3 - final.stock.msm_drm.ko final.Module.symvers qgki-msm-drm-final-audit.txt <<'PY'
+          import sys
+          from pathlib import Path
+          from elftools.elf.elffile import ELFFile
+
+          module_path = Path(sys.argv[1])
+          symvers_path = Path(sys.argv[2])
+          report_path = Path(sys.argv[3])
+
+          with module_path.open("rb") as f:
+              elf = ELFFile(f)
+              sec = elf.get_section_by_name("__versions")
+              if sec is None:
+                  raise SystemExit("missing __versions")
+              data = sec.data()
+
+          if len(data) % 64:
+              raise SystemExit(f"bad __versions size: {len(data)}")
+
+          required = {}
+          for off in range(0, len(data), 64):
+              chunk = data[off:off + 64]
+              crc = int.from_bytes(chunk[:8], "little") & 0xffffffff
+              name = chunk[8:].split(b"\0", 1)[0].decode("ascii", "replace")
+              if name:
+                  required[name] = crc
+
+          current = {}
+          for raw in symvers_path.read_text(errors="replace").splitlines():
+              p = raw.split()
+              if len(p) < 3:
+                  continue
+              try:
+                  current[p[1]] = int(p[0], 16)
+              except ValueError:
+                  pass
+
+          matches = []
+          mismatches = []
+          missing = []
+
+          for symbol, stock_crc in sorted(required.items()):
+              got = current.get(symbol)
+              if got is None:
+                  missing.append((symbol, stock_crc))
+              elif got == stock_crc:
+                  matches.append((symbol, stock_crc))
+              else:
+                  mismatches.append((symbol, stock_crc, got))
+
+          print(f"FINAL_MSM_DRM_IMPORTS={len(required)}")
+          print(f"FINAL_MSM_DRM_MATCHES={len(matches)}")
+          print(f"FINAL_MSM_DRM_MISMATCHES={len(mismatches)}")
+          print(f"FINAL_MSM_DRM_MISSING={len(missing)}")
+          if required:
+              print(
+                  f"FINAL_MSM_DRM_MATCH_RATE="
+                  f"{len(matches)/len(required):.6f}"
+              )
+
+          lines = [
+              "# Final stock QGKI msm_drm ABI audit",
+              f"imports={len(required)}",
+              f"matches={len(matches)}",
+              f"mismatches={len(mismatches)}",
+              f"missing={len(missing)}",
+              "",
+              "## MISMATCH",
+          ]
+
+          for symbol, stock_crc, current_crc in mismatches:
+              line = (
+                  f"{symbol}\tstock=0x{stock_crc:08x}\t"
+                  f"current=0x{current_crc:08x}"
+              )
+              print("FINAL_MSM_DRM_MISMATCH\t" + line)
+              lines.append(line)
+
+          lines += ["", "## MISSING"]
+          for symbol, stock_crc in missing:
+              line = f"{symbol}\tstock=0x{stock_crc:08x}"
+              print("FINAL_MSM_DRM_MISSING_SYMBOL\t" + line)
+              lines.append(line)
+
+          report_path.write_text("\n".join(lines) + "\n")
+
+          if len(required) != 736:
+              raise SystemExit(
+                  f"expected 736 imports, got {len(required)}"
+              )
+          if mismatches or missing:
+              raise SystemExit(
+                  f"ABI audit failed: {len(mismatches)} mismatches, "
+                  f"{len(missing)} missing"
+              )
+          PY
+
+          cat qgki-msm-drm-final-audit.txt
+
+      - name: Upload final audit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-msm-drm-final-audit
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            stock-msm-drm-metadata.txt
+            qgki-six-final.txt
+            qgki-msm-drm-final-audit.txt
