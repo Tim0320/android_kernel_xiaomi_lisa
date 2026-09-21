@@ -1,0 +1,188 @@
+name: Probe lisa mi-memory ABI generation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/abi-probe-mi-memory-generation.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        variant:
+          - legacy-lowercase
+          - full-uppercase
+          - state-only-lowercase
+          - state-only-uppercase
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git curl
+
+      - name: Cache AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+          curl -L --fail --retry 5 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
+
+      - name: Clone reconstructed lisa
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch reconstruction/5.4.289-qgki \
+            https://github.com/Tim0320/android_kernel_xiaomi_lisa.git kernel
+          cd kernel
+          echo "base_head=$(git rev-parse HEAD)"
+
+      - name: Generate effective stock config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          test "$(git hash-object out/.config)" = "3343d7b7b3874e065ce4805eac61c0160c40b0a3"
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig </dev/null
+
+      - name: Inject mi-memory generation probe
+        run: |
+          set -euo pipefail
+          cd kernel
+          variant="${{ matrix.variant }}"
+          cat > drivers/misc/lisa_mimem_probe.c <<'EOF'
+          #include <linux/module.h>
+          #include <linux/types.h>
+          #include <scsi/scsi_device.h>
+          #include "../scsi/ufs/ufshcd.h"
+          EOF
+
+          case "$variant" in
+            legacy-lowercase)
+              cat >> drivers/misc/lisa_mimem_probe.c <<'EOF'
+          struct ufs_err_state_debug {
+              u64 err_occurred;
+              char err_reason[10][32];
+          };
+          struct ufs_data {
+              struct ufs_hba *hba;
+              struct scsi_device *sdev;
+              struct ufs_err_state_debug ufs_err_state;
+          };
+          struct ufs_data *get_ufs_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_data);
+          EOF
+              ;;
+            full-uppercase)
+              cat >> drivers/misc/lisa_mimem_probe.c <<'EOF'
+          struct UFS_ERR_STATE_DEBUG {
+              u64 err_occurred;
+              char err_reason[10][32];
+          };
+          struct UFS_DATA {
+              struct ufs_hba *hba;
+              struct scsi_device *sdev;
+              struct UFS_ERR_STATE_DEBUG ufs_err_state;
+          };
+          struct UFS_DATA *get_ufs_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_data);
+          EOF
+              ;;
+            state-only-lowercase)
+              cat >> drivers/misc/lisa_mimem_probe.c <<'EOF'
+          struct ufs_err_state_debug {
+              u64 err_occurred;
+              char err_reason[10][32];
+          };
+          struct ufs_data {
+              struct ufs_err_state_debug ufs_err_state;
+          };
+          struct ufs_data *get_ufs_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_data);
+          EOF
+              ;;
+            state-only-uppercase)
+              cat >> drivers/misc/lisa_mimem_probe.c <<'EOF'
+          struct UFS_ERR_STATE_DEBUG {
+              u64 err_occurred;
+              char err_reason[10][32];
+          };
+          struct UFS_DATA {
+              struct UFS_ERR_STATE_DEBUG ufs_err_state;
+          };
+          struct UFS_DATA *get_ufs_data(void) { return 0; }
+          EXPORT_SYMBOL(get_ufs_data);
+          EOF
+              ;;
+          esac
+          printf '\nobj-y += lisa_mimem_probe.o\n' >> drivers/misc/Makefile
+
+      - name: Build ABI object
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+          make -j"$(nproc)" KBUILD_SYMTYPES=1 O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- drivers/misc/lisa_mimem_probe.o
+
+      - name: Compare get_ufs_data CRC
+        run: |
+          set -euo pipefail
+          cd kernel
+          file=out/drivers/misc/lisa_mimem_probe.o.symversions
+          expected=0xfa507f92
+          actual="$(sed -n 's/^__crc_get_ufs_data = \(0x[0-9a-fA-F]*\);/\1/p' "$file" | head -n1)"
+          actual="${actual,,}"
+          echo "${{ matrix.variant }}: get_ufs_data candidate=${actual:-MISSING} stock=$expected"
+          [[ "$actual" == "$expected" ]] && echo "STOCK_MATCH=1" || echo "STOCK_MATCH=0"
+          grep -E '^(s#ufs_data|s#ufs_err_state_debug|s#UFS_DATA|s#UFS_ERR_STATE_DEBUG|get_ufs_data)' \
+            out/drivers/misc/lisa_mimem_probe.symtypes || true
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mi-memory-generation-${{ matrix.variant }}
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            kernel/out/drivers/misc/lisa_mimem_probe.o.symversions
+            kernel/out/drivers/misc/lisa_mimem_probe.symtypes
