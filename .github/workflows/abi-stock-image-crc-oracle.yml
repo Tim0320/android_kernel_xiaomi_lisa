@@ -13,6 +13,11 @@ on:
 
 permissions:
   contents: read
+  actions: read
+
+concurrency:
+  group: lisa-stock-image-abi-oracle
+  cancel-in-progress: true
 
 jobs:
   stock-image-oracle:
@@ -32,7 +37,7 @@ jobs:
           mkdir -p diagnostics
           exec > >(tee diagnostics/01-install.log) 2>&1
           sudo apt-get update
-          sudo apt-get install -y binutils python3-pip git-lfs
+          sudo apt-get install -y binutils python3-pip git-lfs unzip
           git lfs install
           python3 -m pip install --break-system-packages git+https://github.com/marin-m/vmlinux-to-elf.git
           command -v kallsyms-finder
@@ -118,7 +123,8 @@ jobs:
             --image stock-Image \
             --kallsyms stock.kallsyms \
             --oracle reconstruction/stock_module_oracle.txt \
-            --output stock.image.crcs
+            --output stock.image.crcs \
+            --full-output stock.full.crcs
 
           test -s stock.image.crcs
           cat stock.image.crcs
@@ -150,6 +156,121 @@ jobs:
             echo "- Match score: $score"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Compare full stock CRC oracle with Build #53 Module.symvers
+        id: fullcompare
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD53_ARTIFACT_ID: "10622813278"
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics build53-artifact
+          exec > >(tee diagnostics/06-full-compare.log) 2>&1
+
+          test -s stock.full.crcs
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BUILD53_ARTIFACT_ID}/zip" \
+            -o build53.zip
+
+          unzip -q build53.zip -d build53-artifact
+          echo "BUILD53_ARTIFACT_FILES:"
+          find build53-artifact -maxdepth 5 -type f -printf '%p\n' | sort | head -n 200
+
+          module_symvers="$(find build53-artifact -type f -name Module.symvers | head -n 1)"
+          if [[ -z "$module_symvers" ]]; then
+            echo "Build #53 artifact does not contain Module.symvers"
+            exit 31
+          fi
+          echo "BUILD53_MODULE_SYMVERS=$module_symvers"
+
+          python3 - "$module_symvers" stock.full.crcs full-abi-compare.txt <<'PY'
+          import sys
+          from pathlib import Path
+
+          symvers_path, stock_path, out_path = sys.argv[1:]
+
+          stock = {}
+          for line in Path(stock_path).read_text().splitlines():
+              if not line or line.startswith("#"):
+                  continue
+              crc, name, section = line.split("\t")[:3]
+              stock[name] = (int(crc, 16), section)
+
+          current = {}
+          for line in Path(symvers_path).read_text(errors="replace").splitlines():
+              parts = line.split()
+              if len(parts) < 2:
+                  continue
+              try:
+                  crc = int(parts[0], 16)
+              except ValueError:
+                  continue
+              name = parts[1]
+              module = parts[2] if len(parts) >= 3 else "-"
+              current[name] = (crc, module)
+
+          stock_names = set(stock)
+          current_names = set(current)
+          overlap = stock_names & current_names
+          matches = sorted(
+              name for name in overlap if stock[name][0] == current[name][0]
+          )
+          mismatches = sorted(
+              name for name in overlap if stock[name][0] != current[name][0]
+          )
+          stock_only = sorted(stock_names - current_names)
+          current_only = sorted(current_names - stock_names)
+
+          print(f"FULL_STOCK_EXPORTS={len(stock)}")
+          print(f"FULL_CURRENT_SYMVERS={len(current)}")
+          print(f"FULL_SYMBOL_OVERLAP={len(overlap)}")
+          print(f"FULL_CRC_MATCHES={len(matches)}")
+          print(f"FULL_CRC_MISMATCHES={len(mismatches)}")
+          print(f"FULL_STOCK_ONLY={len(stock_only)}")
+          print(f"FULL_CURRENT_ONLY={len(current_only)}")
+          if overlap:
+              print(f"FULL_OVERLAP_MATCH_RATE={len(matches)/len(overlap):.6f}")
+
+          lines = [
+              "# Full stock Image vs Build #53 Module.symvers",
+              f"stock_exports={len(stock)}",
+              f"current_symvers={len(current)}",
+              f"overlap={len(overlap)}",
+              f"matches={len(matches)}",
+              f"mismatches={len(mismatches)}",
+              f"stock_only={len(stock_only)}",
+              f"current_only={len(current_only)}",
+              "",
+              "## MATCHES",
+          ]
+          for name in matches:
+              scrc, section = stock[name]
+              ccrc, module = current[name]
+              lines.append(
+                  f"MATCH\t{name}\t0x{scrc:08x}\t{section}\t{module}"
+              )
+          lines += ["", "## MISMATCHES"]
+          for name in mismatches:
+              scrc, section = stock[name]
+              ccrc, module = current[name]
+              lines.append(
+                  f"MISMATCH\t{name}\tstock=0x{scrc:08x}\t"
+                  f"current=0x{ccrc:08x}\t{section}\t{module}"
+              )
+          lines += ["", "## STOCK_ONLY"]
+          lines.extend(f"STOCK_ONLY\t{name}\t0x{stock[name][0]:08x}\t{stock[name][1]}" for name in stock_only)
+          lines += ["", "## CURRENT_ONLY"]
+          lines.extend(f"CURRENT_ONLY\t{name}\t0x{current[name][0]:08x}\t{current[name][1]}" for name in current_only)
+
+          Path(out_path).write_text("\n".join(lines) + "\n")
+          PY
+
+          test -s full-abi-compare.txt
+          head -n 30 full-abi-compare.txt
+
       - name: Write diagnostic report
         if: always()
         env:
@@ -158,6 +279,7 @@ jobs:
           EXTRACT_OUTCOME: ${{ steps.extract.outcome }}
           RECOVER_OUTCOME: ${{ steps.recover.outcome }}
           COMPARE_OUTCOME: ${{ steps.compare.outcome }}
+          FULLCOMPARE_OUTCOME: ${{ steps.fullcompare.outcome }}
         run: |
           mkdir -p reconstruction diagnostics
           {
@@ -172,6 +294,7 @@ jobs:
             echo "extract=$EXTRACT_OUTCOME"
             echo "recover=$RECOVER_OUTCOME"
             echo "compare=$COMPARE_OUTCOME"
+            echo "fullcompare=$FULLCOMPARE_OUTCOME"
             for log in diagnostics/*.log; do
               if [[ -f "$log" ]]; then
                 echo
@@ -191,5 +314,7 @@ jobs:
           path: |
             stock.kallsyms
             stock.image.crcs
+            stock.full.crcs
+            full-abi-compare.txt
             diagnostics/
             reconstruction/last_stock_image_probe.txt
