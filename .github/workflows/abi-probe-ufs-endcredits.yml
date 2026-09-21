@@ -1,0 +1,135 @@
+name: Probe EndCredits UFS ABI on reconstructed lisa
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-probe-ufs-endcredits.yml
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git curl
+
+      - name: Cache AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            exit 0
+          fi
+          curl -L --fail --retry 5 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
+
+      - name: Clone reconstructed lisa
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch reconstruction/5.4.289-qgki \
+            https://github.com/Tim0320/android_kernel_xiaomi_lisa.git kernel
+          cd kernel
+          echo "base_head=$(git rev-parse HEAD)"
+
+      - name: Overlay EndCredits UFS subtree
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none --no-checkout --depth=1 \
+            --branch ASB-2024-10-05 \
+            https://github.com/EndCredits/android_kernel_xiaomi_sm8350-miui.git donor
+          git -C donor sparse-checkout init --cone
+          git -C donor sparse-checkout set drivers/scsi/ufs
+          git -C donor checkout --force HEAD
+          echo "donor_head=$(git -C donor rev-parse HEAD)"
+          rm -rf kernel/drivers/scsi/ufs
+          cp -a donor/drivers/scsi/ufs kernel/drivers/scsi/ufs
+
+      - name: Apply exact stock config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          test "$(git hash-object out/.config)" = "3343d7b7b3874e065ce4805eac61c0160c40b0a3"
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            olddefconfig </dev/null
+
+      - name: Build mi-memory ABI object
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            prepare scripts
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            drivers/misc/mi-memory/mem_interface.o
+
+      - name: Compare UFS CRCs
+        run: |
+          set -euo pipefail
+          cd kernel
+          file=out/drivers/misc/mi-memory/mem_interface.o.symversions
+          cat "$file"
+
+          check() {
+            local symbol="$1" expected="$2"
+            local actual
+            actual="$(sed -n "s/^__crc_${symbol} = \(0x[0-9a-fA-F]*\);/\1/p" "$file" | head -n1)"
+            actual="${actual,,}"
+            echo "$symbol: endcredits=${actual:-MISSING} stock=$expected"
+          }
+
+          check get_ufs_data 0xfa507f92
+          check get_ufs_hba_data 0xc40eabac
+          check get_ufs_sdev_data 0xc5bbd8a8
+          check ufs_get_string_desc 0x479d5ded
+          check ufs_read_desc_param 0x16548413
+          check ufshcd_read_desc 0xa93e3b58
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ufs-endcredits-abi-probe
+          retention-days: 7
+          include-hidden-files: true
+          path: |
+            kernel/out/.config
+            kernel/out/drivers/misc/mi-memory/mem_interface.o.symversions
