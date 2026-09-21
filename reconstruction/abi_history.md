@@ -400,6 +400,44 @@ The IPA score of 0/2 in the first matrix was a probe bug rather than ABI evidenc
 
 All tested Xiaomi/Lahaina candidates produced the same three incorrect LZ4 CRCs. The reconstructed tree uses a newer standalone `lib/lz4/lz4.c` implementation, while Linux/Android 5.4-era trees commonly use `lz4_compress.c + lz4defs.h`. The next probe therefore separates the final five symbols into a corrected IPA direct-genksyms test and an upstream/AOSP historical LZ4 implementation matrix.
 
+## Final five ABI symbols resolved
+
+The final-five matrix completed with one non-essential Lahaina IPA candidate job failing, but the target symbols themselves were fully resolved.
+
+### IPA
+
+Exact stock CRCs:
+
+- `ipa3_get_ctx = 0xc7ed42a2`
+- `ipa3_get_dma_dev = 0xb76b3f37`
+
+Matches:
+
+- MiCode `redwood-s-oss`: **2/2**
+- MiCode `taoyao-s-oss`: **2/2**
+- MiCode `lisa-r-oss`: **1/2**
+- current reconstruction: **0/2**
+- YZzZr hyper-14: **0/2**
+- JiuGe new-rebase: **0/2**
+
+### LZ4
+
+Exact stock CRCs:
+
+- `LZ4_compress_default = 0x4f4d78c5`
+- `LZ4_loadDict = 0x749849d8`
+- `LZ4_saveDict = 0x635ff76d`
+
+Linux v5.4 reproduces all three exactly: **3/3**. AOSP android11-5.4 and android12-5.4 also reproduce **3/3**, as do the tested historical upstream Linux versions. This confirms that the stock ABI uses the older Linux-style LZ4 interface rather than the reconstructed tree's newer standalone 2023 LZ4 implementation.
+
+Combined with the previous private-lineage matrix, every one of the final 69 mismatches now has an exact public-source donor:
+
+- redwood-s: sched/proc/KGSL/QRTR/IPA
+- YZzZr hyper-14: USB/TSENS
+- Linux 5.4-style LZ4: LZ4
+
+The next validation is a real full kernel build with these source families overlaid, followed by the complete 13,360-export stock Image CRC comparison.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
