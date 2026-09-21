@@ -1,0 +1,376 @@
+name: Compare stock and current QGKI record layouts
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-msm-drm-record-layouts.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  layouts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout reconstructed kernel
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 curl unzip rsync
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Download exact stock IKHEADERS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders.zip
+          unzip -q stock-kheaders.zip -d stock-artifact
+          test -d stock-artifact/stock-kheaders
+          test "$(find stock-artifact/stock-kheaders -type f -name '*.h' | wc -l)" -eq 7806
+
+      - name: Generate current exact-config headers
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts
+
+      - name: Compare public record layouts
+        env:
+          CLANG_ROOT: ${{ runner.temp }}/clang-r383902b1
+          STOCK_ROOT: ${{ github.workspace }}/stock-artifact/stock-kheaders
+        run: |
+          set -euo pipefail
+          mkdir -p layout-evidence/current layout-evidence/stock
+
+          cat > layout-types.tsv <<'EOF'
+          device|linux/device.h
+          drm_device|drm/drm_device.h
+          device_node|linux/of.h
+          drm_atomic_state|drm/drm_atomic.h
+          drm_connector|drm/drm_connector.h
+          clk|linux/clk.h
+          drm_dp_mst_topology_mgr|drm/drm_dp_mst_helper.h
+          drm_gem_object|drm/drm_gem.h
+          drm_crtc|drm/drm_crtc.h
+          file|linux/fs.h
+          drm_display_mode|drm/drm_modes.h
+          drm_framebuffer|drm/drm_framebuffer.h
+          regulator|linux/regulator/consumer.h
+          drm_modeset_acquire_ctx|drm/drm_modeset_lock.h
+          drm_dp_mst_port|drm/drm_dp_mst_helper.h
+          drm_file|drm/drm_file.h
+          dma_buf|linux/dma-buf.h
+          drm_dp_aux|drm/drm_dp_helper.h
+          iommu_domain|linux/iommu.h
+          kobject|linux/kobject.h
+          dma_fence|linux/dma-fence.h
+          drm_plane|drm/drm_plane.h
+          edid|drm/drm_edid.h
+          page|linux/mm_types.h
+          platform_device|linux/platform_device.h
+          task_struct|linux/sched.h
+          drm_bridge|drm/drm_bridge.h
+          notifier_block|linux/notifier.h
+          drm_property|drm/drm_property.h
+          gpio_desc|linux/gpio/consumer.h
+          drm_connector_state|drm/drm_connector.h
+          drm_mode_object|drm/drm_mode_object.h
+          drm_plane_state|drm/drm_plane.h
+          inode|linux/fs.h
+          sg_table|linux/scatterlist.h
+          vm_area_struct|linux/mm_types.h
+          dma_buf_attachment|linux/dma-buf.h
+          drm_crtc_state|drm/drm_crtc.h
+          drm_encoder|drm/drm_encoder.h
+          drm_panel|drm/drm_panel.h
+          irq_domain|linux/irqdomain.h
+          module|linux/module.h
+          scatterlist|linux/scatterlist.h
+          timer_list|linux/timer.h
+          wait_queue_entry|linux/wait.h
+          proc_dir_entry|linux/proc_fs.h
+          EOF
+
+          cat > compare_layouts.py <<'PY'
+          import os
+          import re
+          import shlex
+          import subprocess
+          from pathlib import Path
+
+          clang_root = Path(os.environ["CLANG_ROOT"])
+          stock_root = Path(os.environ["STOCK_ROOT"])
+          workspace = Path.cwd()
+          clang = clang_root / "bin/clang"
+
+          resource = subprocess.check_output(
+              [str(clang), "-print-resource-dir"], text=True
+          ).strip()
+
+          current_includes = [
+              workspace / "arch/arm64/include",
+              workspace / "out/arch/arm64/include/generated",
+              workspace / "include",
+              workspace / "out/include",
+              workspace / "arch/arm64/include/uapi",
+              workspace / "out/arch/arm64/include/generated/uapi",
+              workspace / "include/uapi",
+              workspace / "out/include/generated/uapi",
+          ]
+
+          stock_includes = [
+              stock_root / "arch/arm64/include",
+              stock_root / "arch/arm64/include/generated",
+              stock_root / "include",
+              stock_root / "include/generated",
+              stock_root / "arch/arm64/include/uapi",
+              stock_root / "arch/arm64/include/generated/uapi",
+              stock_root / "include/uapi",
+              stock_root / "include/generated/uapi",
+          ]
+
+          def common_flags(includes):
+              flags = [
+                  str(clang),
+                  "-target", "aarch64-linux-gnu",
+                  "-nostdinc",
+                  "-isystem", str(Path(resource) / "include"),
+                  "-D__KERNEL__",
+                  "-DKBUILD_MODNAME=\"layout_probe\"",
+                  "-DKBUILD_BASENAME=\"layout_probe\"",
+                  "-Wno-unused-value",
+                  "-Wno-pointer-sign",
+                  "-Wno-gnu-variable-sized-type-not-at-end",
+                  "-Wno-address-of-packed-member",
+                  "-Wno-tautological-compare",
+                  "-Wno-unknown-warning-option",
+              ]
+              for inc in includes:
+                  flags += ["-I", str(inc)]
+              return flags
+
+          def parse_simple_dump(text, typename):
+              target = f"Type: struct {typename}"
+              pos = text.find(target)
+              if pos < 0:
+                  return None
+              end = text.find("*** Dumping AST Record Layout", pos + len(target))
+              block = text[pos:end if end >= 0 else None]
+
+              size = None
+              align = None
+              offsets = None
+
+              m = re.search(r"Size:(\d+)", block)
+              if m:
+                  size = int(m.group(1))
+              m = re.search(r"Alignment:(\d+)", block)
+              if m:
+                  align = int(m.group(1))
+              m = re.search(r"FieldOffsets:\s*\[([^\]]*)\]", block)
+              if m:
+                  offsets = ",".join(
+                      x.strip() for x in m.group(1).split(",") if x.strip()
+                  )
+
+              return {
+                  "size_bits": size,
+                  "align_bits": align,
+                  "field_offsets_bits": offsets,
+                  "block": block.strip(),
+              }
+
+          def probe(side, typename, header, includes, force_include):
+              out_dir = Path("layout-evidence") / side
+              src = out_dir / f"{typename}.c"
+              raw = out_dir / f"{typename}.raw.txt"
+
+              src.write_text(
+                  f"#include <{header}>\n"
+                  f"struct {typename} __layout_probe_object;\n"
+                  f"unsigned long __layout_probe_size = sizeof(struct {typename});\n"
+              )
+
+              cmd = common_flags(includes) + [
+                  "-include", str(force_include),
+                  "-Xclang", "-fdump-record-layouts-simple",
+                  "-fsyntax-only",
+                  str(src),
+              ]
+
+              proc = subprocess.run(
+                  cmd,
+                  text=True,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+              )
+              raw.write_text(
+                  "COMMAND=" + " ".join(shlex.quote(x) for x in cmd) + "\n"
+                  + proc.stdout
+              )
+
+              layout = parse_simple_dump(proc.stdout, typename)
+              return proc.returncode, layout
+
+          rows = []
+          for raw in Path("layout-types.tsv").read_text().splitlines():
+              if not raw.strip():
+                  continue
+              typename, header = raw.split("|", 1)
+
+              crc, current = probe(
+                  "current",
+                  typename,
+                  header,
+                  current_includes,
+                  workspace / "include/linux/kconfig.h",
+              )
+              src, stock = probe(
+                  "stock",
+                  typename,
+                  header,
+                  stock_includes,
+                  stock_root / "include/linux/kconfig.h",
+              )
+
+              if crc != 0 and src != 0:
+                  status = "OPAQUE_OR_UNAVAILABLE_BOTH"
+              elif crc != 0:
+                  status = "CURRENT_UNAVAILABLE"
+              elif src != 0:
+                  status = "STOCK_UNAVAILABLE"
+              elif current is None or stock is None:
+                  status = "LAYOUT_DUMP_MISSING"
+              else:
+                  same = (
+                      current["size_bits"] == stock["size_bits"]
+                      and current["align_bits"] == stock["align_bits"]
+                      and current["field_offsets_bits"] == stock["field_offsets_bits"]
+                  )
+                  status = "IDENTICAL" if same else "DIFFERENT"
+
+              rows.append((
+                  typename,
+                  header,
+                  status,
+                  crc,
+                  src,
+                  current,
+                  stock,
+              ))
+
+              print(
+                  f"QGKI_LAYOUT\t{typename}\t{status}\t"
+                  f"current_rc={crc}\tstock_rc={src}\t"
+                  f"current_size={(current or {}).get('size_bits', '-') }\t"
+                  f"stock_size={(stock or {}).get('size_bits', '-') }"
+              )
+
+          counts = {}
+          for row in rows:
+              counts[row[2]] = counts.get(row[2], 0) + 1
+
+          for key in sorted(counts):
+              print(f"QGKI_LAYOUT_STATUS\t{key}\t{counts[key]}")
+
+          report = [
+              "# Stock vs current record-layout comparison",
+              "",
+              "type\theader\tstatus\tcurrent_size_bits\tstock_size_bits\t"
+              "current_align_bits\tstock_align_bits\t"
+              "current_field_offsets_bits\tstock_field_offsets_bits",
+          ]
+
+          for typename, header, status, crc, src, current, stock in rows:
+              current = current or {}
+              stock = stock or {}
+              report.append(
+                  "\t".join([
+                      typename,
+                      header,
+                      status,
+                      str(current.get("size_bits", "-")),
+                      str(stock.get("size_bits", "-")),
+                      str(current.get("align_bits", "-")),
+                      str(stock.get("align_bits", "-")),
+                      str(current.get("field_offsets_bits", "-")),
+                      str(stock.get("field_offsets_bits", "-")),
+                  ])
+              )
+
+          Path("qgki-record-layouts.tsv").write_text("\n".join(report) + "\n")
+          PY
+
+          python3 compare_layouts.py | tee qgki-record-layouts.log
+
+          echo "=== DIFFERENT ==="
+          awk -F '\t' '$3 == "DIFFERENT" {print}' qgki-record-layouts.tsv || true
+
+          echo "=== OPAQUE / UNAVAILABLE ==="
+          awk -F '\t' '$3 ~ /UNAVAILABLE|OPAQUE/ {print}' qgki-record-layouts.tsv || true
+
+      - name: Upload record-layout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-msm-drm-record-layouts
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            clang-version.txt
+            layout-types.tsv
+            qgki-record-layouts.tsv
+            qgki-record-layouts.log
+            layout-evidence/
