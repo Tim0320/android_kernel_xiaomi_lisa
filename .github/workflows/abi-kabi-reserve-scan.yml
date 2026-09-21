@@ -15,8 +15,46 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module_reserves: [0, 2, 4, 6, 8]
-        device_reserves: [0, 4, 8, 12]
+        include:
+          - label: control
+            mode: control
+            count: 0
+          - label: module-0
+            mode: module
+            count: 0
+          - label: module-2
+            mode: module
+            count: 2
+          - label: module-4
+            mode: module
+            count: 4
+          - label: module-6
+            mode: module
+            count: 6
+          - label: module-8
+            mode: module
+            count: 8
+          - label: device-0
+            mode: device
+            count: 0
+          - label: device-2
+            mode: device
+            count: 2
+          - label: device-4
+            mode: device
+            count: 4
+          - label: device-6
+            mode: device
+            count: 6
+          - label: device-8
+            mode: device
+            count: 8
+          - label: device-10
+            mode: device
+            count: 10
+          - label: device-12
+            mode: device
+            count: 12
 
     runs-on: ubuntu-24.04
     timeout-minutes: 40
@@ -25,7 +63,9 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y             bc bison flex build-essential libssl-dev libelf-dev             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git curl
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi git curl
 
       - name: Cache AOSP clang 11.0.2
         uses: actions/cache@v4
@@ -42,67 +82,97 @@ jobs:
           if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
             exit 0
           fi
-          curl -L --fail --retry 5             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"             -o "$ARCHIVE"
+          curl -L --fail --retry 5 \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+            -o "$ARCHIVE"
           tar -xzf "$ARCHIVE" -C "$DEST"
 
       - name: Clone reconstructed lisa
         run: |
           set -euo pipefail
-          git clone --depth=1 --branch reconstruction/5.4.289-qgki             https://github.com/Tim0320/android_kernel_xiaomi_lisa.git kernel
+          git clone --depth=1 --branch reconstruction/5.4.289-qgki \
+            https://github.com/Tim0320/android_kernel_xiaomi_lisa.git kernel
           cd kernel
           echo "base_head=$(git rev-parse HEAD)"
 
-      - name: Rewrite selected KABI reserve counts
+      - name: Rewrite selected KABI reserve block
         run: |
           set -euo pipefail
           cd kernel
           python3 - <<'PY'
           from pathlib import Path
-          import re
 
-          module_n = int("${{ matrix.module_reserves }}")
-          device_n = int("${{ matrix.device_reserves }}")
+          mode = "${{ matrix.mode }}"
+          count = int("${{ matrix.count }}")
 
-          # struct module: rewrite only the final contiguous reserve block.
-          p = Path("include/linux/module.h")
-          s = p.read_text()
-          m = re.search(
-              r'(struct module \{.*?)(\n(?:\s*ANDROID_KABI_RESERVE\(\d+\);\n)+)(\} ____cacheline_aligned __randomize_layout;)',
-              s,
-              flags=re.S,
-          )
-          if not m:
-              raise SystemExit("struct module reserve block not found")
-          block = "".join(f"\tANDROID_KABI_RESERVE({i});\n" for i in range(1, module_n + 1))
-          s = s[:m.start(2)] + "\n" + block + s[m.end(2):]
-          p.write_text(s)
+          def rewrite_block(path_s, struct_marker, closing_marker, count):
+              p = Path(path_s)
+              lines = p.read_text().splitlines(True)
 
-          # struct device: locate the final reserve block before its closing brace.
-          p = Path("include/linux/device.h")
-          s = p.read_text()
-          start = s.index("struct device {")
-          end = s.index("\n};", start)
-          body = s[start:end]
-          blocks = list(re.finditer(r'\n(?:\s*ANDROID_KABI_RESERVE\(\d+\);\n)+', body))
-          if not blocks:
-              raise SystemExit("struct device reserve block not found")
-          b = blocks[-1]
-          repl = "\n" + "".join(f"\tANDROID_KABI_RESERVE({i});\n" for i in range(1, device_n + 1))
-          body = body[:b.start()] + repl + body[b.end():]
-          s = s[:start] + body + s[end:]
-          p.write_text(s)
+              start = next(i for i, line in enumerate(lines) if struct_marker in line)
+              end = next(i for i in range(start + 1, len(lines)) if closing_marker in lines[i])
 
-          print(f"module_reserves={module_n}")
-          print(f"device_reserves={device_n}")
+              reserve_idx = [
+                  i for i in range(start, end)
+                  if "ANDROID_KABI_RESERVE(" in lines[i]
+              ]
+              if not reserve_idx:
+                  raise SystemExit(f"no reserve block in {path_s}")
+
+              # Only the final contiguous reserve run immediately before the
+              # struct's closing line is rewritten.
+              last = reserve_idx[-1]
+              first = last
+              while first - 1 >= start and "ANDROID_KABI_RESERVE(" in lines[first - 1]:
+                  first -= 1
+
+              if any("ANDROID_KABI_RESERVE(" in lines[i] for i in range(last + 1, end)):
+                  raise SystemExit(f"unexpected reserve line after selected block in {path_s}")
+
+              indent = lines[first].split("ANDROID_KABI_RESERVE", 1)[0]
+              replacement = [
+                  f"{indent}ANDROID_KABI_RESERVE({n});\n"
+                  for n in range(1, count + 1)
+              ]
+              lines[first:last + 1] = replacement
+              p.write_text("".join(lines))
+
+          if mode == "module":
+              rewrite_block(
+                  "include/linux/module.h",
+                  "struct module {",
+                  "} ____cacheline_aligned __randomize_layout;",
+                  count,
+              )
+          elif mode == "device":
+              rewrite_block(
+                  "include/linux/device.h",
+                  "struct device {",
+                  "};",
+                  count,
+              )
+          elif mode != "control":
+              raise SystemExit(f"unknown mode: {mode}")
+
+          print(f"label=${{ matrix.label }} mode={mode} count={count}")
           PY
 
-          grep -n 'ANDROID_KABI_RESERVE' include/linux/module.h | tail -12
+          echo "=== struct module reserves ==="
           python3 - <<'PY'
           from pathlib import Path
-          s=Path("include/linux/device.h").read_text()
-          a=s.index("struct device {")
-          b=s.index("\n};",a)
-          print("\n".join(x for x in s[a:b].splitlines() if "ANDROID_KABI_RESERVE" in x))
+          s=Path("include/linux/module.h").read_text().splitlines()
+          a=next(i for i,l in enumerate(s) if "struct module {" in l)
+          b=next(i for i in range(a+1,len(s)) if "} ____cacheline_aligned __randomize_layout;" in s[i])
+          print("\n".join(f"{i+1}: {s[i]}" for i in range(a,b+1) if "ANDROID_KABI_RESERVE" in s[i]))
+          PY
+
+          echo "=== struct device reserves ==="
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path("include/linux/device.h").read_text().splitlines()
+          a=next(i for i,l in enumerate(s) if l.startswith("struct device {"))
+          b=next(i for i in range(a+1,len(s)) if s[i] == "};")
+          print("\n".join(f"{i+1}: {s[i]}" for i in range(a,b+1) if "ANDROID_KABI_RESERVE" in s[i]))
           PY
 
       - name: Apply exact stock config
@@ -113,8 +183,19 @@ jobs:
           cd kernel
           mkdir -p out
           cp reconstruction/stock_ikconfig out/.config
-          make -j"$(nproc)" O=out             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig </dev/null
-          make -j"$(nproc)" O=out             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
+          test "$(git hash-object out/.config)" = "3343d7b7b3874e065ce4805eac61c0160c40b0a3"
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig </dev/null
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
 
       - name: Build ABI objects
         env:
@@ -122,7 +203,12 @@ jobs:
         run: |
           set -euo pipefail
           cd kernel
-          make -j"$(nproc)" O=out KBUILD_SYMTYPES=1             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- kernel/module.o drivers/base/core.o
+          make -j"$(nproc)" O=out KBUILD_SYMTYPES=1 \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            kernel/module.o drivers/base/core.o
 
       - name: Score module and device CRCs
         run: |
@@ -140,18 +226,29 @@ jobs:
           du="$(read_crc device_unregister)"
           dd="$(read_crc dev_driver_string)"
 
-          echo "KABI_SCAN module=${{ matrix.module_reserves }} device=${{ matrix.device_reserves }} module_layout=${ml:-MISSING} device_register=${dr:-MISSING} device_unregister=${du:-MISSING} dev_driver_string=${dd:-MISSING}"
+          echo "KABI_SCAN label=${{ matrix.label }} mode=${{ matrix.mode }} count=${{ matrix.count }} module_layout=${ml:-MISSING} device_register=${dr:-MISSING} device_unregister=${du:-MISSING} dev_driver_string=${dd:-MISSING}"
 
-          [[ "${ml,,}" == "0xba39cbb8" ]] && echo "MATCH module_layout"
-          [[ "${dr,,}" == "0xcf9bcdee" ]] && echo "MATCH device_register"
-          [[ "${du,,}" == "0x4678e0d9" ]] && echo "MATCH device_unregister"
-          [[ "${dd,,}" == "0x22a8544f" ]] && echo "MATCH dev_driver_string"
+          matches=0
+          if [[ "${ml,,}" == "0xba39cbb8" ]]; then echo "MATCH module_layout"; matches=$((matches+1)); fi
+          if [[ "${dr,,}" == "0xcf9bcdee" ]]; then echo "MATCH device_register"; matches=$((matches+1)); fi
+          if [[ "${du,,}" == "0x4678e0d9" ]]; then echo "MATCH device_unregister"; matches=$((matches+1)); fi
+          if [[ "${dd,,}" == "0x22a8544f" ]]; then echo "MATCH dev_driver_string"; matches=$((matches+1)); fi
+          echo "KABI_MATCH_SCORE=$matches/4"
+
+          if [[ "${{ matrix.mode }}" == "control" ]]; then
+            echo "=== control assertions ==="
+            test "${ml,,}" = "0x0816e668"
+            test "${dr,,}" = "0xc1e70e13"
+            test "${du,,}" = "0xb88b5350"
+            test "${dd,,}" = "0x52e5afec"
+            echo "CONTROL_BASELINE_OK=1"
+          fi
 
       - name: Upload evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: kabi-scan-m${{ matrix.module_reserves }}-d${{ matrix.device_reserves }}
+          name: kabi-scan-${{ matrix.label }}
           retention-days: 5
           include-hidden-files: true
           path: |
