@@ -128,20 +128,23 @@ jobs:
             CLANG_TRIPLE=aarch64-linux-gnu- kernelrelease)"
           echo "PRE_OVERLAY_KERNELRELEASE=$release"
 
-      - name: Apply proven minimal stock ABI header environment
+      - name: Stage stock ABI headers for genksyms only
+        env:
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
         run: |
           set -euo pipefail
+          rm -rf "$STOCK_ABI_ROOT"
+          mkdir -p "$STOCK_ABI_ROOT"
 
-          python3 - stock-artifact/stock-kheaders abi-source-header-closure.txt . out overlay-manifest.txt <<'PY'
+          python3 - stock-artifact/stock-kheaders abi-source-header-closure.txt "$STOCK_ABI_ROOT" genksyms-overlay-manifest.txt <<'PY'
           import shutil
           import sys
           from pathlib import Path
 
           stock = Path(sys.argv[1])
           closure = Path(sys.argv[2])
-          src_root = Path(sys.argv[3])
-          out_root = Path(sys.argv[4])
-          manifest = Path(sys.argv[5])
+          root = Path(sys.argv[3])
+          manifest = Path(sys.argv[4])
 
           def is_generated(rel):
               s = rel.as_posix()
@@ -162,7 +165,7 @@ jobs:
               src = stock / rel
               if not src.is_file():
                   raise SystemExit(f"missing stock source header: {rel_text}")
-              target = src_root / rel
+              target = root / rel
               target.parent.mkdir(parents=True, exist_ok=True)
               shutil.copyfile(src, target)
               source_paths.append(rel_text)
@@ -172,17 +175,10 @@ jobs:
               rel = src.relative_to(stock)
               if not is_generated(rel):
                   continue
-              target = out_root / rel
+              target = root / rel
               target.parent.mkdir(parents=True, exist_ok=True)
               shutil.copyfile(src, target)
               generated_paths.append(rel.as_posix())
-
-          # Ensure generated files are at least as new as source overlay files,
-          # reducing the chance that Kbuild immediately regenerates them from
-          # the donor Kconfig environment.
-          for rel_text in generated_paths:
-              target = out_root / rel_text
-              target.touch()
 
           manifest.write_text(
               "\n".join(
@@ -199,20 +195,83 @@ jobs:
               ) + "\n"
           )
 
-          print(f"FULL_BUILD_STOCK_SOURCE_HEADERS={len(source_paths)}")
-          print(f"FULL_BUILD_STOCK_GENERATED_HEADERS={len(generated_paths)}")
+          print(f"GENKSYMS_STOCK_SOURCE_HEADERS={len(source_paths)}")
+          print(f"GENKSYMS_STOCK_GENERATED_HEADERS={len(generated_paths)}")
           PY
 
+          grep -qx 'source_headers=774' genksyms-overlay-manifest.txt
+          grep -qx 'generated_headers=2120' genksyms-overlay-manifest.txt
+
+          # Do not replace any donor header used by normal C compilation.
           test ! -d include/config
           test ! -d arch/arm64/include/generated
           test ! -f .config
-          grep -qx 'source_headers=774' overlay-manifest.txt
-          grep -qx 'generated_headers=2120' overlay-manifest.txt
-          echo "FULL_BUILD_SOURCE_TREE_CLEAN=1"
+          echo "NORMAL_COMPILE_SOURCE_TREE_UNMODIFIED=1"
 
-      - name: Build Image modules and DTBs under stock ABI header environment
+      - name: Route only genksyms preprocessing through stock ABI headers
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("scripts/Makefile.build")
+          s = p.read_text()
+
+          stock_flags = (
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/include "
+              "-I$(STOCK_ABI_ROOT)/include/generated "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/uapi "
+              "-I$(STOCK_ABI_ROOT)/include/generated/uapi"
+          )
+
+          lines = s.splitlines(keepends=True)
+          c_done = False
+          asm_done = False
+
+          for i, line in enumerate(lines):
+              if (
+                  not c_done
+                  and "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line
+              ):
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {stock_flags} -D__GENKSYMS__",
+                      1,
+                  )
+                  c_done = True
+                  continue
+
+              if (
+                  not asm_done
+                  and "$(CPP) -D__GENKSYMS__ $(c_flags) -xc - |" in line
+              ):
+                  lines[i] = line.replace(
+                      "$(CPP) -D__GENKSYMS__",
+                      f"$(CPP) {stock_flags} -D__GENKSYMS__",
+                      1,
+                  )
+                  asm_done = True
+
+          if not c_done:
+              raise SystemExit("C genksyms rule not found")
+          if not asm_done:
+              raise SystemExit("ASM genksyms rule not found")
+
+          p.write_text("".join(lines))
+          print("GENKSYMS_STOCK_INCLUDE_ROUTING=1")
+          PY
+
+          grep -n 'STOCK_ABI_ROOT.*D__GENKSYMS__' scripts/Makefile.build
+
+      - name: Build Image modules and DTBs with stock-only genksyms environment
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
         run: |
           set -o pipefail
           make -j"$(nproc)" O=out \
@@ -350,7 +409,7 @@ jobs:
           path: |
             clang-version.txt
             abi-source-header-closure.txt
-            overlay-manifest.txt
+            genksyms-overlay-manifest.txt
             build-stock-abi-overlay.log
             out/.config
             out/Module.symvers
