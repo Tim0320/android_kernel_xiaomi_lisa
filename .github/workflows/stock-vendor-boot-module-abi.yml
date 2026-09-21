@@ -349,39 +349,65 @@ jobs:
 
           imports_path, symvers_path, full_compare_path, out_path = map(Path, sys.argv[1:])
 
-          # Recover the exact stock Image export oracle from the prior full compare.
-          stock_kernel = {}
-          remaining69 = set()
-
-          for raw in full_compare_path.read_text(errors="replace").splitlines():
-              if raw.startswith("MATCH\t"):
-                  p = raw.split("\t")
-                  if len(p) >= 3:
-                      stock_kernel[p[1]] = int(p[2], 16)
-              elif raw.startswith("MISMATCH\t"):
-                  p = raw.split("\t")
-                  if len(p) >= 3:
-                      stock_kernel[p[1]] = int(p[2].split("=", 1)[1], 16)
-                      remaining69.add(p[1])
-              elif raw.startswith("STOCK_ONLY\t"):
-                  p = raw.split("\t")
-                  if len(p) >= 3:
-                      stock_kernel[p[1]] = int(p[2], 16)
-
-          if len(stock_kernel) != 13360:
-              raise SystemExit(f"expected 13360 stock kernel exports, got {len(stock_kernel)}")
-
           current = {}
+          current_vmlinux = {}
           owner = {}
           for raw in symvers_path.read_text(errors="replace").splitlines():
               p = raw.split()
               if len(p) < 3:
                   continue
               try:
-                  current[p[1]] = int(p[0], 16)
-                  owner[p[1]] = p[2]
+                  crc = int(p[0], 16)
               except ValueError:
-                  pass
+                  continue
+              current[p[1]] = crc
+              owner[p[1]] = p[2]
+              if p[2] == "vmlinux":
+                  current_vmlinux[p[1]] = crc
+
+          # The full comparison artifact intentionally stores only the 69
+          # mismatches, 103 stock-only exports, and 775 current-only exports.
+          # Reconstruct the complete 13,360-symbol stock Image oracle by:
+          #   1. taking current vmlinux CRCs for the matched overlap,
+          #   2. excluding current-only names,
+          #   3. replacing mismatch CRCs with exact stock CRCs,
+          #   4. adding stock-only exports.
+          current_only = set()
+          mismatch_stock = {}
+          stock_only = {}
+          remaining69 = set()
+
+          for raw in full_compare_path.read_text(errors="replace").splitlines():
+              if raw.startswith("MISMATCH\t"):
+                  p = raw.split("\t")
+                  if len(p) >= 3:
+                      mismatch_stock[p[1]] = int(p[2].split("=", 1)[1], 16)
+                      remaining69.add(p[1])
+              elif raw.startswith("STOCK_ONLY\t"):
+                  p = raw.split("\t")
+                  if len(p) >= 3:
+                      stock_only[p[1]] = int(p[2], 16)
+              elif raw.startswith("CURRENT_ONLY\t"):
+                  p = raw.split("\t")
+                  if len(p) >= 2:
+                      current_only.add(p[1])
+
+          stock_kernel = {
+              sym: crc for sym, crc in current_vmlinux.items()
+              if sym not in current_only
+          }
+          stock_kernel.update(mismatch_stock)
+          stock_kernel.update(stock_only)
+
+          print(f"STOCK_ORACLE_RECON_CURRENT_VMLINUX={len(current_vmlinux)}")
+          print(f"STOCK_ORACLE_RECON_CURRENT_ONLY={len(current_only)}")
+          print(f"STOCK_ORACLE_RECON_MISMATCHES={len(mismatch_stock)}")
+          print(f"STOCK_ORACLE_RECON_STOCK_ONLY={len(stock_only)}")
+
+          if len(stock_kernel) != 13360:
+              raise SystemExit(
+                  f"expected 13360 stock kernel exports, got {len(stock_kernel)}"
+              )
 
           modules = defaultdict(lambda: {
               "vermagic": "-",
