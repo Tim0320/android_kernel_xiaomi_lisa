@@ -255,6 +255,22 @@ The next diagnostic build keeps normal donor headers for C/assembly compilation 
 
 Important limitation: matching CRCs alone does not prove runtime structure-layout compatibility. A genksyms-only stock header route is diagnostic evidence and must not be treated as the final safe reconstruction if the underlying donor implementation layout differs from the stock implementation.
 
+## Full build succeeds with stock ABI headers isolated to genksyms
+
+A complete `Image modules dtbs` build succeeded while leaving normal donor headers untouched for C/assembly compilation and routing only genksyms preprocessing through the proven stock ABI header environment:
+
+- stock source headers staged for genksyms: **774**
+- stock generated/config headers staged for genksyms: **2,120**
+- normal source tree replaced for compilation: **no**
+- kernel/modules/DTBs: **build success**
+- 38-symbol core stock ABI oracle: **38/38**
+- historical 17-symbol vendor/UFS oracle: **17/17**
+- tested module vermagic: **5.4.289-qgki-g5987d69e25da**
+
+The previously mismatching UFS exports now all reproduce the exact stock CRCs, including `get_ufs_data`, `get_ufs_hba_data`, `get_ufs_sdev_data`, `ufs_get_string_desc`, `ufs_read_desc_param`, and `ufshcd_read_desc`.
+
+This result proves that the normal donor implementation can complete a full build while genksyms is supplied with the recovered stock ABI preprocessor/type environment. It does **not** by itself prove runtime type/layout compatibility: CRC agreement can be produced by the stock genksyms view even when donor implementation headers differ. The next checks therefore expand from the 55 known oracle symbols to the full 13,360-export stock oracle and then inspect critical structure layouts separately.
+
 ## High-level status
 
 | Probe set | Current best | Hit rate | Meaning |
