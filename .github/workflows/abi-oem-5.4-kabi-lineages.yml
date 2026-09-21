@@ -80,6 +80,27 @@ jobs:
           sed -i '/kernelsu\//d' drivers/Makefile 2>/dev/null || true
           rm -rf KernelSU drivers/kernelsu 2>/dev/null || true
 
+          # Keep source/KABI unchanged, but neutralize vendor-only codegen
+          # tuning that stock clang 11 cannot parse. These flags do not
+          # participate in genksyms type signatures.
+          sed -i 's/-mcpu=cortex-x1/-mcpu=cortex-a76/g' Makefile
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p = Path("Makefile")
+          text = p.read_text()
+
+          # Sony tree adds Polly unconditionally to CLANG_FLAGS. Replace that
+          # optimization-only block with the CPU flag alone.
+          text = re.sub(
+              r'CLANG_FLAGS\s*\+=\s*\\\n\s*-mcpu=cortex-a76\s*\\\n(?:\s*-mllvm\s+-polly[^\n]*\n)+',
+              'CLANG_FLAGS += -mcpu=cortex-a76\n',
+              text,
+              flags=re.M,
+          )
+          p.write_text(text)
+          PY
+
       - name: Apply exact lisa stock IKCONFIG
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -91,6 +112,13 @@ jobs:
             https://raw.githubusercontent.com/Jiovanni-dump/xiaomi_lisa_dump/2dbe7b5569ed49cc2c6649a7b313d4a092755034/ikconfig \
             -o out/.config
           test "$(git hash-object out/.config)" = "3343d7b7b3874e065ce4805eac61c0160c40b0a3"
+
+          # Disable only compiler optimization features unsupported by the
+          # stock clang probe. They are not KABI/type-shape options.
+          if [[ -x scripts/config ]]; then
+            scripts/config --file out/.config -d LLVM_POLLY || true
+            scripts/config --file out/.config -d POLLY_CLANG || true
+          fi
 
           timeout 240s make -j"$(nproc)" O=out \
             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
