@@ -1,0 +1,478 @@
+name: Final field-level runtime layout gate for stock QGKI msm_drm
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-msm-drm-final-layout-gate.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  gate:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout reconstructed kernel
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 curl unzip rsync
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Download exact stock IKHEADERS and module disassembly evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+          RUNTIME_RISK_ARTIFACT_ID: "10653896443"
+        run: |
+          set -euo pipefail
+          mkdir -p stock-artifact risk-artifact
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders.zip
+          unzip -q stock-kheaders.zip -d stock-artifact
+          test -d stock-artifact/stock-kheaders
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${RUNTIME_RISK_ARTIFACT_ID}/zip" \
+            -o runtime-risk.zip
+          unzip -q runtime-risk.zip -d risk-artifact
+
+          dis="$(find risk-artifact -type f -name disassembly.txt -print -quit)"
+          test -n "$dis"
+          cp "$dis" stock-msm-drm-disassembly.txt
+
+      - name: Generate current exact-config headers
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          rm -rf out
+          mkdir -p out
+          cp reconstruction/stock_ikconfig out/.config
+          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts
+
+      - name: Compile exact field-offset probes
+        env:
+          CLANG_ROOT: ${{ runner.temp }}/clang-r383902b1
+          STOCK_ROOT: ${{ github.workspace }}/stock-artifact/stock-kheaders
+        run: |
+          set -euo pipefail
+
+          cat > field_probe.c <<'EOF'
+          #include <linux/sched.h>
+          #include <linux/fs.h>
+          #include <linux/notifier.h>
+          #include <linux/rwsem.h>
+          #include <drm/drm_panel.h>
+
+          #define PROBE(name, expr) \
+            unsigned long probe_##name(void) { return (unsigned long)(expr); }
+
+          PROBE(task_size, sizeof(struct task_struct))
+          PROBE(task_pid, __builtin_offsetof(struct task_struct, pid))
+          PROBE(task_tgid, __builtin_offsetof(struct task_struct, tgid))
+          PROBE(task_group_leader, __builtin_offsetof(struct task_struct, group_leader))
+          PROBE(task_comm, __builtin_offsetof(struct task_struct, comm))
+
+          PROBE(inode_size, sizeof(struct inode))
+          PROBE(inode_i_mapping, __builtin_offsetof(struct inode, i_mapping))
+
+          PROBE(panel_size, sizeof(struct drm_panel))
+          PROBE(panel_drm, __builtin_offsetof(struct drm_panel, drm))
+          PROBE(panel_connector, __builtin_offsetof(struct drm_panel, connector))
+          PROBE(panel_dev, __builtin_offsetof(struct drm_panel, dev))
+          PROBE(panel_funcs, __builtin_offsetof(struct drm_panel, funcs))
+          PROBE(panel_list, __builtin_offsetof(struct drm_panel, list))
+          PROBE(panel_nh, __builtin_offsetof(struct drm_panel, nh))
+
+          PROBE(blocking_notifier_size, sizeof(struct blocking_notifier_head))
+          PROBE(blocking_notifier_rwsem,
+                __builtin_offsetof(struct blocking_notifier_head, rwsem))
+          PROBE(blocking_notifier_head,
+                __builtin_offsetof(struct blocking_notifier_head, head))
+
+          PROBE(rwsem_size, sizeof(struct rw_semaphore))
+          EOF
+
+          cat > build_probe.py <<'PY'
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          clang = Path(os.environ["CLANG_ROOT"]) / "bin/clang"
+          stock = Path(os.environ["STOCK_ROOT"])
+          root = Path.cwd()
+          resource = subprocess.check_output(
+              [str(clang), "-print-resource-dir"], text=True
+          ).strip()
+
+          current_inc = [
+              root / "arch/arm64/include",
+              root / "out/arch/arm64/include/generated",
+              root / "include",
+              root / "out/include",
+              root / "arch/arm64/include/uapi",
+              root / "out/arch/arm64/include/generated/uapi",
+              root / "include/uapi",
+              root / "out/include/generated/uapi",
+          ]
+          stock_inc = [
+              stock / "arch/arm64/include",
+              stock / "arch/arm64/include/generated",
+              stock / "include",
+              stock / "include/generated",
+              stock / "arch/arm64/include/uapi",
+              stock / "arch/arm64/include/generated/uapi",
+              stock / "include/uapi",
+              stock / "include/generated/uapi",
+          ]
+
+          def compile_probe(side, incs, kconfig):
+              cmd = [
+                  str(clang),
+                  "-target", "aarch64-linux-gnu",
+                  "-nostdinc",
+                  "-isystem", str(Path(resource) / "include"),
+                  "-D__KERNEL__",
+                  "-DKBUILD_MODNAME=\"field_probe\"",
+                  "-DKBUILD_BASENAME=\"field_probe\"",
+                  "-include", str(kconfig),
+                  "-O2",
+                  "-S",
+                  "-emit-llvm",
+                  "field_probe.c",
+                  "-o", f"{side}-field-probe.ll",
+              ]
+              for inc in incs:
+                  cmd.extend(["-I", str(inc)])
+              subprocess.run(cmd, check=True)
+
+          compile_probe(
+              "current",
+              current_inc,
+              root / "include/linux/kconfig.h",
+          )
+          compile_probe(
+              "stock",
+              stock_inc,
+              stock / "include/linux/kconfig.h",
+          )
+
+          rx = re.compile(
+              r"define[^@]*@probe_([A-Za-z0-9_]+)\([^)]*\)[^{]*\{"
+              r".*?ret i64 ([0-9]+)",
+              re.S,
+          )
+
+          def parse(path):
+              text = Path(path).read_text()
+              return {
+                  name: int(value)
+                  for name, value in rx.findall(text)
+              }
+
+          current = parse("current-field-probe.ll")
+          stockv = parse("stock-field-probe.ll")
+
+          names = sorted(set(current) | set(stockv))
+          lines = ["field\tcurrent\tstock\tmatch"]
+          for name in names:
+              a = current.get(name)
+              b = stockv.get(name)
+              match = a == b
+              print(
+                  f"FIELD_LAYOUT\t{name}\tcurrent={a}\t"
+                  f"stock={b}\tmatch={int(match)}"
+              )
+              lines.append(f"{name}\t{a}\t{b}\t{int(match)}")
+
+          Path("field-layouts.tsv").write_text("\n".join(lines) + "\n")
+
+          required_equal = [
+              "task_pid",
+              "task_tgid",
+              "task_group_leader",
+              "task_comm",
+              "inode_i_mapping",
+              "panel_drm",
+              "panel_connector",
+              "panel_dev",
+              "panel_funcs",
+              "panel_list",
+              "panel_nh",
+              "blocking_notifier_rwsem",
+          ]
+
+          bad = [
+              name for name in required_equal
+              if current.get(name) != stockv.get(name)
+          ]
+
+          print(
+              f"FIELD_LAYOUT_REQUIRED_EQUAL="
+              f"{len(required_equal)-len(bad)}/{len(required_equal)}"
+          )
+          if bad:
+              raise SystemExit(
+                  "runtime-used field offsets differ: " + ",".join(bad)
+              )
+          PY
+
+          python3 build_probe.py | tee field-layouts.log
+          cat field-layouts.tsv
+
+      - name: Verify direct current-task offsets stay inside identical prefix
+        run: |
+          set -euo pipefail
+
+          python3 - stock-msm-drm-disassembly.txt task-direct-accesses.tsv <<'PY'
+          import re
+          import sys
+          from collections import Counter
+          from pathlib import Path
+
+          lines = Path(sys.argv[1]).read_text(errors="replace").splitlines()
+
+          func_re = re.compile(r"^\s*[0-9a-f]+ <([^>]+)>:$")
+          mrs_re = re.compile(r"\bmrs\s+(x\d+),\s*sp_el0\b")
+          mem_re = re.compile(
+              r"\b(?:ldr|ldrb|ldrh|ldrsw|ldur|str|strb|strh|stur)\s+"
+              r"[^,]+,\s*\[(x\d+)(?:,\s*#(0x[0-9a-fA-F]+|\d+))?\]"
+          )
+
+          current_func = "-"
+          accesses = []
+
+          for i, line in enumerate(lines):
+              fm = func_re.match(line.strip())
+              if fm:
+                  current_func = fm.group(1)
+
+              mm = mrs_re.search(line)
+              if not mm:
+                  continue
+
+              reg = mm.group(1)
+
+              # The direct current/thread-info idioms in this module access
+              # sp_el0 immediately. Limit the window to avoid later register
+              # reuse producing false positives.
+              for j in range(i + 1, min(i + 4, len(lines))):
+                  mem = mem_re.search(lines[j])
+                  if not mem or mem.group(1) != reg:
+                      continue
+                  off = int(mem.group(2), 0) if mem.group(2) else 0
+                  accesses.append(
+                      (current_func, i + 1, j + 1, off, lines[j].strip())
+                  )
+                  break
+
+          if not accesses:
+              raise SystemExit("no direct sp_el0 accesses found")
+
+          counts = Counter(x[3] for x in accesses)
+          max_offset = max(counts)
+
+          # Exact record-layout comparison showed stock/current task_struct
+          # top-level field offsets have a sequential identical prefix through
+          # byte 2752; first divergence occurs after that.
+          common_prefix_last_field = 2752
+
+          print(f"DIRECT_CURRENT_ACCESS_COUNT={len(accesses)}")
+          print(f"DIRECT_CURRENT_UNIQUE_OFFSETS={len(counts)}")
+          print(f"DIRECT_CURRENT_MAX_OFFSET={max_offset}")
+          print(
+              "DIRECT_CURRENT_OFFSETS="
+              + ",".join(str(x) for x in sorted(counts))
+          )
+
+          unsafe = sorted(x for x in counts if x > common_prefix_last_field)
+          print(f"DIRECT_CURRENT_OFFSETS_AFTER_COMMON_PREFIX={len(unsafe)}")
+
+          out = [
+              "function\tmrs_line\taccess_line\toffset_bytes\tinstruction"
+          ]
+          for row in accesses:
+              out.append("\t".join(map(str, row)))
+          Path(sys.argv[2]).write_text("\n".join(out) + "\n")
+
+          if unsafe:
+              raise SystemExit(
+                  "direct current accesses after common layout prefix: "
+                  + ",".join(map(str, unsafe))
+              )
+          PY
+
+          sed -n '1,160p' task-direct-accesses.tsv
+
+      - name: Audit display source for direct risky member access
+        run: |
+          set -euo pipefail
+
+          {
+            echo "=== current-> member uses ==="
+            git grep -n -E 'current->[A-Za-z0-9_]+' -- techpack/display/msm || true
+
+            echo
+            echo "=== struct task_struct declarations ==="
+            git grep -n 'struct task_struct' -- techpack/display/msm || true
+
+            echo
+            echo "=== direct inode i_* uses ==="
+            git grep -n -E '(inode->[[:space:]]*i_|file_inode\([^)]*\)->i_)' \
+              -- techpack/display/msm || true
+
+            echo
+            echo "=== drm_panel notifier internals ==="
+            git grep -n -E '(\.nh|->nh)[[:space:]]*\.(rwsem|head)|blocking_notifier_(head|rwsem)' \
+              -- techpack/display/msm || true
+          } | tee source-risk-audit.txt
+
+          # The known direct inode access in MSM GEM is i_mapping, which is
+          # explicitly asserted equal in the field probe above. Flag any other
+          # direct inode member so it cannot silently bypass the gate.
+          unexpected_inode="$(
+            git grep -n -E '(inode->[[:space:]]*i_|file_inode\([^)]*\)->i_)' \
+              -- techpack/display/msm 2>/dev/null \
+              | grep -v -- '->i_mapping' || true
+          )"
+          if [[ -n "$unexpected_inode" ]]; then
+            echo "UNEXPECTED_DIRECT_INODE_MEMBERS:"
+            echo "$unexpected_inode"
+            exit 1
+          fi
+
+          # drm_panel notifier internals must remain kernel-helper-owned.
+          direct_nh="$(
+            git grep -n -E '(\.nh|->nh)[[:space:]]*\.(rwsem|head)|blocking_notifier_(head|rwsem)' \
+              -- techpack/display/msm 2>/dev/null || true
+          )"
+          if [[ -n "$direct_nh" ]]; then
+            echo "DIRECT_DRM_PANEL_NOTIFIER_INTERNAL_ACCESS:"
+            echo "$direct_nh"
+            exit 1
+          fi
+
+          echo "SOURCE_RISK_INODE_ONLY_KNOWN_PREFIX_FIELDS=1"
+          echo "SOURCE_RISK_DRM_PANEL_NOTIFIER_OPAQUE=1"
+
+      - name: Final runtime layout gate summary
+        run: |
+          set -euo pipefail
+
+          python3 - field-layouts.tsv task-direct-accesses.tsv source-risk-audit.txt final-runtime-layout-gate.txt <<'PY'
+          import sys
+          from pathlib import Path
+
+          fields = {}
+          for raw in Path(sys.argv[1]).read_text().splitlines()[1:]:
+              if not raw.strip():
+                  continue
+              name, current, stock, match = raw.split("\t")
+              fields[name] = (int(current), int(stock), int(match))
+
+          accesses = Path(sys.argv[2]).read_text().splitlines()[1:]
+          max_direct = max(
+              int(row.split("\t")[3])
+              for row in accesses if row.strip()
+          )
+
+          required = [
+              "task_pid", "task_tgid", "task_group_leader", "task_comm",
+              "inode_i_mapping",
+              "panel_drm", "panel_connector", "panel_dev", "panel_funcs",
+              "panel_list", "panel_nh", "blocking_notifier_rwsem",
+          ]
+          all_required = all(fields[x][2] == 1 for x in required)
+
+          lines = [
+              "# Final stock QGKI msm_drm runtime-layout gate",
+              f"required_runtime_field_offsets_equal={int(all_required)}",
+              f"required_runtime_fields={len(required)}",
+              f"max_direct_current_task_offset={max_direct}",
+              "task_common_prefix_last_field_offset=2752",
+              f"direct_task_access_within_common_prefix={int(max_direct <= 2752)}",
+              "inode_direct_access_gate=PASS",
+              "drm_panel_notifier_internal_access_gate=PASS",
+              "",
+              "Known total-size differences are not treated as failures when",
+              "all module-observed member offsets remain compatible.",
+          ]
+
+          passed = (
+              all_required
+              and max_direct <= 2752
+          )
+          lines.append(f"FINAL_RUNTIME_LAYOUT_GATE={'PASS' if passed else 'FAIL'}")
+
+          Path(sys.argv[4]).write_text("\n".join(lines) + "\n")
+          print("\n".join(lines))
+
+          if not passed:
+              raise SystemExit("final runtime layout gate failed")
+          PY
+
+      - name: Upload final runtime-layout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-msm-drm-final-layout-gate
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            clang-version.txt
+            field-layouts.tsv
+            field-layouts.log
+            current-field-probe.ll
+            stock-field-probe.ll
+            task-direct-accesses.tsv
+            source-risk-audit.txt
+            final-runtime-layout-gate.txt
