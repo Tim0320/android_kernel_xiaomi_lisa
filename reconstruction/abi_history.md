@@ -169,21 +169,57 @@ Conclusion:
 - stock IKCONFIG contains no relevant Android KABI generation toggle that explains these CRCs;
 - source/type lineage remains the primary missing factor.
 
+## Exact Qualcomm Lahaina tag-tip results
+
+The first native-QGKI object probe produced `MISSING` CRCs because the LTO build path did not leave the expected per-object `.symversions` files. Those apparent `0/38` values are invalid and must not be counted.
+
+A later direct-genksyms workflow patched only the probe-side `scripts/Makefile.build` output redirection and used the kernel's own `cmd_gensymtypes_c` rule with the original candidate cflags/config. The current reconstruction control reproduced the known baseline exactly:
+
+- `module_layout = 0x0816e668`
+- `device_register = 0xc1e70e13`
+- `device_unregister = 0xb88b5350`
+- `dev_driver_string = 0x52e5afec`
+- present symbols: **37/38** (`clk_get` is not emitted by this direct-object set)
+- control marker: `DIRECT_GENKSYMS_CONTROL_OK=1`
+
+Therefore the following Lahaina results are valid:
+
+| Qualcomm Lahaina revision | Provenance | Result | Present | module_layout |
+| --- | --- | ---: | ---: | --- |
+| LA.UM.9.14.r1-18400.02-LAHAINA.QSSI12.0 | exact Qualcomm tag tip recovered as merge second parent `cc27e795...` | 0/38 | 37/38 | `0x9024fb67` |
+| LA.UM.9.14.r1-18600.02-LAHAINA.QSSI12.0 | exact tag tip `846e80ab...` | 0/38 | 37/38 | `0x9024fb67` |
+| LA.UM.9.14.r1-18900-LAHAINA.QSSI12.0 | exact tag tip `cda32b04...` | 0/38 | 37/38 | `0x9024fb67` |
+| LA.UM.9.14.r1-19500-LAHAINA.QSSI12.0 | exact tag tip `bcf162c8...` | 0/38 | 37/38 | `0x9024fb67` |
+| LA.UM.9.14.r1-19800.01-LAHAINA.QSSI12.0 | exact tag tip `5223d470...` | 0/38 | 37/38 | `0x9024fb67` |
+| LA.UM.9.14.r1-20000.01-LAHAINA.QSSI12.0 | exact tag tip `72be295f...` | 0/38 | 37/38 | `0x9024fb67` |
+
+All 37 observable CRCs were identical across 18400.02 through 20000.01. This rules out that entire QSSI12 interval as the stock Lisa core-KABI family.
+
+Observed lower-layer generation boundaries:
+
+- `include/linux/device.h`: unchanged from the observed 16700 snapshot through 20000.01.
+- `include/scsi/scsi_device.h`: unchanged from 16700 through 20000.01.
+- `include/linux/module.h`: changed between the 16700 snapshot and 18400.02, then stayed unchanged through 20000.01.
+- `include/linux/android_kabi.h`: changed between 18400.02 and 18600.02.
+- `lahaina_QGKI.config`: changed between 18400.02 and 18600.02.
+- Despite the latter two file changes, the 37 observable core CRCs remained identical from 18400.02 to 20000.01.
+
 ## Current active direction
 
-The highest-value remaining lineage is genuine Qualcomm CLO LAHAINA history rather than another OEM fork.
+The next useful boundary is **pre-18400 Lahaina**, not later QSSI12/QSSI14 forks.
 
-Active CLO candidates:
+Candidates now prioritized:
 
-| CLO candidate | State |
+| Lahaina revision | Provenance |
 | --- | --- |
-| LA.UM.9.14.r1-18600.02-LAHAINA.QSSI12.0 | rerun pending; known commit fallback `846e80aba10f06141d1a125745a59f74610b812c` |
-| LA.UM.9.14.r1-22000-LAHAINA.QSSI12.0 | rerun pending |
-| LA.UM.9.14.r1-22900.01-LAHAINA.QSSI14.0 | rerun pending |
-| LA.UM.9.14.r1-23600-LAHAINA.QSSI14.0 | rerun pending |
-| LA.UM.9.14.r1-25000.02-LAHAINA.QSSI14.0 | rerun pending |
+| 16700 | preserved merge snapshot in `Skywalker-I005/Skywalker-ZS673KS` |
+| 16900 | preserved merge snapshot `39350d27...` |
+| 17500 | preserved merge snapshot `64fb9dc6...` |
+| 17700 | exact Qualcomm tag tip recovered as second parent `21af954d...` |
+| 18300 | exact Qualcomm tag tip recovered as second parent `c6b805f3...` |
+| 18400.02 | exact tag-tip control, known family `module_layout=0x9024fb67` |
 
-Workflow ref resolution was repaired by saving `git ls-remote` output to a file before parsing it, avoiding SIGPIPE with `pipefail`.
+The objective is to locate the generation transition before 18400 and determine whether any earlier Lahaina QGKI baseline matches or approaches the stock Lisa CRC family.
 
 ## Working conclusion
 
@@ -196,6 +232,7 @@ Evidence so far strongly rules out all of these as the direct stock core-KABI so
 5. standard ACK Android 11/12 KMI generations;
 6. common Lineage/Nothing modern Qualcomm 5.4 trees;
 7. ASUS/OnePlus/Sony same-generation OEM trees;
-8. configuration-only or reserve-count-only explanations.
+8. configuration-only or reserve-count-only explanations;
+9. exact Qualcomm Lahaina QSSI12 tag tips from 18400.02 through 20000.01.
 
-The remaining evidence is consistent with a Qualcomm/Xiaomi QGKI source/type graph that was maintained separately from the public device source trees and then carried forward to stock HyperOS 5.4.289.
+The remaining evidence points toward an earlier Qualcomm/Xiaomi QGKI core generation or a Xiaomi-private KABI/type delta carried forward to the stock HyperOS 5.4.289 kernel.
