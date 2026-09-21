@@ -1,4 +1,4 @@
-name: Build Lisa QGKI six-symbol compatibility prototype
+name: Build Lisa QGKI runtime-layout compatibility prototype
 
 on:
   workflow_dispatch:
@@ -254,9 +254,50 @@ jobs:
               raise SystemExit("scheduler min_vruntime insertion point not found")
           text = text.replace(old, new, 1)
           path.write_text(text)
+
+          # 5. Restore the exact stock runtime rw_semaphore reserve.
+          #
+          # Stock Lisa IKHEADERS include ANDROID_VENDOR_DATA(1) at the end of
+          # struct rw_semaphore. The current reconstructed tree lacks it.
+          # This one 8-byte reserve fixes both:
+          #   - inode::i_private: current 624 -> stock 640, because inode
+          #     contains two rw_semaphore instances before i_private;
+          #   - drm_panel: current 96 -> stock 104, because panel->nh embeds
+          #     blocking_notifier_head -> rw_semaphore.
+          path = Path("include/linux/rwsem.h")
+          text = path.read_text()
+
+          include_old = """#ifdef CONFIG_RWSEM_SPIN_ON_OWNER
+          #include <linux/osq_lock.h>
+          #endif
+          """
+          include_new = """#ifdef CONFIG_RWSEM_SPIN_ON_OWNER
+          #include <linux/osq_lock.h>
+          #endif
+          #include <linux/android_vendor.h>
+          """
+          if include_old not in text:
+              raise SystemExit("rwsem include insertion point not found")
+          text = text.replace(include_old, include_new, 1)
+
+          struct_old = """#ifdef CONFIG_DEBUG_LOCK_ALLOC
+          	struct lockdep_map	dep_map;
+          #endif
+          };
+          """
+          struct_new = """#ifdef CONFIG_DEBUG_LOCK_ALLOC
+          	struct lockdep_map	dep_map;
+          #endif
+          	ANDROID_VENDOR_DATA(1);
+          };
+          """
+          if struct_old not in text:
+              raise SystemExit("rwsem struct insertion point not found")
+          text = text.replace(struct_old, struct_new, 1)
+          path.write_text(text)
           PY
 
-          git diff -- include/linux/proc_fs.h fs/proc/internal.h fs/proc/generic.c kernel/sched/sched.h \
+          git diff -- include/linux/proc_fs.h fs/proc/internal.h fs/proc/generic.c kernel/sched/sched.h include/linux/rwsem.h \
             > qgki-six-compat.patch
           cat qgki-six-compat.patch
 
@@ -362,6 +403,81 @@ jobs:
             CLANG_TRIPLE=aarch64-linux-gnu- \
             Image modules dtbs 2>&1 | tee qgki-six-build.log
 
+      - name: Assert stock-compatible runtime field layouts
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+
+          cat > qgki-runtime-layout-assert.c <<'EOF'
+          #include <linux/rwsem.h>
+          #include <linux/notifier.h>
+          #include <linux/fs.h>
+          #include <linux/sched.h>
+          #include <drm/drm_panel.h>
+
+          _Static_assert(sizeof(struct rw_semaphore) == 48,
+                         "rw_semaphore must match stock Lisa");
+          _Static_assert(sizeof(struct blocking_notifier_head) == 56,
+                         "blocking_notifier_head must match stock Lisa");
+
+          _Static_assert(sizeof(struct inode) == 664,
+                         "inode size must match stock Lisa");
+          _Static_assert(__builtin_offsetof(struct inode, i_mapping) == 48,
+                         "inode i_mapping offset must match stock Lisa");
+          _Static_assert(__builtin_offsetof(struct inode, i_private) == 640,
+                         "inode i_private offset must match stock Lisa");
+
+          _Static_assert(sizeof(struct drm_panel) == 104,
+                         "drm_panel size must match stock Lisa");
+          _Static_assert(__builtin_offsetof(struct drm_panel, drm) == 0,
+                         "drm_panel drm offset");
+          _Static_assert(__builtin_offsetof(struct drm_panel, connector) == 8,
+                         "drm_panel connector offset");
+          _Static_assert(__builtin_offsetof(struct drm_panel, dev) == 16,
+                         "drm_panel dev offset");
+          _Static_assert(__builtin_offsetof(struct drm_panel, funcs) == 24,
+                         "drm_panel funcs offset");
+          _Static_assert(__builtin_offsetof(struct drm_panel, list) == 32,
+                         "drm_panel list offset");
+          _Static_assert(__builtin_offsetof(struct drm_panel, nh) == 48,
+                         "drm_panel nh offset");
+
+          _Static_assert(__builtin_offsetof(struct task_struct, pid) == 1616,
+                         "task_struct pid offset");
+          _Static_assert(__builtin_offsetof(struct task_struct, tgid) == 1620,
+                         "task_struct tgid offset");
+          _Static_assert(__builtin_offsetof(struct task_struct, group_leader) == 1680,
+                         "task_struct group_leader offset");
+          _Static_assert(__builtin_offsetof(struct task_struct, comm) == 2072,
+                         "task_struct comm offset");
+          EOF
+
+          RES="$("${RUNNER_TEMP}/clang-r383902b1/bin/clang" -print-resource-dir)"
+          "${RUNNER_TEMP}/clang-r383902b1/bin/clang" \
+            -target aarch64-linux-gnu \
+            -nostdinc -isystem "$RES/include" \
+            -D__KERNEL__ \
+            -DKBUILD_MODNAME='"qgki_runtime_layout_assert"' \
+            -DKBUILD_BASENAME='"qgki_runtime_layout_assert"' \
+            -include include/linux/kconfig.h \
+            -I arch/arm64/include \
+            -I out/arch/arm64/include/generated \
+            -I include \
+            -I out/include \
+            -I arch/arm64/include/uapi \
+            -I out/arch/arm64/include/generated/uapi \
+            -I include/uapi \
+            -I out/include/generated/uapi \
+            -fsyntax-only qgki-runtime-layout-assert.c
+
+          echo "QGKI_RUNTIME_RWSEM_SIZE=48"
+          echo "QGKI_RUNTIME_BLOCKING_NOTIFIER_SIZE=56"
+          echo "QGKI_RUNTIME_INODE_SIZE=664"
+          echo "QGKI_RUNTIME_INODE_I_PRIVATE=640"
+          echo "QGKI_RUNTIME_DRM_PANEL_SIZE=104"
+          echo "QGKI_RUNTIME_LAYOUT_ASSERTIONS=PASS"
+
       - name: Validate six exact stock CRCs and core outputs
         run: |
           set -euo pipefail
@@ -426,82 +542,84 @@ jobs:
             test "$actual" = "$TARGET_VERMAGIC"
           done
 
-      - name: Extract exact stock msm_drm module
+      - name: Download exact stock msm_drm import oracle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VENDOR_BOOT_ARTIFACT_ID: "10648361196"
         run: |
           set -euo pipefail
-          img="reconstruction/stock/stock-Image/vendor_boot.img"
-          test -s "$img"
+          rm -rf vendor-abi-oracle
+          mkdir -p vendor-abi-oracle
 
-          rm -rf stock-msm-drm
-          mkdir -p stock-msm-drm/root
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${VENDOR_BOOT_ARTIFACT_ID}/zip" \
+            -o vendor-abi-oracle.zip
 
-          python3 - "$img" stock-msm-drm/vendor_ramdisk.gz <<'PY'
-          import struct
+          unzip -q vendor-abi-oracle.zip -d vendor-abi-oracle
+
+          imports="$(find vendor-abi-oracle -type f -name stock-vendor-boot-module-imports.tsv -print -quit)"
+          summary="$(find vendor-abi-oracle -type f -name stock-vendor-boot-module-summary.tsv -print -quit)"
+          test -n "$imports"
+          test -n "$summary"
+
+          cp "$imports" stock-msm-drm-imports.tsv
+          cp "$summary" stock-msm-drm-summary.tsv
+
+      - name: Audit all 736 stock msm_drm imports against rebuilt kernel
+        run: |
+          set -euo pipefail
+
+          python3 - stock-msm-drm-imports.tsv stock-msm-drm-summary.tsv out/Module.symvers qgki-msm-drm-abi.txt <<'PY'
           import sys
           from pathlib import Path
 
-          data = Path(sys.argv[1]).read_bytes()
-          if data[:8] != b"VNDRBOOT":
-              raise SystemExit("bad vendor_boot magic")
+          imports_path = Path(sys.argv[1])
+          summary_path = Path(sys.argv[2])
+          symvers_path = Path(sys.argv[3])
+          out_path = Path(sys.argv[4])
 
-          def u32(off):
-              return struct.unpack_from("<I", data, off)[0]
+          qgki_rows = []
+          for raw in summary_path.read_text(errors="replace").splitlines():
+              p = raw.split("\t")
+              if len(p) >= 6 and p[0].endswith("/lib/modules/msm_drm.ko"):
+                  qgki_rows.append(p)
 
-          def align(v, a):
-              return (v + a - 1) // a * a
+          if len(qgki_rows) != 1:
+              raise SystemExit(f"expected one stock msm_drm row, got {len(qgki_rows)}")
 
-          page = u32(12)
-          ramdisk_size = u32(24)
-          header_size = u32(2096)
-          off = align(header_size, page)
-
-          Path(sys.argv[2]).write_bytes(data[off:off + ramdisk_size])
-          print(f"QGKI_VENDOR_RAMDISK_BYTES={ramdisk_size}")
-          PY
-
-          gzip -dc stock-msm-drm/vendor_ramdisk.gz > stock-msm-drm/vendor_ramdisk.cpio
-          (
-            cd stock-msm-drm/root
-            cpio --quiet -idm --no-absolute-filenames < ../vendor_ramdisk.cpio
+          module, machine, vermagic, layout, version_count, status = qgki_rows[0]
+          expected_vermagic = (
+              "5.4.289-qgki-g5987d69e25da "
+              "SMP preempt mod_unload modversions aarch64"
           )
 
-          msm="$(find stock-msm-drm/root -type f -path '*/lib/modules/msm_drm.ko' -print -quit)"
-          test -n "$msm"
-          cp "$msm" stock-msm-drm/msm_drm.ko
-          test -s stock-msm-drm/msm_drm.ko
+          print(f"QGKI_STOCK_MSM_DRM_VERMAGIC={vermagic}")
+          print(f"QGKI_STOCK_MSM_DRM_LAYOUT={layout}")
+          print(f"QGKI_STOCK_MSM_DRM_VERSION_ENTRIES={version_count}")
 
-          strings -a stock-msm-drm/msm_drm.ko | grep '^vermagic=' | tee stock-msm-drm/vermagic.txt
-
-      - name: Audit all 736 msm_drm imports against rebuilt kernel
-        run: |
-          set -euo pipefail
-
-          python3 - stock-msm-drm/msm_drm.ko out/Module.symvers qgki-msm-drm-abi.txt <<'PY'
-          import sys
-          from pathlib import Path
-          from elftools.elf.elffile import ELFFile
-
-          module_path = Path(sys.argv[1])
-          symvers_path = Path(sys.argv[2])
-          out_path = Path(sys.argv[3])
-
-          with module_path.open("rb") as f:
-              elf = ELFFile(f)
-              sec = elf.get_section_by_name("__versions")
-              if sec is None:
-                  raise SystemExit("msm_drm.ko has no __versions")
-              data = sec.data()
-
-          if len(data) % 64:
-              raise SystemExit(f"unexpected __versions size {len(data)}")
+          if vermagic != expected_vermagic:
+              raise SystemExit("stock msm_drm vermagic changed")
+          if layout.lower() != "0xba39cbb8":
+              raise SystemExit("stock msm_drm module_layout changed")
+          if int(version_count) != 736:
+              raise SystemExit("stock msm_drm __versions count changed")
+          if status != "OK":
+              raise SystemExit("stock msm_drm parse status is not OK")
 
           required = {}
-          for off in range(0, len(data), 64):
-              chunk = data[off:off + 64]
-              crc = int.from_bytes(chunk[:8], "little") & 0xffffffff
-              name = chunk[8:].split(b"\0", 1)[0].decode("ascii", "replace")
-              if name:
-                  required[name] = crc
+          rows = 0
+          for raw in imports_path.read_text(errors="replace").splitlines():
+              p = raw.split("\t")
+              if len(p) < 5:
+                  continue
+              module, vermagic, layout, symbol, crc_text = p[:5]
+              if not module.endswith("/lib/modules/msm_drm.ko"):
+                  continue
+              rows += 1
+              required[symbol] = int(crc_text, 16)
 
           current = {}
           for raw in symvers_path.read_text(errors="replace").splitlines():
@@ -525,12 +643,18 @@ jobs:
               else:
                   mismatches.append((sym, exp, got))
 
+          print(f"QGKI_MSM_DRM_VERSION_ROWS={rows}")
           print(f"QGKI_MSM_DRM_IMPORTS={len(required)}")
           print(f"QGKI_MSM_DRM_MATCHES={len(matches)}")
           print(f"QGKI_MSM_DRM_MISMATCHES={len(mismatches)}")
           print(f"QGKI_MSM_DRM_MISSING={len(missing)}")
+          print(
+              f"QGKI_MSM_DRM_MATCH_RATE="
+              f"{len(matches)/len(required):.6f}"
+          )
 
           lines = [
+              f"version_rows={rows}",
               f"imports={len(required)}",
               f"matches={len(matches)}",
               f"mismatches={len(mismatches)}",
@@ -538,25 +662,24 @@ jobs:
               "",
               "## MISMATCH",
           ]
-
           for sym, exp, got in mismatches:
-              line = f"{sym}\tstock=0x{exp:08x}\tcurrent=0x{got:08x}"
-              print("QGKI_MSM_DRM_MISMATCH\t" + line)
-              lines.append(line)
-
+              lines.append(
+                  f"{sym}\tstock=0x{exp:08x}\tcurrent=0x{got:08x}"
+              )
           lines += ["", "## MISSING"]
           for sym, exp in missing:
-              line = f"{sym}\tstock=0x{exp:08x}"
-              print("QGKI_MSM_DRM_MISSING_SYMBOL\t" + line)
-              lines.append(line)
+              lines.append(f"{sym}\tstock=0x{exp:08x}")
 
           out_path.write_text("\n".join(lines) + "\n")
 
-          if len(required) != 736:
-              raise SystemExit(f"expected 736 imports, got {len(required)}")
+          if rows != 736 or len(required) != 736:
+              raise SystemExit(
+                  f"expected 736 stock msm_drm imports, rows={rows}, "
+                  f"unique={len(required)}"
+              )
           if mismatches or missing:
               raise SystemExit(
-                  f"msm_drm not compatible: {len(mismatches)} mismatches, "
+                  f"stock msm_drm ABI failed: {len(mismatches)} mismatches, "
                   f"{len(missing)} missing"
               )
           PY
@@ -588,10 +711,10 @@ jobs:
             qgki-six-compat.patch
             qgki-six-build.log
             qgki-six-crc.txt
+            qgki-runtime-layout-assert.c
             qgki-msm-drm-abi.txt
             qgki-six-genksyms-failures.txt
-            stock-msm-drm/vermagic.txt
-            stock-msm-drm/msm_drm.ko
+            stock-msm-drm-summary.tsv
             out/.config
             out/Module.symvers
             out/arch/arm64/boot/Image
