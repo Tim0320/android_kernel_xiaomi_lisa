@@ -1,0 +1,215 @@
+name: Probe lisa stock-derived core ABI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/abi-probe-lisa-core.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-stock-core-abi-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            cpio kmod rsync python3 curl xz-utils git
+
+      - name: Cache stock-generation AOSP clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install stock-generation AOSP clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+
+          if [[ -x "$DEST/bin/clang" ]] && "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'; then
+            "$DEST/bin/clang" --version | tee clang-version.txt
+            exit 0
+          fi
+
+          urls=(
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r46/clang-r383902b1.tar.gz"
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/android11-qpr2-release/clang-r383902b1.tar.gz"
+          )
+
+          ok=0
+          for url in "${urls[@]}"; do
+            rm -f "$ARCHIVE"
+            if curl -L --fail --retry 5 --retry-all-errors --connect-timeout 30 "$url" -o "$ARCHIVE" \
+                && tar -tzf "$ARCHIVE" >/dev/null; then
+              ok=1
+              break
+            fi
+          done
+          test "$ok" -eq 1
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | tee clang-version.txt
+
+      - name: Clone lisa-specific stock-derived core
+        run: |
+          set -euo pipefail
+          git clone --depth=1 --branch main https://github.com/CannedShroud/kernel_xiaomi_lisa.git kernel
+          cd kernel
+          test "$(git rev-parse HEAD)" = "fc6ec759ef1a5513c2576c11c463bb96145e7f36"
+          sed -i 's/^SUBLEVEL = .*/SUBLEVEL = 289/' Makefile
+          printf '%s\n' '-g5987d69e25da' > .scmversion
+
+      - name: Generate lisa stock config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            lisa_stock_defconfig
+
+          scripts/config --file out/.config --set-str LOCALVERSION "-qgki"
+          scripts/config --file out/.config --enable LOCALVERSION_AUTO
+          scripts/config --file out/.config --enable MODVERSIONS
+          scripts/config --file out/.config --enable UFSGKI
+          scripts/config --file out/.config --enable UFS_WB
+          scripts/config --file out/.config --enable MI_UFS_FFU
+          scripts/config --file out/.config --disable SCSI_SKHPB
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            olddefconfig
+
+          grep -E '^(CONFIG_LOCALVERSION|CONFIG_LOCALVERSION_AUTO|CONFIG_MODVERSIONS|CONFIG_UFSGKI|CONFIG_UFS_WB|CONFIG_MI_UFS_FFU)=' out/.config || true
+
+      - name: Inject ABI-only providers
+        run: |
+          set -euo pipefail
+          cd kernel
+          cat > drivers/misc/lisa_abi_probe.c <<'EOF'
+          #include <linux/module.h>
+          #include <linux/types.h>
+          #include <scsi/scsi_device.h>
+          #include "../scsi/ufs/ufshcd.h"
+          #include "../scsi/ufs/ufs.h"
+
+          struct ufs_err_state_debug {
+              u64 err_occurred;
+              char err_reason[10][32];
+          };
+
+          struct ufs_data {
+              struct ufs_hba *hba;
+              struct scsi_device *sdev;
+              struct ufs_err_state_debug ufs_err_state;
+          };
+
+          struct ufs_hba *get_ufs_hba_data(void) { return NULL; }
+          EXPORT_SYMBOL(get_ufs_hba_data);
+
+          struct scsi_device *get_ufs_sdev_data(void) { return NULL; }
+          EXPORT_SYMBOL(get_ufs_sdev_data);
+
+          struct ufs_data *get_ufs_data(void) { return NULL; }
+          EXPORT_SYMBOL(get_ufs_data);
+
+          int ufs_get_string_desc(struct ufs_hba *hba, void *buf, int size,
+                                  enum device_desc_param pname, bool ascii_std)
+          {
+              return 0;
+          }
+          EXPORT_SYMBOL(ufs_get_string_desc);
+
+          int ufs_read_desc_param(struct ufs_hba *hba, enum desc_idn desc_id,
+                                  u8 desc_index, u8 param_offset,
+                                  void *buf, u8 param_size)
+          {
+              return 0;
+          }
+          EXPORT_SYMBOL(ufs_read_desc_param);
+
+          int ufshcd_read_desc(struct ufs_hba *hba, enum desc_idn desc_id,
+                               int desc_index, void *buf, u32 size)
+          {
+              return 0;
+          }
+          EXPORT_SYMBOL(ufshcd_read_desc);
+          EOF
+          printf '\nobj-y += lisa_abi_probe.o\n' >> drivers/misc/Makefile
+
+      - name: Build ABI probe kernel
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -o pipefail
+          cd kernel
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- \
+            Image 2>&1 | tee ../abi-probe-build.log
+
+      - name: Compare ABI CRCs with HyperOS stock
+        run: |
+          set -euo pipefail
+          cd kernel
+          test -s out/Module.symvers
+
+          check_crc() {
+            local symbol="$1"
+            local expected="$2"
+            local actual
+            actual="$(awk -v sym="$symbol" '$2 == sym {print tolower($1); exit}' out/Module.symvers)"
+            echo "$symbol: probe=${actual:-MISSING} stock=$expected"
+          }
+
+          check_crc get_ufs_data 0xfa507f92
+          check_crc get_ufs_hba_data 0xc40eabac
+          check_crc get_ufs_sdev_data 0xc5bbd8a8
+          check_crc ufs_get_string_desc 0x479d5ded
+          check_crc ufs_read_desc_param 0x16548413
+          check_crc ufshcd_read_desc 0xa93e3b58
+          check_crc module_layout 0xba39cbb8
+
+          make -s O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- kernelrelease
+
+      - name: Upload probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-core-abi-probe
+          if-no-files-found: warn
+          retention-days: 14
+          include-hidden-files: true
+          path: |
+            clang-version.txt
+            abi-probe-build.log
+            kernel/out/.config
+            kernel/out/Module.symvers
