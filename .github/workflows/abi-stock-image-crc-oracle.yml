@@ -293,6 +293,158 @@ jobs:
           test -s full-abi-compare.txt
           head -n 30 full-abi-compare.txt
 
+      - name: Checkout reconstructed source for ABI classification
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          path: reconstructed-source
+          fetch-depth: 1
+
+      - name: Classify ABI differences by source subsystem
+        id: classify
+        run: |
+          set -euo pipefail
+          mkdir -p diagnostics
+          exec > >(tee diagnostics/07-classify.log) 2>&1
+
+          test -s full-abi-compare.txt
+          test -d reconstructed-source
+
+          git -C reconstructed-source grep -n -E 'EXPORT_SYMBOL[A-Z0-9_]*[[:space:]]*\(' -- '*.c' '*.h' \
+            > export-definitions.txt || true
+
+          python3 - full-abi-compare.txt export-definitions.txt abi-subsystem-summary.txt <<'PY'
+          import re
+          import sys
+          from collections import Counter, defaultdict
+          from pathlib import Path
+
+          compare_path, defs_path, out_path = sys.argv[1:]
+
+          statuses = {}
+          for raw in Path(compare_path).read_text(errors="replace").splitlines():
+              if raw.startswith("MATCH\t"):
+                  parts = raw.split("\t")
+                  statuses[parts[1]] = "MATCH"
+              elif raw.startswith("MISMATCH\t"):
+                  parts = raw.split("\t")
+                  statuses[parts[1]] = "MISMATCH"
+
+          symbol_paths = defaultdict(set)
+          rx = re.compile(
+              r'^(.*?):\d+:(?:.*?)(?:EXPORT_SYMBOL[A-Z0-9_]*)\s*\(\s*([A-Za-z0-9_.$]+)\s*\)'
+          )
+          for raw in Path(defs_path).read_text(errors="replace").splitlines():
+              m = rx.search(raw)
+              if not m:
+                  continue
+              path, symbol = m.groups()
+              symbol_paths[symbol].add(path)
+
+          def top_category(path):
+              parts = path.split("/")
+              return parts[0] if parts else "<unknown>"
+
+          def deep_category(path):
+              parts = path.split("/")
+              if not parts:
+                  return "<unknown>"
+              if parts[0] in {"drivers", "fs", "net", "arch", "sound", "kernel", "mm", "lib", "security", "crypto", "block"}:
+                  return "/".join(parts[:2]) if len(parts) > 1 else parts[0]
+              return parts[0]
+
+          top = defaultdict(Counter)
+          deep = defaultdict(Counter)
+          unmapped = Counter()
+          examples = defaultdict(list)
+
+          for symbol, status in statuses.items():
+              paths = sorted(symbol_paths.get(symbol, []))
+              if not paths:
+                  unmapped[status] += 1
+                  continue
+
+              # Conditional builds can define the same export in multiple files.
+              # Count the first path once for stable aggregate statistics while
+              # preserving all candidate paths in examples.
+              path = paths[0]
+              top[top_category(path)][status] += 1
+              deep[deep_category(path)][status] += 1
+              key = (deep_category(path), status)
+              if len(examples[key]) < 8:
+                  examples[key].append((symbol, ",".join(paths)))
+
+          def rows(table):
+              result = []
+              for category, counts in table.items():
+                  match = counts["MATCH"]
+                  mismatch = counts["MISMATCH"]
+                  total = match + mismatch
+                  rate = match / total if total else 0.0
+                  result.append((total, rate, category, match, mismatch))
+              return sorted(result, key=lambda x: (-x[0], x[2]))
+
+          top_rows = rows(top)
+          deep_rows = rows(deep)
+
+          print(f"CLASSIFIED_SYMBOLS={sum(x[0] for x in top_rows)}")
+          print(f"UNMAPPED_MATCH={unmapped['MATCH']}")
+          print(f"UNMAPPED_MISMATCH={unmapped['MISMATCH']}")
+          print("TOP_LEVEL_ABI_BREAKDOWN:")
+          for total, rate, category, match, mismatch in top_rows:
+              print(
+                  f"ABI_TOP\t{category}\ttotal={total}\tmatch={match}\t"
+                  f"mismatch={mismatch}\trate={rate:.4f}"
+              )
+
+          print("DEEP_ABI_BREAKDOWN:")
+          for total, rate, category, match, mismatch in deep_rows[:80]:
+              print(
+                  f"ABI_DEEP\t{category}\ttotal={total}\tmatch={match}\t"
+                  f"mismatch={mismatch}\trate={rate:.4f}"
+              )
+
+          lines = [
+              "# ABI subsystem classification",
+              "",
+              f"classified={sum(x[0] for x in top_rows)}",
+              f"unmapped_match={unmapped['MATCH']}",
+              f"unmapped_mismatch={unmapped['MISMATCH']}",
+              "",
+              "## Top-level",
+              "category\ttotal\tmatch\tmismatch\tmatch_rate",
+          ]
+          for total, rate, category, match, mismatch in top_rows:
+              lines.append(
+                  f"{category}\t{total}\t{match}\t{mismatch}\t{rate:.6f}"
+              )
+
+          lines += [
+              "",
+              "## Deep categories",
+              "category\ttotal\tmatch\tmismatch\tmatch_rate",
+          ]
+          for total, rate, category, match, mismatch in deep_rows:
+              lines.append(
+                  f"{category}\t{total}\t{match}\t{mismatch}\t{rate:.6f}"
+              )
+
+          lines += ["", "## Examples"]
+          for total, rate, category, match, mismatch in deep_rows:
+              for status in ("MATCH", "MISMATCH"):
+                  vals = examples.get((category, status), [])
+                  if not vals:
+                      continue
+                  lines.append(f"### {category} {status}")
+                  for symbol, paths in vals:
+                      lines.append(f"{symbol}\t{paths}")
+
+          Path(out_path).write_text("\n".join(lines) + "\n")
+          PY
+
+          test -s abi-subsystem-summary.txt
+          sed -n '1,180p' abi-subsystem-summary.txt
+
       - name: Write diagnostic report
         if: always()
         env:
@@ -302,6 +454,7 @@ jobs:
           RECOVER_OUTCOME: ${{ steps.recover.outcome }}
           COMPARE_OUTCOME: ${{ steps.compare.outcome }}
           FULLCOMPARE_OUTCOME: ${{ steps.fullcompare.outcome }}
+          CLASSIFY_OUTCOME: ${{ steps.classify.outcome }}
         run: |
           mkdir -p reconstruction diagnostics
           {
@@ -317,6 +470,7 @@ jobs:
             echo "recover=$RECOVER_OUTCOME"
             echo "compare=$COMPARE_OUTCOME"
             echo "fullcompare=$FULLCOMPARE_OUTCOME"
+            echo "classify=$CLASSIFY_OUTCOME"
             for log in diagnostics/*.log; do
               if [[ -f "$log" ]]; then
                 echo
@@ -338,5 +492,7 @@ jobs:
             stock.image.crcs
             stock.full.crcs
             full-abi-compare.txt
+            abi-subsystem-summary.txt
+            export-definitions.txt
             diagnostics/
             reconstruction/last_stock_image_probe.txt
