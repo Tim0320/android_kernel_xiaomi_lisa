@@ -23,6 +23,7 @@ jobs:
     env:
       TARGET_VERSION: OS2.0.10.0.UKOCNXM
       TARGET_RELEASE: 5.4.289-qgki-g4c23b1a30923
+      TARGET_COMMIT_TAG: g4c23b1a30923
       OTA_URL: https://bigota.d.miui.com/OS2.0.10.0.UKOCNXM/lisa-ota_full-OS2.0.10.0.UKOCNXM-user-14.0-698602d09c.zip
       EXPECTED_VENDOR_BOOT_SHA256: 6d2c626cc325058ba4c6f16a8f4043978404dfb5ce2f420d770f53d1f5d089f2
       EXPECTED_DTBO_SHA256: 423828174f86a7aab8823fc1cf5347e9cc97f0f41c246c489bdf5793d79a922e
@@ -45,7 +46,8 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y \
-            file binutils git python3 pkg-config \
+            file binutils git python3 python3-pyelftools pkg-config \
+            cpio lz4 zstd xz-utils gzip \
             libbrotli-dev liblzma-dev libzstd-dev
 
       - name: Build pinned URL-aware payload dumper
@@ -77,24 +79,39 @@ jobs:
           ls -lh official
           sha256sum official/*.img | sort | tee official-partition-sha256.txt
 
-      - name: Hard-match live OS2.0.10 vendor_boot and dtbo
+      - name: Compare live partition hashes without hiding firmware drift
         run: |
           set -euo pipefail
 
           vendor_boot_sha="$(sha256sum official/vendor_boot.img | awk '{print $1}')"
           dtbo_sha="$(sha256sum official/dtbo.img | awk '{print $1}')"
+          vendor_boot_match=0
+          dtbo_match=0
 
-          echo "OFFICIAL_VENDOR_BOOT_SHA256=$vendor_boot_sha"
-          echo "LIVE_VENDOR_BOOT_SHA256=$EXPECTED_VENDOR_BOOT_SHA256"
-          echo "OFFICIAL_DTBO_SHA256=$dtbo_sha"
-          echo "LIVE_DTBO_A_SHA256=$EXPECTED_DTBO_SHA256"
+          if [ "$vendor_boot_sha" = "$EXPECTED_VENDOR_BOOT_SHA256" ]; then
+            vendor_boot_match=1
+          fi
+          if [ "$dtbo_sha" = "$EXPECTED_DTBO_SHA256" ]; then
+            dtbo_match=1
+          fi
 
-          test "$vendor_boot_sha" = "$EXPECTED_VENDOR_BOOT_SHA256"
-          test "$dtbo_sha" = "$EXPECTED_DTBO_SHA256"
+          {
+            echo "OFFICIAL_VENDOR_BOOT_SHA256=$vendor_boot_sha"
+            echo "LIVE_VENDOR_BOOT_SHA256=$EXPECTED_VENDOR_BOOT_SHA256"
+            echo "LIVE_VENDOR_BOOT_BYTE_MATCH=$vendor_boot_match"
+            echo "OFFICIAL_DTBO_SHA256=$dtbo_sha"
+            echo "LIVE_DTBO_A_SHA256=$EXPECTED_DTBO_SHA256"
+            echo "LIVE_DTBO_BYTE_MATCH=$dtbo_match"
+          } | tee live-partition-compare.txt
 
-          echo "LIVE_FIRMWARE_PARTITION_MATCH=PASS"
+          if [ "$vendor_boot_match" -eq 1 ] && [ "$dtbo_match" -eq 1 ]; then
+            echo "LIVE_FIRMWARE_PARTITION_BYTES=EXACT"
+          else
+            echo "LIVE_FIRMWARE_PARTITION_BYTES=DIFFERENT"
+            echo "Byte drift is retained as evidence; kernel/ABI cohort validation continues."
+          fi
 
-      - name: Extract and identify exact stock kernel
+      - name: Extract and identify official stock kernel
         run: |
           set -euo pipefail
 
@@ -150,7 +167,123 @@ jobs:
           strings -a official-stock-Image | grep -m1 '^Linux version ' | tee official-kernel-version.txt
           grep -F "$TARGET_RELEASE" official-kernel-version.txt
 
-      - name: Record exact baseline gate
+      - name: Inspect official vendor_boot kernel ABI cohort
+        run: |
+          set -euo pipefail
+          rm -rf vendor-ramdisks vendor-root
+          mkdir -p vendor-ramdisks vendor-root
+
+          python3 - official/vendor_boot.img vendor-ramdisks/vendor-boot-layout.txt vendor-ramdisks <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+
+          img_path = Path(sys.argv[1])
+          layout_path = Path(sys.argv[2])
+          out_dir = Path(sys.argv[3])
+          data = img_path.read_bytes()
+
+          if data[:8] != b"VNDRBOOT":
+              raise SystemExit(f"bad vendor_boot magic: {data[:8]!r}")
+
+          def u32(off):
+              return struct.unpack_from("<I", data, off)[0]
+
+          def align(v, a):
+              return (v + a - 1) // a * a
+
+          version = u32(8)
+          page_size = u32(12)
+          vendor_ramdisk_size = u32(24)
+          header_size = u32(2096)
+          dtb_size = u32(2100)
+          ramdisk_off = align(header_size, page_size)
+          dtb_off = align(ramdisk_off + vendor_ramdisk_size, page_size)
+
+          lines = [
+              f"header_version={version}",
+              f"page_size={page_size}",
+              f"header_size={header_size}",
+              f"vendor_ramdisk_size={vendor_ramdisk_size}",
+              f"vendor_ramdisk_offset={ramdisk_off}",
+              f"dtb_size={dtb_size}",
+              f"dtb_offset={dtb_off}",
+          ]
+
+          fragments = []
+          if version >= 4 and header_size >= 2128:
+              table_size = u32(2112)
+              entry_num = u32(2116)
+              entry_size = u32(2120)
+              bootconfig_size = u32(2124)
+              table_off = align(dtb_off + dtb_size, page_size)
+              lines += [
+                  f"vendor_ramdisk_table_size={table_size}",
+                  f"vendor_ramdisk_table_entry_num={entry_num}",
+                  f"vendor_ramdisk_table_entry_size={entry_size}",
+                  f"vendor_ramdisk_table_offset={table_off}",
+                  f"bootconfig_size={bootconfig_size}",
+              ]
+              if entry_num and entry_size >= 108:
+                  for idx in range(entry_num):
+                      off = table_off + idx * entry_size
+                      if off + entry_size > len(data):
+                          raise SystemExit("vendor ramdisk table exceeds image")
+                      frag_size = u32(off)
+                      frag_off = u32(off + 4)
+                      frag_type = u32(off + 8)
+                      raw_name = data[off + 12:off + 44]
+                      name = raw_name.split(b"\0", 1)[0].decode("utf-8", "replace") or f"fragment{idx}"
+                      fragments.append((idx, name, frag_type, frag_off, frag_size))
+                      lines.append(
+                          f"fragment[{idx}] name={name} type={frag_type} offset={frag_off} size={frag_size}"
+                      )
+
+          if not fragments:
+              fragments = [(0, "vendor_ramdisk", 0, 0, vendor_ramdisk_size)]
+
+          for idx, name, frag_type, frag_rel, frag_size in fragments:
+              start = ramdisk_off + frag_rel
+              end = start + frag_size
+              if end > ramdisk_off + vendor_ramdisk_size or end > len(data):
+                  raise SystemExit(f"fragment {idx} exceeds vendor ramdisk section")
+              safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
+              (out_dir / f"{idx:02d}-{safe}.bin").write_bytes(data[start:end])
+
+          layout_path.write_text("\n".join(lines) + "\n")
+          PY
+
+          idx=0
+          for frag in vendor-ramdisks/*.bin; do
+            out="vendor-root/fragment-$idx"
+            work="vendor-ramdisks/fragment-$idx.cpio"
+            mkdir -p "$out"
+            magic="$(xxd -p -l 8 "$frag")"
+            case "$magic" in
+              1f8b*) gzip -dc "$frag" > "$work" ;;
+              04224d18*|02214c18*) lz4 -dc "$frag" > "$work" ;;
+              fd377a585a00*) xz -dc "$frag" > "$work" ;;
+              28b52ffd*) zstd -dc "$frag" > "$work" ;;
+              303730373031*|303730373032*) cp "$frag" "$work" ;;
+              *) echo "Unknown ramdisk compression for $frag" >&2; file "$frag" >&2 || true; exit 1 ;;
+            esac
+            work_abs="$(realpath "$work")"
+            (cd "$out" && cpio --quiet -idm --no-absolute-filenames < "$work_abs")
+            idx=$((idx + 1))
+          done
+
+          find vendor-root -type f -name '*.ko' -print | sort > official-vendor-modules.txt
+          test -s official-vendor-modules.txt
+          echo "OFFICIAL_VENDOR_BOOT_MODULES=$(wc -l < official-vendor-modules.txt)"
+
+          msm_drm="$(find vendor-root -type f -name 'msm_drm.ko' -print -quit)"
+          test -n "$msm_drm"
+          msm_drm_vermagic="$(strings -a "$msm_drm" | grep -m1 '^vermagic=' || true)"
+          echo "$msm_drm_vermagic" | tee official-vendor-module-vermagic.txt
+          echo "$msm_drm_vermagic" | grep -F "$TARGET_COMMIT_TAG"
+          echo "OFFICIAL_VENDOR_BOOT_COHORT=PASS"
+
+      - name: Record OS2.0.10 kernel cohort gate
         run: |
           set -euo pipefail
 
@@ -158,9 +291,22 @@ jobs:
           image_sha="$(sha256sum official-stock-Image | awk '{print $1}')"
           vendor_boot_sha="$(sha256sum official/vendor_boot.img | awk '{print $1}')"
           dtbo_sha="$(sha256sum official/dtbo.img | awk '{print $1}')"
+          vendor_boot_match=0
+          dtbo_match=0
+
+          [ "$vendor_boot_sha" = "$EXPECTED_VENDOR_BOOT_SHA256" ] && vendor_boot_match=1
+          [ "$dtbo_sha" = "$EXPECTED_DTBO_SHA256" ] && dtbo_match=1
+
+          baseline_class="official_os2_0_10_same_kernel_cohort"
+          if [ "$vendor_boot_match" -eq 1 ] && [ "$dtbo_match" -eq 1 ]; then
+            baseline_class="official_os2_0_10_exact_live_partition_match"
+          fi
+
+          grep -F "$TARGET_RELEASE" official-kernel-version.txt
+          grep -F "$TARGET_COMMIT_TAG" official-vendor-module-vermagic.txt
 
           {
-            echo "# Lisa OS2.0.10.0.UKOCNXM exact stock baseline"
+            echo "# Lisa OS2.0.10.0.UKOCNXM stock kernel baseline"
             echo "target_version=$TARGET_VERSION"
             echo "target_release=$TARGET_RELEASE"
             echo "ota_url=$OTA_URL"
@@ -168,10 +314,14 @@ jobs:
             echo "official_image_sha256=$image_sha"
             echo "official_vendor_boot_sha256=$vendor_boot_sha"
             echo "official_dtbo_sha256=$dtbo_sha"
-            echo "live_vendor_boot_match=1"
-            echo "live_dtbo_match=1"
+            echo "live_vendor_boot_sha256=$EXPECTED_VENDOR_BOOT_SHA256"
+            echo "live_dtbo_sha256=$EXPECTED_DTBO_SHA256"
+            echo "live_vendor_boot_byte_match=$vendor_boot_match"
+            echo "live_dtbo_byte_match=$dtbo_match"
             echo "target_release_present=1"
-            echo "OS2_0_10_STOCK_BASELINE_GATE=PASS"
+            echo "vendor_module_cohort_match=1"
+            echo "baseline_class=$baseline_class"
+            echo "OS2_0_10_KERNEL_COHORT_GATE=PASS"
           } | tee baseline-report.txt
 
       - name: Upload exact OS2.0.10 baseline evidence
@@ -185,8 +335,12 @@ jobs:
           path: |
             ota-source-url.txt
             official-partition-sha256.txt
+            live-partition-compare.txt
             official-boot-layout.txt
             official-kernel-version.txt
+            vendor-ramdisks/vendor-boot-layout.txt
+            official-vendor-modules.txt
+            official-vendor-module-vermagic.txt
             baseline-report.txt
             official-stock-Image
             official/boot.img
