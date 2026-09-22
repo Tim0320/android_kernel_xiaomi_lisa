@@ -1,0 +1,380 @@
+name: Probe Lisa stock GPU governor initcall model
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-gpu-governor-initcall-ab.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-qgki-gpu-governor-initcall-ab
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      BASELINE_ARTIFACT_ID: "10708331326"
+      DIAG_ARTIFACT_ID: "10697586302"
+
+    steps:
+      - name: Checkout reconstructed source
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install build and kallsyms dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 python3-pip curl unzip git rsync kmod
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git
+          command -v kallsyms-finder
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Download current A baseline and stock diagnosis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BASELINE_ARTIFACT_ID}/zip" \
+            -o baseline.zip
+          mkdir -p baseline
+          unzip -q baseline.zip -d baseline
+          test -s baseline/out/.config
+          test -s baseline/rebuilt.kallsyms
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${DIAG_ARTIFACT_ID}/zip" \
+            -o diag.zip
+          mkdir -p diag
+          unzip -q diag.zip -d diag
+          test -s diag/stock.kallsyms
+
+      - name: Verify A model is manual runtime registration
+        run: |
+          set -euo pipefail
+          grep -Fq 'int devfreq_gpubw_init(void)' drivers/gpu/msm/governor_gpubw_mon.c
+          grep -Fq 'int msm_adreno_tz_init(void)' drivers/gpu/msm/governor_msm_adreno_tz.c
+          grep -Fq 'ret = devfreq_gpubw_init();' drivers/gpu/msm/kgsl_pwrscale.c
+          grep -Fq 'ret = msm_adreno_tz_init();' drivers/gpu/msm/kgsl_pwrscale.c
+          ! grep -Fq 'subsys_initcall(devfreq_gpubw_init);' drivers/gpu/msm/governor_gpubw_mon.c
+          ! grep -Fq 'subsys_initcall(msm_adreno_tz_init);' drivers/gpu/msm/governor_msm_adreno_tz.c
+
+      - name: Apply stock-style B governor lifecycle
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              s = p.read_text()
+              n = s.count(old)
+              if n != 1:
+                  raise SystemExit(f"{path}: expected exactly one match, got {n}")
+              p.write_text(s.replace(old, new, 1))
+
+          replace_once(
+              "drivers/gpu/msm/governor_gpubw_mon.c",
+              """int devfreq_gpubw_init(void)
+          {
+          \treturn devfreq_add_governor(&devfreq_gpubw);
+          }
+
+          void devfreq_gpubw_exit(void)
+          {
+          \tint ret;
+
+          \tret = devfreq_remove_governor(&devfreq_gpubw);
+          \tif (ret)
+          \t\tpr_err("%s: failed remove governor %d\\n", __func__, ret);
+
+          }
+          """,
+              """static int __init devfreq_gpubw_init(void)
+          {
+          \treturn devfreq_add_governor(&devfreq_gpubw);
+          }
+          subsys_initcall(devfreq_gpubw_init);
+
+          static void __exit devfreq_gpubw_exit(void)
+          {
+          \tint ret;
+
+          \tret = devfreq_remove_governor(&devfreq_gpubw);
+          \tif (ret)
+          \t\tpr_err("%s: failed remove governor %d\\n", __func__, ret);
+
+          }
+          module_exit(devfreq_gpubw_exit);
+
+          MODULE_DESCRIPTION("GPU bus bandwidth voting driver. Uses VBIF counters");
+          MODULE_LICENSE("GPL v2");
+          """
+          )
+
+          replace_once(
+              "drivers/gpu/msm/governor_msm_adreno_tz.c",
+              """int msm_adreno_tz_init(void)
+          {
+          \tworkqueue = create_freezable_workqueue("governor_msm_adreno_tz_wq");
+
+          \tif (workqueue == NULL)
+          \t\treturn -ENOMEM;
+
+          \treturn devfreq_add_governor(&msm_adreno_tz);
+          }
+
+          void msm_adreno_tz_exit(void)
+          {
+          \tint ret = devfreq_remove_governor(&msm_adreno_tz);
+
+          \tif (ret)
+          \t\tpr_err(TAG "failed to remove governor %d\\n", ret);
+
+          \tif (workqueue != NULL)
+          \t\tdestroy_workqueue(workqueue);
+          }
+          """,
+              """static int __init msm_adreno_tz_init(void)
+          {
+          \tworkqueue = create_freezable_workqueue("governor_msm_adreno_tz_wq");
+
+          \tif (workqueue == NULL)
+          \t\treturn -ENOMEM;
+
+          \treturn devfreq_add_governor(&msm_adreno_tz);
+          }
+          subsys_initcall(msm_adreno_tz_init);
+
+          static void __exit msm_adreno_tz_exit(void)
+          {
+          \tint ret = devfreq_remove_governor(&msm_adreno_tz);
+
+          \tif (ret)
+          \t\tpr_err(TAG "failed to remove governor %d\\n", ret);
+
+          \tif (workqueue != NULL)
+          \t\tdestroy_workqueue(workqueue);
+          }
+
+          module_exit(msm_adreno_tz_exit);
+
+          MODULE_LICENSE("GPL v2");
+          """
+          )
+
+          p = Path("drivers/gpu/msm/kgsl_pwrscale.c")
+          s = p.read_text()
+
+          changes = [
+              ("\tint i, ret;\n\n\tbus_profile = &pwrscale->bus_profile;",
+               "\tint i;\n\n\tbus_profile = &pwrscale->bus_profile;"),
+              ("""\tret = devfreq_gpubw_init();
+          \tif (ret) {
+          \t\tdev_err(&pdev->dev, "Failed to add busmon governor: %d\\n", ret);
+          \t\tput_device(dev);
+          \t\treturn;
+          \t}
+
+          """, ""),
+              ("""\t\tdevfreq_gpubw_exit();
+          """, ""),
+              ("""\tret = msm_adreno_tz_init();
+          \tif (ret) {
+          \t\tdev_err(device->dev, "Failed to add adreno tz governor: %d\\n", ret);
+          \t\tdevice->pwrscale.enabled = false;
+          \t\treturn ret;
+          \t}
+
+          """, ""),
+              ("""\t\tmsm_adreno_tz_exit();
+          """, ""),
+              ("""\t\tdevfreq_gpubw_exit();
+          """, ""),
+              ("""\tmsm_adreno_tz_exit();
+          """, ""),
+          ]
+          for old, new in changes:
+              if old not in s:
+                  raise SystemExit(f"kgsl_pwrscale.c missing expected block: {old!r}")
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+
+          p = Path("drivers/gpu/msm/kgsl_pwrscale.h")
+          s = p.read_text()
+          old = """int msm_adreno_tz_init(void);
+
+          void msm_adreno_tz_exit(void);
+
+          int devfreq_gpubw_init(void);
+
+          void devfreq_gpubw_exit(void);
+          """
+          if s.count(old) != 1:
+              raise SystemExit("kgsl_pwrscale.h manual governor prototypes not found exactly once")
+          p.write_text(s.replace(old, "", 1))
+          PY
+
+          grep -Fq 'subsys_initcall(devfreq_gpubw_init);' drivers/gpu/msm/governor_gpubw_mon.c
+          grep -Fq 'subsys_initcall(msm_adreno_tz_init);' drivers/gpu/msm/governor_msm_adreno_tz.c
+          ! grep -Eq '(^|[^A-Za-z0-9_])(devfreq_gpubw_init|devfreq_gpubw_exit|msm_adreno_tz_init|msm_adreno_tz_exit)[[:space:]]*\(' drivers/gpu/msm/kgsl_pwrscale.c
+          git diff --check
+          git diff -- drivers/gpu/msm/governor_gpubw_mon.c \
+            drivers/gpu/msm/governor_msm_adreno_tz.c \
+            drivers/gpu/msm/kgsl_pwrscale.c drivers/gpu/msm/kgsl_pwrscale.h \
+            | tee gpu-governor-stock-style.patch
+
+      - name: Build B Image
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          KBUILD_BUILD_USER: builder
+          KBUILD_BUILD_HOST: pangu-build-component-vendor
+        run: |
+          set -euo pipefail
+          rm -rf out
+          mkdir -p out
+          cp baseline/out/.config out/.config
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          grep -Fqx 'CONFIG_QTI_TZ_LOG=y' out/.config
+          grep -Fqx '# CONFIG_DEBUG_FS is not set' out/.config
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- Image 2>&1 | tee gpu-governor-b-build.log
+
+          test -s out/arch/arm64/boot/Image
+          sha256sum out/arch/arm64/boot/Image | tee gpu-governor-b-image-sha256.txt
+
+      - name: Compare A B and stock initcalls
+        run: |
+          set -euo pipefail
+          kallsyms-finder out/arch/arm64/boot/Image > b.kallsyms
+          test -s b.kallsyms
+
+          python3 - <<'PY' | tee gpu-governor-ab-summary.txt
+          from pathlib import Path
+          import re
+
+          line_rx = re.compile(r"^[0-9a-fA-F]+\s+[A-Za-z?]\s+(.+?)\s*$")
+          prefix = re.compile(r"^__initcall_\d+_\d+_")
+
+          def normalize(name):
+              name = prefix.sub("", name)
+              if name.endswith("early"):
+                  name = name[:-5]
+              elif name.endswith("rootfs"):
+                  name = name[:-6]
+              else:
+                  name = re.sub(r"([0-7])s?$", "", name)
+              return re.sub(r"\.\d+$", "", name)
+
+          def initcalls(path):
+              out = set()
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m = line_rx.match(raw)
+                  if not m:
+                      continue
+                  name = m.group(1)
+                  if "__initcall_" in name:
+                      out.add(normalize(name))
+              return out
+
+          stock = initcalls("diag/stock.kallsyms")
+          a = initcalls("baseline/rebuilt.kallsyms")
+          b = initcalls("b.kallsyms")
+
+          targets = {"devfreq_gpubw_init", "msm_adreno_tz_init"}
+          a_missing = sorted(targets - a)
+          b_missing = sorted(targets - b)
+          stock_missing = sorted(targets - stock)
+
+          stock_only_a = sorted(stock - a)
+          stock_only_b = sorted(stock - b)
+          rebuilt_only_b = sorted(b - stock)
+
+          print(f"A_STOCK_ONLY_COUNT={len(stock_only_a)}")
+          print("A_STOCK_ONLY_LIST=" + ",".join(stock_only_a))
+          print(f"B_STOCK_ONLY_COUNT={len(stock_only_b)}")
+          print("B_STOCK_ONLY_LIST=" + ",".join(stock_only_b))
+          print("A_GPU_TARGETS_MISSING=" + ",".join(a_missing))
+          print("B_GPU_TARGETS_MISSING=" + ",".join(b_missing))
+          print("STOCK_GPU_TARGETS_MISSING=" + ",".join(stock_missing))
+          print("B_REBUILT_ONLY_LIST=" + ",".join(rebuilt_only_b))
+
+          Path("normalized-stock-only-b.txt").write_text("\n".join(stock_only_b) + "\n")
+          Path("normalized-rebuilt-only-b.txt").write_text("\n".join(rebuilt_only_b) + "\n")
+
+          if stock_missing:
+              raise SystemExit("stock kallsyms unexpectedly lacks GPU initcall targets")
+          if a_missing != sorted(targets):
+              raise SystemExit("A baseline no longer represents manual runtime registration")
+          if b_missing:
+              raise SystemExit("B did not recover both stock GPU initcall targets")
+          if len(stock_only_b) > len(stock_only_a) - 2:
+              raise SystemExit("B did not reduce stock-only initcall count by at least two")
+          PY
+
+      - name: Upload GPU governor A B probe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-gpu-governor-initcall-ab
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            gpu-governor-stock-style.patch
+            gpu-governor-b-build.log
+            gpu-governor-b-image-sha256.txt
+            gpu-governor-ab-summary.txt
+            normalized-stock-only-b.txt
+            normalized-rebuilt-only-b.txt
+            b.kallsyms
+            out/.config
+            out/arch/arm64/boot/Image
