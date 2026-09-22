@@ -226,12 +226,24 @@ jobs:
           from pathlib import Path
           import re
 
-          prefix = re.compile(r"^__initcall_\\d+_\\d+_")
+          prefix = re.compile(r"^__initcall_\d+_\d+_")
 
           def normalize(name):
               name = prefix.sub("", name)
-              # The trailing initcall level (0..7, optional s) is metadata.
-              return re.sub(r"([0-7])s?$", "", name)
+
+              # initcall metadata is encoded at the end of the symbol:
+              #   0..7, optional 's', or 'early'/'rootfs'.
+              if name.endswith("early"):
+                  name = name[:-5]
+              elif name.endswith("rootfs"):
+                  name = name[:-6]
+              else:
+                  name = re.sub(r"([0-7])s?$", "", name)
+
+              # Clang may append a local numeric clone suffix to a static
+              # function. It is not part of the initcall identity.
+              name = re.sub(r"\.\d+$", "", name)
+              return name
 
           def load(path):
               rows = [x.strip() for x in Path(path).read_text().splitlines() if x.strip()]
@@ -258,6 +270,71 @@ jobs:
           print(f"NORMALIZED_RENAMED_COMMON_INITCALLS={len(renamed_common)}")
           print("NORMALIZED_STOCK_ONLY_LIST=" + ",".join(stock_only))
           print("NORMALIZED_REBUILT_ONLY_LIST=" + ",".join(rebuilt_only))
+          PY
+
+      - name: Classify normalized initcall source providers
+        run: |
+          set -euo pipefail
+
+          if [[ -s normalized-stock-only-initcalls.txt ]]; then
+            git -C reconstructed-src grep -n -F -f ../normalized-stock-only-initcalls.txt -- \
+              '*.c' '*.h' '*.S' '*.s' '*Kconfig*' \
+              > normalized-stock-only-source-hits.txt || true
+          else
+            : > normalized-stock-only-source-hits.txt
+          fi
+
+          if [[ -s normalized-rebuilt-only-initcalls.txt ]]; then
+            git -C reconstructed-src grep -n -F -f ../normalized-rebuilt-only-initcalls.txt -- \
+              '*.c' '*.h' '*.S' '*.s' '*Kconfig*' \
+              > normalized-rebuilt-only-source-hits.txt || true
+          else
+            : > normalized-rebuilt-only-source-hits.txt
+          fi
+
+          python3 - <<'PY' | tee normalized-initcall-source-summary.txt
+          from pathlib import Path
+          import re
+
+          def load_names(path):
+              return {
+                  x.strip() for x in Path(path).read_text(errors="replace").splitlines()
+                  if x.strip()
+              }
+
+          ident = re.compile(r"[A-Za-z_][A-Za-z0-9_.$]*")
+
+          def classify(names_path, hits_path, present_path, absent_path):
+              names = load_names(names_path)
+              found = set()
+              for line in Path(hits_path).read_text(errors="replace").splitlines():
+                  payload = line.split(":", 2)[-1]
+                  found.update(tok for tok in ident.findall(payload) if tok in names)
+              absent = names - found
+              Path(present_path).write_text("\n".join(sorted(found)) + "\n")
+              Path(absent_path).write_text("\n".join(sorted(absent)) + "\n")
+              return names, found, absent
+
+          sn, sf, sa = classify(
+              "normalized-stock-only-initcalls.txt",
+              "normalized-stock-only-source-hits.txt",
+              "normalized-stock-only-present-in-source.txt",
+              "normalized-stock-only-absent-from-source.txt",
+          )
+          rn, rf, ra = classify(
+              "normalized-rebuilt-only-initcalls.txt",
+              "normalized-rebuilt-only-source-hits.txt",
+              "normalized-rebuilt-only-present-in-source.txt",
+              "normalized-rebuilt-only-absent-from-source.txt",
+          )
+
+          print(f"NORMALIZED_STOCK_ONLY_TOTAL={len(sn)}")
+          print(f"NORMALIZED_STOCK_ONLY_PRESENT_IN_SOURCE={len(sf)}")
+          print(f"NORMALIZED_STOCK_ONLY_ABSENT_FROM_SOURCE={len(sa)}")
+          print("NORMALIZED_STOCK_ONLY_ABSENT_LIST=" + ",".join(sorted(sa)))
+          print(f"NORMALIZED_REBUILT_ONLY_TOTAL={len(rn)}")
+          print(f"NORMALIZED_REBUILT_ONLY_PRESENT_IN_SOURCE={len(rf)}")
+          print(f"NORMALIZED_REBUILT_ONLY_ABSENT_FROM_SOURCE={len(ra)}")
           PY
 
       - name: Map stock-only critical symbols back to reconstructed source
@@ -361,3 +438,10 @@ jobs:
             normalized-stock-only-initcalls.txt
             normalized-rebuilt-only-initcalls.txt
             normalized-common-initcalls.txt
+            normalized-stock-only-source-hits.txt
+            normalized-rebuilt-only-source-hits.txt
+            normalized-initcall-source-summary.txt
+            normalized-stock-only-present-in-source.txt
+            normalized-stock-only-absent-from-source.txt
+            normalized-rebuilt-only-present-in-source.txt
+            normalized-rebuilt-only-absent-from-source.txt
