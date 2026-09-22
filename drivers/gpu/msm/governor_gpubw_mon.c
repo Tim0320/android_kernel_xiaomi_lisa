@@ -4,6 +4,7 @@
  */
 
 #include <linux/devfreq.h>
+#include <linux/init.h>
 #include <linux/slab.h>
 
 #include "../../devfreq/governor.h"
@@ -302,17 +303,34 @@ static struct devfreq_governor devfreq_gpubw = {
 	.immutable = 1,
 };
 
+static bool devfreq_gpubw_registered;
+
 int devfreq_gpubw_init(void)
 {
-	return devfreq_add_governor(&devfreq_gpubw);
+	int ret;
+
+	if (devfreq_gpubw_registered)
+		return 0;
+
+	ret = devfreq_add_governor(&devfreq_gpubw);
+	if (!ret)
+		devfreq_gpubw_registered = true;
+
+	return ret;
 }
+subsys_initcall(devfreq_gpubw_init);
 
 void devfreq_gpubw_exit(void)
 {
 	int ret;
 
+	if (!devfreq_gpubw_registered)
+		return;
+
 	ret = devfreq_remove_governor(&devfreq_gpubw);
 	if (ret)
 		pr_err("%s: failed remove governor %d\n", __func__, ret);
+	else
+		devfreq_gpubw_registered = false;
 
 }
