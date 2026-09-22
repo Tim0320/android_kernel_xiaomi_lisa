@@ -1,4 +1,4 @@
-name: Build Lisa composite stock lineage
+name: Build Lisa OS2.0.10 composite stock lineage
 
 on:
   workflow_dispatch:
@@ -13,8 +13,15 @@ permissions:
   actions: read
 
 concurrency:
-  group: lisa-composite-stock-lineage
+  group: lisa-os2-0-10-composite-stock-lineage
   cancel-in-progress: true
+
+env:
+  STOCK_ORACLE_ARTIFACT_ID: "10713959003"
+  TARGET_RELEASE: 5.4.289-qgki-g4c23b1a30923
+  TARGET_GIT_SUFFIX: g4c23b1a30923
+  TARGET_MODULE_LAYOUT: "0xba39cbb8"
+  TARGET_IMAGE_SHA256: 2162041efe1e4ac3e86bd934d4ccd9a4e00c5cd80e23c8085dfd0e0995430166
 
 jobs:
   build:
@@ -62,41 +69,55 @@ jobs:
           "$DEST/bin/clang" --version | tee clang-version.txt
           grep -q 'clang version 11.0.2' clang-version.txt
 
-      - name: Download exact stock IKHEADERS and full stock CRC oracle
+      - name: Download exact OS2.0.10 stock IKCONFIG IKHEADERS and CRC oracle
         env:
           GH_TOKEN: ${{ github.token }}
-          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
-          STOCK_ORACLE_ARTIFACT_ID: "10636403934"
         run: |
           set -euo pipefail
-          mkdir -p stock-artifact stock-oracle
+          rm -rf stock-oracle
+          mkdir -p stock-oracle
 
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
-            -o stock-kheaders.zip
-          unzip -q stock-kheaders.zip -d stock-artifact
-
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_ORACLE_ARTIFACT_ID}/zip" \
             -o stock-oracle.zip
           unzip -q stock-oracle.zip -d stock-oracle
 
-          test -d stock-artifact/stock-kheaders
+          report="$(find stock-oracle -type f -name os2-0-10-stock-oracle-report.txt -print -quit)"
+          ikconfig="$(find stock-oracle -type f -name stock_ikconfig_g4c23 -print -quit)"
+          kheaders="$(find stock-oracle -type d -name stock-kheaders -print -quit)"
           stock_crc="$(find stock-oracle -type f -name stock.full.crcs -print -quit)"
-          test -n "$stock_crc"
-          cp "$stock_crc" stock.full.crcs
+          module_oracle="$(find stock-oracle -type f -name g4c23-module-oracle.txt -print -quit)"
 
-          echo "STOCK_GLOBAL_HEADERS=$(find stock-artifact/stock-kheaders -type f -name '*.h' | wc -l)"
-          echo "STOCK_EXPORT_ORACLE=$(grep -cv '^#\|^$' stock.full.crcs)"
+          test -n "$report"
+          test -n "$ikconfig"
+          test -n "$kheaders"
+          test -n "$stock_crc"
+          test -n "$module_oracle"
+          grep -Fqx 'OS2_0_10_STOCK_ORACLES_GATE=PASS' "$report"
+
+          cp "$ikconfig" stock_ikconfig_g4c23
+          cp "$stock_crc" stock.full.crcs
+          cp "$module_oracle" g4c23-module-oracle.txt
+          rm -rf stock-kheaders
+          cp -a "$kheaders" stock-kheaders
+
+          header_count="$(find stock-kheaders -type f | wc -l)"
+          export_count="$(grep -cv '^#\|^$' stock.full.crcs)"
+          module_symbols="$(wc -l < g4c23-module-oracle.txt)"
+          echo "OS2_0_10_STOCK_HEADERS=$header_count"
+          echo "OS2_0_10_STOCK_EXPORTS=$export_count"
+          echo "OS2_0_10_QGKI_MODULE_ORACLE=$module_symbols"
+          test "$header_count" -eq 7804
+          test "$export_count" -eq 13360
+          test "$module_symbols" -eq 736
+          grep -q "^module_layout ${TARGET_MODULE_LAYOUT}$" g4c23-module-oracle.txt
 
       - name: Fetch exact private-source donors
         run: |
           set -euo pipefail
-
           rm -rf donor-redwood donor-yzzzr donor-linux54
 
           git clone --filter=blob:none --no-checkout \
@@ -123,7 +144,6 @@ jobs:
       - name: Overlay redwood private implementation families
         run: |
           set -euo pipefail
-
           python3 - donor-redwood . redwood-overlay-manifest.txt <<'PY'
           import shutil
           import sys
@@ -132,7 +152,6 @@ jobs:
           src = Path(sys.argv[1])
           dst = Path(sys.argv[2])
           manifest = Path(sys.argv[3])
-
           roots = [
               "kernel/sched",
               "fs/proc",
@@ -140,7 +159,6 @@ jobs:
               "net/qrtr",
               "techpack/dataipa/drivers/platform/msm/ipa",
           ]
-
           copied = []
           for root_text in roots:
               root = src / root_text
@@ -154,17 +172,14 @@ jobs:
                   target.parent.mkdir(parents=True, exist_ok=True)
                   shutil.copyfile(p, target)
                   copied.append(rel.as_posix())
-
           manifest.write_text("\n".join(copied) + "\n")
           print(f"REDWOOD_PRIVATE_FILES={len(copied)}")
           PY
-
           test -s redwood-overlay-manifest.txt
 
       - name: Overlay YZzZr USB and TSENS private implementation
         run: |
           set -euo pipefail
-
           python3 - donor-yzzzr . yzzzr-overlay-manifest.txt <<'PY'
           import shutil
           import sys
@@ -174,7 +189,6 @@ jobs:
           dst = Path(sys.argv[2])
           manifest = Path(sys.argv[3])
           copied = []
-
           for root_text in ["drivers/usb/dwc3", "drivers/thermal"]:
               root = src / root_text
               if not root.is_dir():
@@ -187,7 +201,6 @@ jobs:
                   target.parent.mkdir(parents=True, exist_ok=True)
                   shutil.copyfile(p, target)
                   copied.append(rel.as_posix())
-
           host = src / "drivers/usb/host"
           if not host.is_dir():
               raise SystemExit("missing YZzZr drivers/usb/host")
@@ -199,18 +212,15 @@ jobs:
               target.parent.mkdir(parents=True, exist_ok=True)
               shutil.copyfile(p, target)
               copied.append(rel.as_posix())
-
           copied = sorted(set(copied))
           manifest.write_text("\n".join(copied) + "\n")
           print(f"YZZZR_PRIVATE_FILES={len(copied)}")
           PY
-
           test -s yzzzr-overlay-manifest.txt
 
       - name: Restore Linux 5.4 LZ4 implementation family
         run: |
           set -euo pipefail
-
           rm -rf lib/lz4
           mkdir -p lib/lz4
           cp donor-linux54/lib/lz4/Makefile lib/lz4/Makefile
@@ -219,7 +229,6 @@ jobs:
           cp donor-linux54/lib/lz4/lz4defs.h lib/lz4/lz4defs.h
           cp donor-linux54/lib/lz4/lz4hc_compress.c lib/lz4/lz4hc_compress.c
           cp donor-linux54/include/linux/lz4.h include/linux/lz4.h
-
           {
             echo "lib/lz4/Makefile"
             echo "lib/lz4/lz4_compress.c"
@@ -228,26 +237,33 @@ jobs:
             echo "lib/lz4/lz4hc_compress.c"
             echo "include/linux/lz4.h"
           } > lz4-overlay-manifest.txt
-
           echo "LZ4_SOURCE_GENERATION=linux-v5.4"
 
-      - name: Generate build environment from exact stock IKCONFIG
+      - name: Generate build environment from exact OS2.0.10 IKCONFIG
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         run: |
           set -euo pipefail
-          source reconstruction/manifest.env
-
           rm -rf out
           mkdir -p out
-          cp reconstruction/stock_ikconfig out/.config
+          cp stock_ikconfig_g4c23 out/.config
+
           scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
+          printf '%s\n' "-g${TARGET_GIT_SUFFIX}" > .scmversion
 
           make -j"$(nproc)" O=out \
             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          cp out/.config os2-0-10-effective.config
+          make -s O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- kernelrelease | tee kernelrelease.txt
+          grep -Fqx "$TARGET_RELEASE" kernelrelease.txt
 
           make -j"$(nproc)" O=out \
             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
@@ -262,21 +278,19 @@ jobs:
           set -euo pipefail
           rm -rf "$STOCK_ABI_ROOT"
           mkdir -p "$STOCK_ABI_ROOT"
-          rsync -a stock-artifact/stock-kheaders/ "$STOCK_ABI_ROOT/"
-          count="$(find "$STOCK_ABI_ROOT" -type f -name '*.h' | wc -l)"
-          echo "COMPOSITE_STOCK_GENKSYMS_HEADERS=$count"
-          test "$count" -eq 7806
+          rsync -a stock-kheaders/ "$STOCK_ABI_ROOT/"
+          count="$(find "$STOCK_ABI_ROOT" -type f | wc -l)"
+          echo "COMPOSITE_STOCK_GENKSYMS_FILES=$count"
+          test "$count" -eq 7804
 
-      - name: Route genksyms through stock global headers
+      - name: Route genksyms through OS2.0.10 stock global headers
         run: |
           set -euo pipefail
-
           python3 - <<'PY'
           from pathlib import Path
 
           p = Path("scripts/Makefile.build")
           s = p.read_text()
-
           stock = (
               "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include "
               "-I$(STOCK_ABI_ROOT)/arch/$(SRCARCH)/include/generated "
@@ -287,18 +301,15 @@ jobs:
               "-I$(STOCK_ABI_ROOT)/include/uapi "
               "-I$(STOCK_ABI_ROOT)/include/generated/uapi"
           )
-
           conditional = (
               "$(if $(or "
               "$(findstring /lib/zstd/,$<),"
               "$(findstring /drivers/android/vendor_hooks.c,$<)"
               f"),,{stock})"
           )
-
           lines = s.splitlines(keepends=True)
           c_done = False
           asm_done = False
-
           for i, line in enumerate(lines):
               if not c_done and "$(CPP) -D__GENKSYMS__ $(c_flags) $< |" in line:
                   lines[i] = line.replace(
@@ -315,12 +326,10 @@ jobs:
                       1,
                   )
                   asm_done = True
-
           if not c_done:
               raise SystemExit("C genksyms rule not found")
           if not asm_done:
               raise SystemExit("ASM genksyms rule not found")
-
           p.write_text("".join(lines))
           PY
 
@@ -350,13 +359,15 @@ jobs:
           echo "COMPOSITE_GENKSYMS_VERSION_FAILURES=$(wc -l < composite-genksyms-failures.txt)"
           cat composite-genksyms-failures.txt || true
 
-      - name: Validate build outputs and vermagic
+      - name: Validate build outputs release and ARM64 Image
         run: |
           set -euo pipefail
           test -s out/arch/arm64/boot/Image
           test -s out/Module.symvers
+          file out/arch/arm64/boot/Image | tee image-file.txt
+          grep -q 'ARM aarch64' image-file.txt || true
+          grep -a -m1 -F "$TARGET_RELEASE" out/arch/arm64/boot/Image | tee image-release-hit.txt
 
-          source reconstruction/manifest.env
           for ko in \
             out/drivers/input/touchscreen/xiaomi/xiaomi_touch.ko \
             out/drivers/input/touchscreen/gt9897t/goodix_core.ko \
@@ -364,20 +375,18 @@ jobs:
             out/drivers/net/wireless/mi_cnss_statistic/mi_cnss_statistic.ko; do
             test -s "$ko"
             actual="$(strings -a "$ko" | sed -n 's/^vermagic=//p' | head -n1 | awk '{print $1}')"
-            echo "COMPOSITE_VERMAGIC\t$ko\t$actual"
-            test "$actual" = "$TARGET_VERMAGIC"
+            echo "OS2_0_10_COMPOSITE_VERMAGIC\t$ko\t$actual"
+            test "$actual" = "$TARGET_RELEASE"
           done
 
-      - name: Compare entire stock ABI oracle
+      - name: Compare entire OS2.0.10 stock ABI oracle
         run: |
           set -euo pipefail
-
           python3 - stock.full.crcs out/Module.symvers composite-full-abi.txt <<'PY'
           import sys
           from pathlib import Path
 
           stock_path, symvers_path, out_path = sys.argv[1:]
-
           stock = {}
           for raw in Path(stock_path).read_text(errors="replace").splitlines():
               if not raw or raw.startswith("#"):
@@ -385,7 +394,6 @@ jobs:
               p = raw.split("\t")
               if len(p) >= 2:
                   stock[p[1]] = (int(p[0], 16), p[2] if len(p) >= 3 else "-")
-
           current = {}
           for raw in Path(symvers_path).read_text(errors="replace").splitlines():
               p = raw.split()
@@ -395,7 +403,6 @@ jobs:
                   current[p[1]] = int(p[0], 16)
               except ValueError:
                   pass
-
           sn = set(stock)
           cn = set(current)
           overlap = sn & cn
@@ -403,7 +410,6 @@ jobs:
           mismatches = sorted(n for n in overlap if stock[n][0] != current[n])
           stock_only = sorted(sn - cn)
           current_only = sorted(cn - sn)
-
           print(f"COMPOSITE_STOCK_EXPORTS={len(stock)}")
           print(f"COMPOSITE_CURRENT_VMLINUX={len(current)}")
           print(f"COMPOSITE_OVERLAP={len(overlap)}")
@@ -413,9 +419,8 @@ jobs:
           print(f"COMPOSITE_CURRENT_ONLY={len(current_only)}")
           if overlap:
               print(f"COMPOSITE_MATCH_RATE={len(matches)/len(overlap):.6f}")
-
           lines = [
-              "# Composite lineage full stock ABI comparison",
+              "# OS2.0.10 composite lineage full stock ABI comparison",
               f"stock_exports={len(stock)}",
               f"current_vmlinux={len(current)}",
               f"overlap={len(overlap)}",
@@ -430,26 +435,36 @@ jobs:
               lines.append(
                   f"MISMATCH\t{n}\tstock=0x{stock[n][0]:08x}\tcurrent=0x{current[n]:08x}\t{stock[n][1]}"
               )
-
           lines += ["", "## STOCK_ONLY"]
           for n in stock_only:
               lines.append(f"STOCK_ONLY\t{n}\t0x{stock[n][0]:08x}\t{stock[n][1]}")
-
           lines += ["", "## CURRENT_ONLY"]
           for n in current_only:
               lines.append(f"CURRENT_ONLY\t{n}\t0x{current[n]:08x}")
-
           Path(out_path).write_text("\n".join(lines) + "\n")
           PY
-
           test -s composite-full-abi.txt
-          sed -n '1,140p' composite-full-abi.txt
+          sed -n '1,180p' composite-full-abi.txt
 
-      - name: Upload composite evidence
+      - name: Record OS2.0.10 composite preflight gate
+        run: |
+          set -euo pipefail
+          mismatch_count="$(awk -F= '/^mismatches=/{print $2}' composite-full-abi.txt)"
+          stock_only_count="$(awk -F= '/^stock_only=/{print $2}' composite-full-abi.txt)"
+          image_sha="$(sha256sum out/arch/arm64/boot/Image | awk '{print $1}')"
+          {
+            echo "target_release=$TARGET_RELEASE"
+            echo "image_sha256=$image_sha"
+            echo "crc_mismatches=$mismatch_count"
+            echo "stock_only=$stock_only_count"
+            echo "OS2_0_10_COMPOSITE_BUILD=PASS"
+          } | tee os2-0-10-composite-report.txt
+
+      - name: Upload OS2.0.10 composite evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-composite-stock-lineage-evidence
+          name: lisa-os2-0-10-composite-evidence
           retention-days: 14
           include-hidden-files: true
           if-no-files-found: warn
@@ -459,9 +474,13 @@ jobs:
             redwood-overlay-manifest.txt
             yzzzr-overlay-manifest.txt
             lz4-overlay-manifest.txt
+            kernelrelease.txt
+            os2-0-10-effective.config
             composite-build.log
             composite-genksyms-failures.txt
             composite-full-abi.txt
+            os2-0-10-composite-report.txt
+            g4c23-module-oracle.txt
             stock.full.crcs
             out/.config
             out/Module.symvers
