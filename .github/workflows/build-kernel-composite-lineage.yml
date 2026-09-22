@@ -265,7 +265,7 @@ jobs:
           cp stock_ikconfig_g4c23 out/.config
 
           scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
-          printf '%s\n' "-g${TARGET_GIT_SUFFIX}" > .scmversion
+          printf '%s\n' "-${TARGET_GIT_SUFFIX}" > .scmversion
 
           make -j"$(nproc)" O=out \
             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
