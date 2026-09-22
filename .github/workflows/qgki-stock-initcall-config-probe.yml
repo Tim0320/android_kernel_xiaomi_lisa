@@ -124,6 +124,8 @@ jobs:
           # Stock Lisa has QTI_TZ_LOG=y with DEBUG_FS disabled. The reconstructed
           # QTI_TZ_LOG Kconfig now follows the stock/MIUI lineage and does not force
           # DEBUG_FS, avoiding unrelated KGSL debug-only code.
+          # The gpubw governor source now restores its stock-style subsys initcall
+          # while retaining idempotence for the reconstructed KGSL manual call path.
           # MILLET_BINDER consumes query_binder_app_stat() and
           # oem_register_binder_hook(), both provided by binder_gki.c in this
           # QGKI source tree, so enable its provider as a built-in as well.
@@ -215,6 +217,7 @@ jobs:
           rebuilt_only = sorted(rebuilt - stock)
 
           targets = {
+              "devfreq_gpubw_init",
               "init_millet_binder_drv",
               "millet_hs_init",
               "millet_init",
