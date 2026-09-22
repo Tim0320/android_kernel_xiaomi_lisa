@@ -3,6 +3,7 @@
  * Copyright (c) 2010-2020, The Linux Foundation. All rights reserved.
  */
 #include <linux/errno.h>
+#include <linux/init.h>
 #include <linux/devfreq.h>
 #include <linux/dma-mapping.h>
 #include <linux/math64.h>
@@ -654,23 +655,47 @@ static struct devfreq_governor msm_adreno_tz = {
 	.event_handler = tz_handler,
 };
 
+static bool msm_adreno_tz_registered;
+
 int msm_adreno_tz_init(void)
 {
-	workqueue = create_freezable_workqueue("governor_msm_adreno_tz_wq");
+	int ret;
 
+	if (msm_adreno_tz_registered)
+		return 0;
+
+	workqueue = create_freezable_workqueue("governor_msm_adreno_tz_wq");
 	if (workqueue == NULL)
 		return -ENOMEM;
 
-	return devfreq_add_governor(&msm_adreno_tz);
+	ret = devfreq_add_governor(&msm_adreno_tz);
+	if (ret) {
+		destroy_workqueue(workqueue);
+		workqueue = NULL;
+		return ret;
+	}
+
+	msm_adreno_tz_registered = true;
+	return 0;
 }
+subsys_initcall(msm_adreno_tz_init);
 
 void msm_adreno_tz_exit(void)
 {
-	int ret = devfreq_remove_governor(&msm_adreno_tz);
+	int ret;
 
-	if (ret)
+	if (!msm_adreno_tz_registered)
+		return;
+
+	ret = devfreq_remove_governor(&msm_adreno_tz);
+	if (ret) {
 		pr_err(TAG "failed to remove governor %d\n", ret);
+		return;
+	}
 
-	if (workqueue != NULL)
+	msm_adreno_tz_registered = false;
+	if (workqueue != NULL) {
 		destroy_workqueue(workqueue);
+		workqueue = NULL;
+	}
 }
