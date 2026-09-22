@@ -15,7 +15,7 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 40
     env:
       COMPAT_ARTIFACT_ID: "10675087797"
       STOCK_BOOT: stock-main/reconstruction/stock/stock-Image/boot.img
@@ -219,6 +219,47 @@ jobs:
 
           cat early-symbol-summary.txt
 
+      - name: Normalize initcall identities
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee normalized-initcall-summary.txt
+          from pathlib import Path
+          import re
+
+          prefix = re.compile(r"^__initcall_\\d+_\\d+_")
+
+          def normalize(name):
+              name = prefix.sub("", name)
+              # The trailing initcall level (0..7, optional s) is metadata.
+              return re.sub(r"([0-7])s?$", "", name)
+
+          def load(path):
+              rows = [x.strip() for x in Path(path).read_text().splitlines() if x.strip()]
+              return {normalize(x): x for x in rows}
+
+          stock = load("stock-only-initcalls.txt")
+          rebuilt = load("rebuilt-only-initcalls.txt")
+          stock_only = sorted(set(stock) - set(rebuilt))
+          rebuilt_only = sorted(set(rebuilt) - set(stock))
+          renamed_common = sorted(set(stock) & set(rebuilt))
+
+          Path("normalized-stock-only-initcalls.txt").write_text(
+              "\n".join(stock_only) + "\n"
+          )
+          Path("normalized-rebuilt-only-initcalls.txt").write_text(
+              "\n".join(rebuilt_only) + "\n"
+          )
+          Path("normalized-common-initcalls.txt").write_text(
+              "\n".join(renamed_common) + "\n"
+          )
+
+          print(f"NORMALIZED_STOCK_ONLY_INITCALLS={len(stock_only)}")
+          print(f"NORMALIZED_REBUILT_ONLY_INITCALLS={len(rebuilt_only)}")
+          print(f"NORMALIZED_RENAMED_COMMON_INITCALLS={len(renamed_common)}")
+          print("NORMALIZED_STOCK_ONLY_LIST=" + ",".join(stock_only))
+          print("NORMALIZED_REBUILT_ONLY_LIST=" + ",".join(rebuilt_only))
+          PY
+
       - name: Map stock-only critical symbols back to reconstructed source
         run: |
           set -euo pipefail
@@ -234,21 +275,23 @@ jobs:
           from pathlib import Path
           import re
 
-          syms = [
+          syms = {
               x.strip() for x in Path("critical-stock-only-symbols.txt")
               .read_text(errors="replace").splitlines() if x.strip()
-          ]
+          }
           hits = Path("stock-only-symbol-source-hits.txt").read_text(
               errors="replace"
           ).splitlines()
 
+          # Avoid O(symbols * matching-lines). Extract identifier tokens from
+          # each matched source line once, then intersect with the symbol set.
           found = set()
+          ident = re.compile(r"[A-Za-z_][A-Za-z0-9_.$]*")
           for line in hits:
-              for sym in syms:
-                  if re.search(r"(?<![A-Za-z0-9_])" + re.escape(sym) + r"(?![A-Za-z0-9_])", line):
-                      found.add(sym)
+              payload = line.split(":", 2)[-1]
+              found.update(tok for tok in ident.findall(payload) if tok in syms)
 
-          missing = sorted(set(syms) - found)
+          missing = sorted(syms - found)
           print(f"CRITICAL_STOCK_ONLY_TOTAL={len(syms)}")
           print(f"CRITICAL_STOCK_ONLY_PRESENT_IN_SOURCE={len(found)}")
           print(f"CRITICAL_STOCK_ONLY_ABSENT_FROM_SOURCE={len(missing)}")
@@ -314,3 +357,7 @@ jobs:
             critical-stock-only-absent-from-source.txt
             source-map-summary.txt
             high-priority-missing.txt
+            normalized-initcall-summary.txt
+            normalized-stock-only-initcalls.txt
+            normalized-rebuilt-only-initcalls.txt
+            normalized-common-initcalls.txt
