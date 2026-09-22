@@ -1,0 +1,194 @@
+name: Fetch exact Lisa OS2.0.10 stock baseline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/fetch-lisa-os2-0-10-baseline.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-os2-0-10-stock-baseline
+  cancel-in-progress: true
+
+jobs:
+  baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    env:
+      TARGET_VERSION: OS2.0.10.0.UKOCNXM
+      TARGET_RELEASE: 5.4.289-qgki-g4c23b1a30923
+      OTA_URL: https://bigota.d.miui.com/OS2.0.10.0.UKOCNXM/lisa-ota_full-OS2.0.10.0.UKOCNXM-user-14.0-698602d09c.zip
+      EXPECTED_VENDOR_BOOT_SHA256: 6d2c626cc325058ba4c6f16a8f4043978404dfb5ce2f420d770f53d1f5d089f2
+      EXPECTED_DTBO_SHA256: 423828174f86a7aab8823fc1cf5347e9cc97f0f41c246c489bdf5793d79a922e
+
+    steps:
+      - name: Checkout reconstruction metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - name: Install inspection tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y file binutils git python3
+
+      - name: Build pinned URL-aware payload dumper
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/xishang0128/payload-dumper-go.git /tmp/payload-dumper-go
+          cd /tmp/payload-dumper-go
+          git checkout --detach 4cc6ef94039470d659e4199c67f76d8962280023
+          go build -trimpath -o "$GITHUB_WORKSPACE/payload-dumper" ./cmd/payload-dumper
+          "$GITHUB_WORKSPACE/payload-dumper" --help | sed -n '1,120p'
+
+      - name: Extract boot-chain partitions from exact official recovery OTA
+        run: |
+          set -euo pipefail
+          rm -rf official
+          mkdir -p official
+          printf '%s\n' "$OTA_URL" | tee ota-source-url.txt
+
+          ./payload-dumper extract "$OTA_URL" \
+            -p boot,vendor_boot,dtbo,vbmeta,vbmeta_system \
+            -o official \
+            --http-workers 4 \
+            --part-size 8M
+
+          for part in boot vendor_boot dtbo vbmeta vbmeta_system; do
+            test -s "official/$part.img"
+          done
+
+          ls -lh official
+          sha256sum official/*.img | sort | tee official-partition-sha256.txt
+
+      - name: Hard-match live OS2.0.10 vendor_boot and dtbo
+        run: |
+          set -euo pipefail
+
+          vendor_boot_sha="$(sha256sum official/vendor_boot.img | awk '{print $1}')"
+          dtbo_sha="$(sha256sum official/dtbo.img | awk '{print $1}')"
+
+          echo "OFFICIAL_VENDOR_BOOT_SHA256=$vendor_boot_sha"
+          echo "LIVE_VENDOR_BOOT_SHA256=$EXPECTED_VENDOR_BOOT_SHA256"
+          echo "OFFICIAL_DTBO_SHA256=$dtbo_sha"
+          echo "LIVE_DTBO_A_SHA256=$EXPECTED_DTBO_SHA256"
+
+          test "$vendor_boot_sha" = "$EXPECTED_VENDOR_BOOT_SHA256"
+          test "$dtbo_sha" = "$EXPECTED_DTBO_SHA256"
+
+          echo "LIVE_FIRMWARE_PARTITION_MATCH=PASS"
+
+      - name: Extract and identify exact stock kernel
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          import hashlib
+          import struct
+          from pathlib import Path
+
+          boot = Path("official/boot.img").read_bytes()
+          if boot[:8] != b"ANDROID!":
+              raise SystemExit("official boot.img has invalid Android boot magic")
+
+          kernel_size = struct.unpack_from("<I", boot, 8)[0]
+          ramdisk_size = struct.unpack_from("<I", boot, 12)[0]
+          os_version = struct.unpack_from("<I", boot, 16)[0]
+          header_size = struct.unpack_from("<I", boot, 20)[0]
+          header_version = struct.unpack_from("<I", boot, 40)[0]
+
+          if header_version != 3:
+              raise SystemExit(f"expected boot header v3, got {header_version}")
+          if not (0 < header_size <= 4096):
+              raise SystemExit(f"invalid header size {header_size}")
+
+          page = 4096
+          kernel = boot[page:page + kernel_size]
+          if len(kernel) != kernel_size:
+              raise SystemExit("kernel payload truncated")
+          if len(kernel) < 0x40 or struct.unpack_from("<I", kernel, 0x38)[0] != 0x644D5241:
+              raise SystemExit("kernel payload is not an ARM64 Image")
+
+          release = b"5.4.289-qgki-g4c23b1a30923"
+          if release not in kernel:
+              raise SystemExit("official OS2.0.10 boot does not contain expected g4c23 QGKI release")
+
+          Path("official-stock-Image").write_bytes(kernel)
+          Path("official-boot-layout.txt").write_text(
+              "\n".join([
+                  f"boot_header_version={header_version}",
+                  f"boot_header_size={header_size}",
+                  f"boot_os_version_raw=0x{os_version:08x}",
+                  f"kernel_bytes={kernel_size}",
+                  f"ramdisk_bytes={ramdisk_size}",
+                  f"kernel_sha256={hashlib.sha256(kernel).hexdigest()}",
+                  "arm64_image_magic=PASS",
+                  "target_release=5.4.289-qgki-g4c23b1a30923",
+                  "target_release_present=PASS",
+              ]) + "\n"
+          )
+          PY
+
+          file official-stock-Image
+          cat official-boot-layout.txt
+          strings -a official-stock-Image | grep -m1 '^Linux version ' | tee official-kernel-version.txt
+          grep -F "$TARGET_RELEASE" official-kernel-version.txt
+
+      - name: Record exact baseline gate
+        run: |
+          set -euo pipefail
+
+          boot_sha="$(sha256sum official/boot.img | awk '{print $1}')"
+          image_sha="$(sha256sum official-stock-Image | awk '{print $1}')"
+          vendor_boot_sha="$(sha256sum official/vendor_boot.img | awk '{print $1}')"
+          dtbo_sha="$(sha256sum official/dtbo.img | awk '{print $1}')"
+
+          {
+            echo "# Lisa OS2.0.10.0.UKOCNXM exact stock baseline"
+            echo "target_version=$TARGET_VERSION"
+            echo "target_release=$TARGET_RELEASE"
+            echo "ota_url=$OTA_URL"
+            echo "official_boot_sha256=$boot_sha"
+            echo "official_image_sha256=$image_sha"
+            echo "official_vendor_boot_sha256=$vendor_boot_sha"
+            echo "official_dtbo_sha256=$dtbo_sha"
+            echo "live_vendor_boot_match=1"
+            echo "live_dtbo_match=1"
+            echo "target_release_present=1"
+            echo "OS2_0_10_STOCK_BASELINE_GATE=PASS"
+          } | tee baseline-report.txt
+
+      - name: Upload exact OS2.0.10 baseline evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-os2-0-10-stock-baseline
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: warn
+          path: |
+            ota-source-url.txt
+            official-partition-sha256.txt
+            official-boot-layout.txt
+            official-kernel-version.txt
+            baseline-report.txt
+            official-stock-Image
+            official/boot.img
+            official/vendor_boot.img
+            official/dtbo.img
+            official/vbmeta.img
+            official/vbmeta_system.img
