@@ -177,6 +177,9 @@ jobs:
           companion_files = [
               "include/trace/events/sched.h",
           ]
+          excluded_files = {
+              "kernel/sched/psi.c",
+          }
           copied = []
           for root_text in roots:
               root = src / root_text
@@ -186,6 +189,8 @@ jobs:
                   if not p.is_file() or p.suffix not in {".c", ".h"}:
                       continue
                   rel = p.relative_to(src)
+                  if rel.as_posix() in excluded_files:
+                      continue
                   target = dst / rel
                   target.parent.mkdir(parents=True, exist_ok=True)
                   shutil.copyfile(p, target)
@@ -205,12 +210,17 @@ jobs:
           test -s redwood-overlay-manifest.txt
           grep -Fqx 'include/trace/events/sched.h' redwood-overlay-manifest.txt
           grep -q '^struct proc_ops {' include/linux/proc_fs.h
+          grep -q '^static const struct proc_ops psi_io_proc_ops = {' kernel/sched/psi.c
           if grep -q '^fs/proc/' redwood-overlay-manifest.txt; then
             echo 'legacy redwood fs/proc must not override reconstructed proc_ops generation' >&2
             exit 1
           fi
           if grep -Fqx 'include/linux/proc_fs.h' redwood-overlay-manifest.txt; then
             echo 'legacy redwood proc_fs.h must not override reconstructed proc_ops generation' >&2
+            exit 1
+          fi
+          if grep -Fqx 'kernel/sched/psi.c' redwood-overlay-manifest.txt; then
+            echo 'legacy redwood PSI implementation must not override reconstructed proc_ops PSI generation' >&2
             exit 1
           fi
 
