@@ -322,49 +322,46 @@ jobs:
               raise SystemExit("mtdoops max_reason anchor not found")
           s = s.replace(old, new, 1)
 
-          old = """	if (reason != KMSG_DUMP_OOPS) {
-		/* Panics must be written immediately */
-		mtdoops_write(cxt, 1);
-	} else {
-		/* For other cases, schedule work to write it "nicely" */
-		schedule_work(&cxt->work_write);
-	}
-"""
-          new = """	if (reason == KMSG_DUMP_PANIC) {
-		/* Keep the upstream panic path unchanged. */
-		mtdoops_write(cxt, 1);
-	} else if (reason == KMSG_DUMP_OOPS) {
-		/* Oopses may use the normal deferred write path. */
-		schedule_work(&cxt->work_write);
-	} else {
-		/*
-		 * Lisa stock logging preserves Restart/PowerOff records in the
-		 * 16 MiB oops partition. These paths are non-panic shutdown paths,
-		 * so write synchronously and flush the backing block device before
-		 * firmware removes power.
-		 */
-		mtdoops_write(cxt, 0);
-		mtd_sync(cxt->mtd);
-	}
-"""
+          old = (
+              "\tif (reason != KMSG_DUMP_OOPS) {\n"
+              "\t\t/* Panics must be written immediately */\n"
+              "\t\tmtdoops_write(cxt, 1);\n"
+              "\t} else {\n"
+              "\t\t/* For other cases, schedule work to write it \"nicely\" */\n"
+              "\t\tschedule_work(&cxt->work_write);\n"
+              "\t}\n"
+          )
+          new = (
+              "\tif (reason == KMSG_DUMP_PANIC) {\n"
+              "\t\t/* Keep the upstream panic path unchanged. */\n"
+              "\t\tmtdoops_write(cxt, 1);\n"
+              "\t} else if (reason == KMSG_DUMP_OOPS) {\n"
+              "\t\t/* Oopses may use the normal deferred write path. */\n"
+              "\t\tschedule_work(&cxt->work_write);\n"
+              "\t} else {\n"
+              "\t\t/* Persist orderly restart/halt/poweroff before power loss. */\n"
+              "\t\tmtdoops_write(cxt, 0);\n"
+              "\t\tmtd_sync(cxt->mtd);\n"
+              "\t}\n"
+          )
           if old not in s:
               raise SystemExit("mtdoops dump-path anchor not found")
           s = s.replace(old, new, 1)
 
-          old = """	find_next_position(cxt);
-	printk(KERN_INFO "mtdoops: Attached to MTD device %d\\n", mtd->index);
-"""
-          new = """	find_next_position(cxt);
-	/*
-	 * The stock oops ring can already be full. Ensure the next erase
-	 * requested by find_next_position() completes before reporting the
-	 * logger ready, so an early shutdown has a writable slot.
-	 */
-	flush_work(&cxt->work_erase);
-	printk(KERN_INFO "mtdoops: Lisa diagnostic logger ready, pages=%d record=%lu\\n",
-	       cxt->oops_pages, record_size);
-	printk(KERN_INFO "mtdoops: Attached to MTD device %d\\n", mtd->index);
-"""
+          old = (
+              "\tfind_next_position(cxt);\n"
+              "\tprintk(KERN_INFO \"mtdoops: Attached to MTD device %d\\\\n\", "
+              "mtd->index);\n"
+          )
+          new = (
+              "\tfind_next_position(cxt);\n"
+              "\t/* Ensure a full historical ring has a writable slot. */\n"
+              "\tflush_work(&cxt->work_erase);\n"
+              "\tprintk(KERN_INFO \"mtdoops: Lisa diagnostic logger ready, "
+              "pages=%d record=%lu\\\\n\", cxt->oops_pages, record_size);\n"
+              "\tprintk(KERN_INFO \"mtdoops: Attached to MTD device %d\\\\n\", "
+              "mtd->index);\n"
+          )
           if old not in s:
               raise SystemExit("mtdoops attach anchor not found")
           s = s.replace(old, new, 1)
