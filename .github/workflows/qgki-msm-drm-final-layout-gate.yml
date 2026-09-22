@@ -59,9 +59,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
           RUNTIME_RISK_ARTIFACT_ID: "10653896443"
+          COMPAT_ARTIFACT_ID: "10675087797"
         run: |
           set -euo pipefail
-          mkdir -p stock-artifact risk-artifact
+          mkdir -p stock-artifact risk-artifact compat-artifact
 
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
@@ -81,6 +82,27 @@ jobs:
           dis="$(find risk-artifact -type f -name disassembly.txt -print -quit)"
           test -n "$dis"
           cp "$dis" stock-msm-drm-disassembly.txt
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${COMPAT_ARTIFACT_ID}/zip" \
+            -o compat-artifact.zip
+          unzip -q compat-artifact.zip -d compat-artifact
+
+          compat_patch="$(find compat-artifact -type f -name qgki-six-compat.patch -print -quit)"
+          test -n "$compat_patch"
+          test -s "$compat_patch"
+          cp "$compat_patch" qgki-six-compat.patch
+
+      - name: Apply validated runtime compatibility patch
+        run: |
+          set -euo pipefail
+          git apply --check qgki-six-compat.patch
+          git apply qgki-six-compat.patch
+          git diff --check
+          grep -q 'ANDROID_VENDOR_DATA(1)' include/linux/rwsem.h
+          echo "FINAL_GATE_RUNTIME_COMPAT_PATCH=PASS"
 
       - name: Generate current exact-config headers
         env:
