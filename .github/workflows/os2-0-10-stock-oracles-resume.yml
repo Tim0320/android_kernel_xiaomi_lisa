@@ -1,0 +1,358 @@
+name: Resume exact Lisa OS2.0.10 stock kernel oracles
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/os2-0-10-stock-oracles-resume.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-os2-0-10-stock-oracles-resume
+  cancel-in-progress: true
+
+jobs:
+  resume-oracles:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+
+    env:
+      BASELINE_ARTIFACT_ID: "10714705159"
+      PRIOR_ORACLE_ARTIFACT_ID: "10714541492"
+      TARGET_RELEASE: "5.4.289-qgki-g4c23b1a30923"
+      TARGET_MODULE_LAYOUT: "0xba39cbb8"
+      TARGET_IMAGE_SHA256: "2162041efe1e4ac3e86bd934d4ccd9a4e00c5cd80e23c8085dfd0e0995430166"
+
+    steps:
+      - name: Checkout oracle tools
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Install oracle dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            python3-pip python3-pyelftools cpio lz4 zstd xz-utils gzip unzip file
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+
+      - name: Restore verified image and previous successful oracle evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf baseline-artifact prior-oracle
+          mkdir -p baseline-artifact prior-oracle
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BASELINE_ARTIFACT_ID}/zip" \
+            -o baseline.zip
+          unzip -q baseline.zip -d baseline-artifact
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${PRIOR_ORACLE_ARTIFACT_ID}/zip" \
+            -o prior-oracle.zip
+          unzip -q prior-oracle.zip -d prior-oracle
+
+          image="$(find baseline-artifact -type f -name official-stock-Image -print -quit)"
+          vendor_boot="$(find baseline-artifact -type f -path '*/official/vendor_boot.img' -print -quit)"
+          test -n "$image"
+          test -n "$vendor_boot"
+          cp "$image" stock-Image
+          cp "$vendor_boot" stock-vendor_boot.img
+
+          cp -a prior-oracle/. .
+          test -s stock.kallsyms
+          test -s stock-kheaders.tar.xz
+          test -s stock_ikconfig_g4c23
+
+          image_sha="$(sha256sum stock-Image | awk '{print $1}')"
+          echo "OS2_0_10_IMAGE_SHA256=$image_sha"
+          test "$image_sha" = "$TARGET_IMAGE_SHA256"
+
+      - name: Re-extract official vendor_boot modules
+        run: |
+          set -euo pipefail
+          rm -rf vendor-ramdisks vendor-root
+          mkdir -p vendor-ramdisks vendor-root
+
+          python3 - stock-vendor_boot.img vendor-ramdisks/vendor-boot-layout.txt vendor-ramdisks <<'PY'
+          import struct
+          import sys
+          from pathlib import Path
+
+          data = Path(sys.argv[1]).read_bytes()
+          layout_path = Path(sys.argv[2])
+          out_dir = Path(sys.argv[3])
+          if data[:8] != b"VNDRBOOT":
+              raise SystemExit(f"bad vendor_boot magic: {data[:8]!r}")
+
+          def u32(off):
+              return struct.unpack_from("<I", data, off)[0]
+
+          def align(v, a):
+              return (v + a - 1) // a * a
+
+          version = u32(8)
+          page_size = u32(12)
+          vendor_ramdisk_size = u32(24)
+          header_size = u32(2096)
+          dtb_size = u32(2100)
+          ramdisk_off = align(header_size, page_size)
+          dtb_off = align(ramdisk_off + vendor_ramdisk_size, page_size)
+
+          lines = [
+              f"header_version={version}",
+              f"page_size={page_size}",
+              f"header_size={header_size}",
+              f"vendor_ramdisk_size={vendor_ramdisk_size}",
+              f"vendor_ramdisk_offset={ramdisk_off}",
+              f"dtb_size={dtb_size}",
+              f"dtb_offset={dtb_off}",
+          ]
+
+          fragments = []
+          if version >= 4 and header_size >= 2128:
+              table_size = u32(2112)
+              entry_num = u32(2116)
+              entry_size = u32(2120)
+              bootconfig_size = u32(2124)
+              table_off = align(dtb_off + dtb_size, page_size)
+              lines += [
+                  f"vendor_ramdisk_table_size={table_size}",
+                  f"vendor_ramdisk_table_entry_num={entry_num}",
+                  f"vendor_ramdisk_table_entry_size={entry_size}",
+                  f"vendor_ramdisk_table_offset={table_off}",
+                  f"bootconfig_size={bootconfig_size}",
+              ]
+              if entry_num and entry_size >= 108:
+                  for idx in range(entry_num):
+                      off = table_off + idx * entry_size
+                      if off + entry_size > len(data):
+                          raise SystemExit("vendor ramdisk table exceeds image")
+                      frag_size = u32(off)
+                      frag_off = u32(off + 4)
+                      frag_type = u32(off + 8)
+                      raw_name = data[off + 12:off + 44]
+                      name = raw_name.split(b"\0", 1)[0].decode("utf-8", "replace") or f"fragment{idx}"
+                      fragments.append((idx, name, frag_type, frag_off, frag_size))
+                      lines.append(
+                          f"fragment[{idx}] name={name} type={frag_type} offset={frag_off} size={frag_size}"
+                      )
+
+          if not fragments:
+              fragments = [(0, "vendor_ramdisk", 0, 0, vendor_ramdisk_size)]
+
+          for idx, name, frag_type, frag_rel, frag_size in fragments:
+              start = ramdisk_off + frag_rel
+              end = start + frag_size
+              if end > ramdisk_off + vendor_ramdisk_size or end > len(data):
+                  raise SystemExit(f"fragment {idx} exceeds vendor ramdisk section")
+              safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
+              (out_dir / f"{idx:02d}-{safe}.bin").write_bytes(data[start:end])
+
+          layout_path.write_text("\n".join(lines) + "\n")
+          PY
+
+          idx=0
+          for frag in vendor-ramdisks/*.bin; do
+            out="vendor-root/fragment-$idx"
+            work="vendor-ramdisks/fragment-$idx.cpio"
+            mkdir -p "$out"
+            magic="$(xxd -p -l 8 "$frag")"
+            case "$magic" in
+              1f8b*) gzip -dc "$frag" > "$work" ;;
+              04224d18*|02214c18*) lz4 -dc "$frag" > "$work" ;;
+              fd377a585a00*) xz -dc "$frag" > "$work" ;;
+              28b52ffd*) zstd -dc "$frag" > "$work" ;;
+              303730373031*|303730373032*) cp "$frag" "$work" ;;
+              *) echo "Unknown ramdisk compression for $frag" >&2; file "$frag" >&2 || true; exit 1 ;;
+            esac
+            work_abs="$(realpath "$work")"
+            (cd "$out" && cpio --quiet -idm --no-absolute-filenames < "$work_abs")
+            idx=$((idx + 1))
+          done
+
+          find vendor-root -type f -name '*.ko' -print | sort > stock-vendor-modules.txt
+          echo "STOCK_VENDOR_BOOT_MODULES=$(wc -l < stock-vendor-modules.txt)"
+          test "$(wc -l < stock-vendor-modules.txt)" -eq 46
+
+      - name: Build exact target QGKI module CRC oracle
+        run: |
+          set -euo pipefail
+          python3 - stock-vendor-modules.txt g4c23-module-oracle.txt g4c23-module-summary.tsv g4c23-module-cohorts.tsv "$TARGET_RELEASE" "$TARGET_MODULE_LAYOUT" <<'PY'
+          import collections
+          import sys
+          from pathlib import Path
+          from elftools.elf.elffile import ELFFile
+
+          module_list = Path(sys.argv[1])
+          oracle_out = Path(sys.argv[2])
+          summary_out = Path(sys.argv[3])
+          cohorts_out = Path(sys.argv[4])
+          target_release = sys.argv[5]
+          target_layout = int(sys.argv[6], 0)
+
+          modules = [Path(x) for x in module_list.read_text().splitlines() if x.strip()]
+          oracle = {}
+          owners = {}
+          summaries = []
+          cohorts = collections.Counter()
+          selected = 0
+
+          for path in modules:
+              vermagic = "-"
+              entries = []
+              with path.open("rb") as f:
+                  elf = ELFFile(f)
+                  modinfo = elf.get_section_by_name(".modinfo")
+                  if modinfo is not None:
+                      for field in modinfo.data().split(b"\0"):
+                          if field.startswith(b"vermagic="):
+                              vermagic = field.split(b"=", 1)[1].decode("utf-8", "replace")
+                              break
+                  sec = elf.get_section_by_name("__versions")
+                  if sec is not None:
+                      data = sec.data()
+                      if len(data) % 64:
+                          raise SystemExit(f"bad __versions size for {path}: {len(data)}")
+                      for off in range(0, len(data), 64):
+                          chunk = data[off:off + 64]
+                          crc = int.from_bytes(chunk[:8], "little") & 0xffffffff
+                          name = chunk[8:].split(b"\0", 1)[0].decode("ascii", "replace")
+                          if name:
+                              entries.append((name, crc))
+
+              layout = next((crc for name, crc in entries if name == "module_layout"), None)
+              layout_text = "MISSING" if layout is None else f"0x{layout:08x}"
+              cohorts[(vermagic, layout_text)] += 1
+              is_target = vermagic.startswith(target_release + " ") and layout == target_layout
+              summaries.append((str(path), vermagic, layout_text, len(entries), int(is_target)))
+              if not is_target:
+                  continue
+
+              selected += 1
+              for name, crc in entries:
+                  if name in oracle and oracle[name] != crc:
+                      raise SystemExit(
+                          f"target-cohort CRC conflict for {name}: "
+                          f"0x{oracle[name]:08x} from {owners[name]} vs 0x{crc:08x} from {path}"
+                      )
+                  oracle[name] = crc
+                  owners[name] = str(path)
+
+          if selected < 1:
+              raise SystemExit("no vendor_boot modules matched exact QGKI target cohort")
+          if len(oracle) < 500:
+              raise SystemExit(f"target QGKI module oracle unexpectedly small: {len(oracle)}")
+          if oracle.get("module_layout") != target_layout:
+              raise SystemExit(
+                  f"target module_layout mismatch: {oracle.get('module_layout')!r} expected=0x{target_layout:08x}"
+              )
+
+          oracle_out.write_text(
+              "\n".join(f"{name} 0x{oracle[name]:08x}" for name in sorted(oracle)) + "\n"
+          )
+          summary_out.write_text(
+              "path\tvermagic\tmodule_layout\tversion_entries\tselected\n" +
+              "\n".join(f"{p}\t{v}\t{layout}\t{n}\t{sel}" for p, v, layout, n, sel in summaries) + "\n"
+          )
+          cohorts_out.write_text(
+              "modules\tmodule_layout\tvermagic\n" +
+              "\n".join(
+                  f"{count}\t{layout}\t{vermagic}"
+                  for (vermagic, layout), count in sorted(cohorts.items(), key=lambda x: (-x[1], x[0]))
+              ) + "\n"
+          )
+
+          print(f"G4C23_VENDOR_BOOT_MODULES={len(modules)}")
+          print(f"G4C23_TARGET_QGKI_MODULES={selected}")
+          print(f"G4C23_TARGET_ORACLE_SYMBOLS={len(oracle)}")
+          for (vermagic, layout), count in sorted(cohorts.items(), key=lambda x: (-x[1], x[0])):
+              print(f"G4C23_ABI_COHORT modules={count} module_layout={layout} vermagic={vermagic}")
+          PY
+
+          grep -F "$TARGET_RELEASE" g4c23-module-summary.tsv | head -n 30
+          grep -F "$TARGET_MODULE_LAYOUT" g4c23-module-cohorts.tsv
+          grep -q "^module_layout ${TARGET_MODULE_LAYOUT}$" g4c23-module-oracle.txt
+
+      - name: Recover complete g4c23 stock exported-symbol CRC oracle
+        run: |
+          set -euo pipefail
+          python3 scripts/extract_stock_kcrc.py \
+            --image stock-Image \
+            --kallsyms stock.kallsyms \
+            --oracle g4c23-module-oracle.txt \
+            --output stock.image.crcs \
+            --full-output stock.full.crcs
+
+          test -s stock.image.crcs
+          test -s stock.full.crcs
+          full_count="$(grep -cv '^#\|^$' stock.full.crcs)"
+          echo "G4C23_FULL_STOCK_EXPORTS=$full_count"
+          test "$full_count" -gt 10000
+          grep -E '^score=|^direct_score=|^relative_score=' stock.image.crcs
+
+      - name: Record corrected OS2.0.10 stock oracle gate
+        run: |
+          set -euo pipefail
+          image_sha="$(sha256sum stock-Image | awk '{print $1}')"
+          kheaders_sha="$(sha256sum stock-kheaders.tar.xz | awk '{print $1}')"
+          ikconfig_sha="$(sha256sum stock_ikconfig_g4c23 | awk '{print $1}')"
+          header_count="$(wc -l < stock-kheaders-files.txt)"
+          module_symbols="$(wc -l < g4c23-module-oracle.txt)"
+          selected_modules="$(awk -F '\t' 'NR>1 && $5==1 {n++} END {print n+0}' g4c23-module-summary.tsv)"
+          full_exports="$(grep -cv '^#\|^$' stock.full.crcs)"
+
+          {
+            echo "# Lisa OS2.0.10.0.UKOCNXM exact stock kernel oracles"
+            echo "target_release=$TARGET_RELEASE"
+            echo "target_module_layout=$TARGET_MODULE_LAYOUT"
+            echo "image_sha256=$image_sha"
+            echo "kheaders_archive_sha256=$kheaders_sha"
+            echo "ikconfig_sha256=$ikconfig_sha"
+            echo "kheaders_file_count=$header_count"
+            echo "target_qgki_modules=$selected_modules"
+            echo "module_oracle_symbols=$module_symbols"
+            echo "full_stock_exports=$full_exports"
+            echo "OS2_0_10_STOCK_ORACLES_GATE=PASS"
+          } | tee os2-0-10-stock-oracle-report.txt
+
+      - name: Upload corrected OS2.0.10 stock oracle evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-os2-0-10-stock-oracles-corrected
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: warn
+          path: |
+            stock-kernel-version.txt
+            stock.kallsyms
+            stock-kheaders.tar.xz
+            stock-kheaders/
+            stock-kheaders-files.txt
+            stock_ikconfig_g4c23
+            stock-ikconfig-sha256.txt
+            vendor-ramdisks/vendor-boot-layout.txt
+            stock-vendor-modules.txt
+            g4c23-module-summary.tsv
+            g4c23-module-cohorts.tsv
+            g4c23-module-oracle.txt
+            stock.image.crcs
+            stock.full.crcs
+            os2-0-10-stock-oracle-report.txt
