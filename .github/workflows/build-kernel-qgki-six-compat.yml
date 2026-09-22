@@ -348,19 +348,13 @@ jobs:
               raise SystemExit("mtdoops dump-path anchor not found")
           s = s.replace(old, new, 1)
 
-          old = (
-              "\tfind_next_position(cxt);\n"
-              "\tprintk(KERN_INFO \"mtdoops: Attached to MTD device %d\\\\n\", "
-              "mtd->index);\n"
-          )
+          old = "\tfind_next_position(cxt);\n"
           new = (
               "\tfind_next_position(cxt);\n"
               "\t/* Ensure a full historical ring has a writable slot. */\n"
               "\tflush_work(&cxt->work_erase);\n"
               "\tprintk(KERN_INFO \"mtdoops: Lisa diagnostic logger ready, "
-              "pages=%d record=%lu\\\\n\", cxt->oops_pages, record_size);\n"
-              "\tprintk(KERN_INFO \"mtdoops: Attached to MTD device %d\\\\n\", "
-              "mtd->index);\n"
+              "pages=%d record=%lu\\n\", cxt->oops_pages, record_size);\n"
           )
           if old not in s:
               raise SystemExit("mtdoops attach anchor not found")
