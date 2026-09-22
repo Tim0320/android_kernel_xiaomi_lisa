@@ -88,6 +88,28 @@ jobs:
           test -s diag/stock.kallsyms
           test -s diag/normalized-stock-only-initcalls.txt
 
+      - name: Map remaining stock-only initcall providers
+        run: |
+          set -euo pipefail
+          symbols=(
+            alarm_record_init cpufreq_times_init devfreq_gpubw_init dp_flag_init
+            game_load_init migt_init migt_sched_init msm_adreno_tz_init pkg_init
+            pm_debug_init tz_log_driver_init uevent_record_init
+          )
+          : > remaining-stock-initcall-source-map.txt
+          for sym in "${symbols[@]}"; do
+            echo "### ${sym}" | tee -a remaining-stock-initcall-source-map.txt
+            hits="$(git grep -n -F "${sym}" -- '*.c' '*.h' '*.S' '*Kconfig*' '*Makefile*' || true)"
+            if [[ -n "${hits}" ]]; then
+              printf '%s\n' "${hits}" | tee -a remaining-stock-initcall-source-map.txt
+            else
+              stem="${sym%_init}"
+              echo "EXACT_SYMBOL_ABSENT; fallback stem=${stem}" | tee -a remaining-stock-initcall-source-map.txt
+              git grep -n -F "${stem}" -- '*.c' '*.h' '*.S' '*Kconfig*' '*Makefile*' \
+                | head -n 80 | tee -a remaining-stock-initcall-source-map.txt || true
+            fi
+          done
+
       - name: Enable stock-proven Xiaomi built-in initcall providers
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -103,6 +125,7 @@ jobs:
           # oem_register_binder_hook(), both provided by binder_gki.c in this
           # QGKI source tree, so enable its provider as a built-in as well.
           scripts/config --file out/.config --enable PERF_HELPER
+          scripts/config --file out/.config --enable QTI_TZ_LOG
           scripts/config --file out/.config --enable MILLET_CORE
           scripts/config --file out/.config --enable MILLET_BINDER_GKI
           scripts/config --file out/.config --enable MILLET_BINDER
@@ -117,7 +140,7 @@ jobs:
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
 
-          for sym in PERF_HELPER MILLET_CORE MILLET_BINDER_GKI MILLET_BINDER MILLET_PKG MILLET_HS MILLET_SIG MILLET_CGROUP; do
+          for sym in PERF_HELPER QTI_TZ_LOG MILLET_CORE MILLET_BINDER_GKI MILLET_BINDER MILLET_PKG MILLET_HS MILLET_SIG MILLET_CGROUP; do
             grep -Fqx "CONFIG_${sym}=y" out/.config || {
               echo "CONFIG_${sym} did not survive olddefconfig" >&2
               grep -E "^(# )?CONFIG_${sym}" out/.config || true
@@ -189,6 +212,7 @@ jobs:
               "oem_cgrp_init",
               "perf_helper_init",
               "sig_mod_init",
+              "tz_log_driver_init",
           }
           missing_targets = sorted(targets - rebuilt)
 
@@ -214,6 +238,7 @@ jobs:
           if-no-files-found: warn
           path: |
             enabled-stock-initcall-configs.txt
+            remaining-stock-initcall-source-map.txt
             stock-initcall-config-build.log
             rebuilt-image-sha256.txt
             normalized-initcall-probe-summary.txt
