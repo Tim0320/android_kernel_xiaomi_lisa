@@ -1,0 +1,308 @@
+name: Diagnose Lisa stock vs rebuilt early boot symbols
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-early-symbol-diff.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      COMPAT_ARTIFACT_ID: "10675087797"
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+
+    steps:
+      - name: Checkout reconstructed source and stock images
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          lfs: true
+          fetch-depth: 1
+
+      - name: Install symbol recovery tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip binutils
+          python3 -m pip install --break-system-packages git+https://github.com/marin-m/vmlinux-to-elf.git
+          command -v kallsyms-finder
+
+      - name: Download validated 0364806 Image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p compat-artifact
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${COMPAT_ARTIFACT_ID}/zip" \
+            -o compat.zip
+          unzip -q compat.zip -d compat-artifact
+
+          rebuilt="$(find compat-artifact -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
+          if [[ -z "$rebuilt" ]]; then
+            rebuilt="$(find compat-artifact -type f -name Image -print -quit)"
+          fi
+          test -n "$rebuilt"
+          test -s "$rebuilt"
+          cp "$rebuilt" rebuilt-Image
+          echo "REBUILT_IMAGE_BYTES=$(stat -c '%s' rebuilt-Image)"
+          sha256sum rebuilt-Image
+
+      - name: Extract stock Image
+        run: |
+          set -euo pipefail
+          test -s "$STOCK_BOOT"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+
+          data = Path("reconstruction/stock/stock-Image/boot.img").read_bytes()
+          if data[:8] != b"ANDROID!":
+              raise SystemExit("stock boot magic invalid")
+          kernel_size = struct.unpack_from("<I", data, 8)[0]
+          header_version = struct.unpack_from("<I", data, 40)[0]
+          page = 4096 if header_version >= 3 else struct.unpack_from("<I", data, 36)[0]
+          image = data[page:page + kernel_size]
+          if len(image) != kernel_size:
+              raise SystemExit("stock Image truncated")
+          Path("stock-Image").write_bytes(image)
+          print(f"STOCK_IMAGE_BYTES={len(image)}")
+          PY
+          sha256sum stock-Image
+
+      - name: Recover kallsyms from stock and rebuilt Image
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder rebuilt-Image > rebuilt.kallsyms
+          test -s stock.kallsyms
+          test -s rebuilt.kallsyms
+          echo "STOCK_KALLSYMS_LINES=$(wc -l < stock.kallsyms)"
+          echo "REBUILT_KALLSYMS_LINES=$(wc -l < rebuilt.kallsyms)"
+
+      - name: Compare early boot symbols and initcalls
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee early-symbol-summary.txt
+          from pathlib import Path
+          import re
+
+          line_rx = re.compile(r"^[0-9a-fA-F]+\s+([A-Za-z?])\s+(.+?)\s*$")
+
+          def parse(path):
+              names = []
+              types = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m = line_rx.match(raw)
+                  if not m:
+                      continue
+                  typ, name = m.groups()
+                  names.append(name)
+                  types[name] = typ
+              return set(names), types
+
+          stock, stock_types = parse("stock.kallsyms")
+          rebuilt, rebuilt_types = parse("rebuilt.kallsyms")
+
+          stock_only = stock - rebuilt
+          rebuilt_only = rebuilt - stock
+          common = stock & rebuilt
+
+          groups = {
+              "ufs": r"(?:^|_)(ufs|ufshcd|ufshci|ufs_qcom|ufsgki|scsi)(?:_|$)",
+              "storage_fs": r"(?:^|_)(f2fs|erofs|ext4|dm_|blk_|bio|mmc)(?:_|$)",
+              "qcom_clock_power": r"(?:^|_)(rpmh|rpm|regulator|clk|clock|gdsc|corner|opp|spm|cpufreq)(?:_|$)",
+              "qcom_soc": r"(?:^|_)(qcom|msm|sm7325|yupik|socinfo|subsys|pil|qsee|scm)(?:_|$)",
+              "pinctrl_gpio": r"(?:^|_)(pinctrl|tlmm|gpio)(?:_|$)",
+              "iommu_memory": r"(?:^|_)(iommu|smmu|dma|reserved_mem|memblock)(?:_|$)",
+              "irq_timer": r"(?:^|_)(irq|gic|timer|arch_timer|watchdog|wdog)(?:_|$)",
+              "thermal_power": r"(?:^|_)(thermal|battery|charger|bq2597|power_supply|pmic|pon)(?:_|$)",
+              "android_boot": r"(?:^|_)(binder|selinux|avc|init|uevent|ramoops|pstore)(?:_|$)",
+              "display": r"(?:^|_)(drm|dsi|mdss|msm_drm|panel)(?:_|$)",
+          }
+
+          def matches(rx, names):
+              p = re.compile(rx, re.I)
+              return sorted(n for n in names if p.search(n))
+
+          print(f"STOCK_SYMBOLS={len(stock)}")
+          print(f"REBUILT_SYMBOLS={len(rebuilt)}")
+          print(f"COMMON_SYMBOLS={len(common)}")
+          print(f"STOCK_ONLY_SYMBOLS={len(stock_only)}")
+          print(f"REBUILT_ONLY_SYMBOLS={len(rebuilt_only)}")
+
+          stock_init = sorted(n for n in stock if "__initcall_" in n)
+          rebuilt_init = sorted(n for n in rebuilt if "__initcall_" in n)
+          stock_init_only = sorted(set(stock_init) - set(rebuilt_init))
+          rebuilt_init_only = sorted(set(rebuilt_init) - set(stock_init))
+
+          print(f"STOCK_INITCALL_SYMBOLS={len(stock_init)}")
+          print(f"REBUILT_INITCALL_SYMBOLS={len(rebuilt_init)}")
+          print(f"STOCK_ONLY_INITCALLS={len(stock_init_only)}")
+          print(f"REBUILT_ONLY_INITCALLS={len(rebuilt_init_only)}")
+
+          report = [
+              "# Lisa stock vs rebuilt early boot symbol comparison",
+              f"stock_symbols={len(stock)}",
+              f"rebuilt_symbols={len(rebuilt)}",
+              f"common_symbols={len(common)}",
+              f"stock_only_symbols={len(stock_only)}",
+              f"rebuilt_only_symbols={len(rebuilt_only)}",
+              f"stock_initcalls={len(stock_init)}",
+              f"rebuilt_initcalls={len(rebuilt_init)}",
+              f"stock_only_initcalls={len(stock_init_only)}",
+              f"rebuilt_only_initcalls={len(rebuilt_init_only)}",
+              "",
+          ]
+
+          Path("stock-only-initcalls.txt").write_text("\n".join(stock_init_only) + "\n")
+          Path("rebuilt-only-initcalls.txt").write_text("\n".join(rebuilt_init_only) + "\n")
+
+          critical_stock_only = set()
+          critical_rebuilt_only = set()
+
+          for group, rx in groups.items():
+              so = matches(rx, stock_only)
+              ro = matches(rx, rebuilt_only)
+              critical_stock_only.update(so)
+              critical_rebuilt_only.update(ro)
+              print(f"GROUP={group} STOCK_ONLY={len(so)} REBUILT_ONLY={len(ro)}")
+              report += [
+                  f"## {group}",
+                  f"stock_only={len(so)}",
+                  f"rebuilt_only={len(ro)}",
+                  "### stock only",
+                  *so[:500],
+                  "### rebuilt only",
+                  *ro[:500],
+                  "",
+              ]
+
+          # Stock-only initcalls are especially valuable: they are direct evidence
+          # that the stock kernel registered an initialization path that the
+          # reconstructed kernel does not expose under the same symbol name.
+          report += ["## Stock-only initcalls"]
+          report += stock_init_only[:2000]
+          report += ["", "## Rebuilt-only initcalls"]
+          report += rebuilt_init_only[:2000]
+
+          Path("critical-stock-only-symbols.txt").write_text(
+              "\n".join(sorted(critical_stock_only)) + "\n"
+          )
+          Path("critical-rebuilt-only-symbols.txt").write_text(
+              "\n".join(sorted(critical_rebuilt_only)) + "\n"
+          )
+          Path("early-symbol-diff.txt").write_text("\n".join(report) + "\n")
+
+          print(f"CRITICAL_STOCK_ONLY_SYMBOLS={len(critical_stock_only)}")
+          print(f"CRITICAL_REBUILT_ONLY_SYMBOLS={len(critical_rebuilt_only)}")
+          PY
+
+          cat early-symbol-summary.txt
+
+      - name: Map stock-only critical symbols back to reconstructed source
+        run: |
+          set -euo pipefail
+          if [[ -s critical-stock-only-symbols.txt ]]; then
+            git grep -n -F -f critical-stock-only-symbols.txt -- \
+              '*.c' '*.h' '*.S' '*.s' '*.Kconfig' '*Kconfig*' \
+              > stock-only-symbol-source-hits.txt || true
+          else
+            : > stock-only-symbol-source-hits.txt
+          fi
+
+          python3 - <<'PY' | tee source-map-summary.txt
+          from pathlib import Path
+          import re
+
+          syms = [
+              x.strip() for x in Path("critical-stock-only-symbols.txt")
+              .read_text(errors="replace").splitlines() if x.strip()
+          ]
+          hits = Path("stock-only-symbol-source-hits.txt").read_text(
+              errors="replace"
+          ).splitlines()
+
+          found = set()
+          for line in hits:
+              for sym in syms:
+                  if re.search(r"(?<![A-Za-z0-9_])" + re.escape(sym) + r"(?![A-Za-z0-9_])", line):
+                      found.add(sym)
+
+          missing = sorted(set(syms) - found)
+          print(f"CRITICAL_STOCK_ONLY_TOTAL={len(syms)}")
+          print(f"CRITICAL_STOCK_ONLY_PRESENT_IN_SOURCE={len(found)}")
+          print(f"CRITICAL_STOCK_ONLY_ABSENT_FROM_SOURCE={len(missing)}")
+          Path("critical-stock-only-absent-from-source.txt").write_text(
+              "\n".join(missing) + "\n"
+          )
+          PY
+
+      - name: Extract highest priority missing init paths
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee high-priority-missing.txt
+          from pathlib import Path
+          import re
+
+          priority = re.compile(
+              r"(ufs|ufshcd|scsi|rpmh|regulator|clk|gdsc|pinctrl|tlmm|"
+              r"iommu|smmu|watchdog|wdog|thermal|power_supply|battery|"
+              r"qcom|msm|sm7325|yupik|ramoops|pstore|f2fs|erofs)",
+              re.I,
+          )
+
+          absent = set(
+              x.strip() for x in
+              Path("critical-stock-only-absent-from-source.txt")
+              .read_text(errors="replace").splitlines()
+              if x.strip()
+          )
+          init_only = [
+              x.strip() for x in Path("stock-only-initcalls.txt")
+              .read_text(errors="replace").splitlines()
+              if x.strip()
+          ]
+
+          init_critical = sorted(x for x in init_only if priority.search(x))
+          absent_critical = sorted(x for x in absent if priority.search(x))
+
+          print(f"HIGH_PRIORITY_STOCK_ONLY_INITCALLS={len(init_critical)}")
+          for x in init_critical[:300]:
+              print("INITCALL " + x)
+          print(f"HIGH_PRIORITY_SYMBOLS_ABSENT_FROM_SOURCE={len(absent_critical)}")
+          for x in absent_critical[:300]:
+              print("ABSENT " + x)
+          PY
+
+      - name: Upload early boot symbol diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-early-symbol-diff
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            stock.kallsyms
+            rebuilt.kallsyms
+            early-symbol-summary.txt
+            early-symbol-diff.txt
+            stock-only-initcalls.txt
+            rebuilt-only-initcalls.txt
+            critical-stock-only-symbols.txt
+            critical-rebuilt-only-symbols.txt
+            stock-only-symbol-source-hits.txt
+            critical-stock-only-absent-from-source.txt
+            source-map-summary.txt
+            high-priority-missing.txt
