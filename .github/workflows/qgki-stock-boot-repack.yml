@@ -22,8 +22,8 @@ jobs:
     timeout-minutes: 35
 
     env:
-      COMPAT_ARTIFACT_ID: "10655132626"
-      LAYOUT_ARTIFACT_ID: "10670397957"
+      COMPAT_ARTIFACT_ID: "10675087797"
+      LAYOUT_ARTIFACT_ID: "10675328820"
       STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
       STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
       STOCK_BOOT_BYTES: "201326592"
