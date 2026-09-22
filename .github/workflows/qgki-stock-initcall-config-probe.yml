@@ -218,6 +218,7 @@ jobs:
 
           targets = {
               "devfreq_gpubw_init",
+              "msm_adreno_tz_init",
               "init_millet_binder_drv",
               "millet_hs_init",
               "millet_init",
