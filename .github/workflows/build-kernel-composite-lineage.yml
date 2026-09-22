@@ -175,6 +175,10 @@ jobs:
               "net/qrtr",
               "techpack/dataipa/drivers/platform/msm/ipa",
           ]
+          companion_files = [
+              "include/trace/events/sched.h",
+              "include/linux/proc_fs.h",
+          ]
           copied = []
           for root_text in roots:
               root = src / root_text
@@ -188,10 +192,21 @@ jobs:
                   target.parent.mkdir(parents=True, exist_ok=True)
                   shutil.copyfile(p, target)
                   copied.append(rel.as_posix())
+          for rel_text in companion_files:
+              p = src / rel_text
+              if not p.is_file():
+                  raise SystemExit(f"missing redwood companion header: {rel_text}")
+              target = dst / rel_text
+              target.parent.mkdir(parents=True, exist_ok=True)
+              shutil.copyfile(p, target)
+              copied.append(rel_text)
+          copied = sorted(set(copied))
           manifest.write_text("\n".join(copied) + "\n")
           print(f"REDWOOD_PRIVATE_FILES={len(copied)}")
           PY
           test -s redwood-overlay-manifest.txt
+          grep -Fqx 'include/trace/events/sched.h' redwood-overlay-manifest.txt
+          grep -Fqx 'include/linux/proc_fs.h' redwood-overlay-manifest.txt
 
       - name: Overlay YZzZr USB and TSENS private implementation
         run: |
