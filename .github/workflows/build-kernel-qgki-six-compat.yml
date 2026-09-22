@@ -337,7 +337,18 @@ jobs:
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
 
           grep -E '^(# )?CONFIG_(ARM64_USE_LSE_ATOMICS|COMPAT_VDSO|RELR|QCOM_WATCHDOG_BARK_TIME|QCOM_WATCHDOG_PET_TIME)' out/.config || true
-          grep -q '^# CONFIG_ARM64_USE_LSE_ATOMICS is not set
+          grep -q '^# CONFIG_ARM64_USE_LSE_ATOMICS is not set$' out/.config
+          grep -q '^# CONFIG_COMPAT_VDSO is not set$' out/.config
+          grep -q '^# CONFIG_RELR is not set$' out/.config
+          grep -q '^CONFIG_QCOM_WATCHDOG_BARK_TIME=20000$' out/.config
+          grep -q '^CONFIG_QCOM_WATCHDOG_PET_TIME=15000$' out/.config
+          echo "EARLY_BOOT_RUNTIME_CONFIG_ALIGNMENT=PASS"
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- prepare scripts
 
       - name: Stage complete stock global genksyms headers
         env:
