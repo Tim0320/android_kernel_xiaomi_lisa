@@ -170,14 +170,12 @@ jobs:
           manifest = Path(sys.argv[3])
           roots = [
               "kernel/sched",
-              "fs/proc",
               "drivers/gpu/msm",
               "net/qrtr",
               "techpack/dataipa/drivers/platform/msm/ipa",
           ]
           companion_files = [
               "include/trace/events/sched.h",
-              "include/linux/proc_fs.h",
           ]
           copied = []
           for root_text in roots:
@@ -206,7 +204,15 @@ jobs:
           PY
           test -s redwood-overlay-manifest.txt
           grep -Fqx 'include/trace/events/sched.h' redwood-overlay-manifest.txt
-          grep -Fqx 'include/linux/proc_fs.h' redwood-overlay-manifest.txt
+          grep -q '^struct proc_ops {' include/linux/proc_fs.h
+          if grep -q '^fs/proc/' redwood-overlay-manifest.txt; then
+            echo 'legacy redwood fs/proc must not override reconstructed proc_ops generation' >&2
+            exit 1
+          fi
+          if grep -Fqx 'include/linux/proc_fs.h' redwood-overlay-manifest.txt; then
+            echo 'legacy redwood proc_fs.h must not override reconstructed proc_ops generation' >&2
+            exit 1
+          fi
 
       - name: Overlay YZzZr USB and TSENS private implementation
         run: |
