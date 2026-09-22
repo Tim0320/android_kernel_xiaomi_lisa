@@ -1,0 +1,60 @@
+# Lisa live-device OS2.0.10.0 baseline evidence
+
+Captured from the user's latest TWRP dump and latest ramoops after the failed rebuilt boot.
+
+## Active device firmware
+
+- active_slot=_a
+- vendor_incremental=OS2.0.10.0.UKOCNXM
+- vendor_security_patch=2025-06-01
+- expected_stock_qgki_release=5.4.289-qgki-g4c23b1a30923
+
+## Live partition hashes
+
+- boot_a_sha256=585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063
+- vendor_boot_a_sha256=6d2c626cc325058ba4c6f16a8f4043978404dfb5ce2f420d770f53d1f5d089f2
+- dtbo_a_sha256=423828174f86a7aab8823fc1cf5347e9cc97f0f41c246c489bdf5793d79a922e
+- latest_ramoops_sha256=20ea94097f1ac7f7b946f6c36ccef5c8daedee212944e33b0725673660399754
+
+boot_a currently contains the reconstructed test kernel, not the stock OS2.0.10 kernel:
+- rebuilt_image_sha256=492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+- rebuilt_release=5.4.289-qgki-g5987d69e25da
+
+The ramdisk inside this boot_a is from OS2.0.16.0.UKOCNXM, while the mounted vendor/vendor_boot are OS2.0.10.0.UKOCNXM. Therefore the previous repack baseline is not valid for the currently installed firmware.
+
+## Exact OS2.0.10 vendor_boot ABI evidence
+
+vendor_boot_a contains 46 early-boot modules.
+
+proxy-consumer.ko:
+- vermagic=5.4.289-g4c23b1a30923 SMP preempt mod_unload modversions aarch64
+- module_layout_crc=0x1e5b7ab7
+
+msm_drm.ko:
+- vermagic=5.4.289-qgki-g4c23b1a30923 SMP preempt mod_unload modversions aarch64
+- module_layout_crc=0xba39cbb8
+- version_entries=736
+
+The wider mounted vendor module set also belongs to g4c23b1a30923 cohorts, not g5987d69e25da.
+
+## Latest failed boot sequence
+
+The latest ramoops includes the rebuilt g5987d69e25da boot and reaches Android first-stage init. It is not an immediate boot-header or ARM64 Image rejection.
+
+Relevant sequence:
+- logical partition system_a is created as dm-3
+- logical partitions for the inactive _b slot are skipped because they have zero length
+- first-stage init then queries system_b
+- DM_DEV_STATUS for system_b fails
+- /system mount fails
+- InitFatalReboot is issued
+
+The same log also reports that /proc/bootconfig is absent.
+
+The proxy-consumer.ko module_layout warning is not by itself the fatal blocker: historical stock g4c23b1a30923 sessions in the same persistent log show the same warning and continue booting.
+
+## Reconstruction rule
+
+Do not produce another flash candidate from the OS2.0.16 g598 baseline for this device.
+
+First recover and verify the exact OS2.0.10.0.UKOCNXM stock boot baseline. The official baseline must match the live OS2.0.10 vendor_boot/dtbo evidence before kernel ABI reconstruction and boot repacking continue.
