@@ -97,10 +97,9 @@ jobs:
           mkdir -p out
           cp baseline/out/.config out/.config
 
-          # Stock Image contains these initcalls, while the validated rebuilt
-          # config currently has their provider configs disabled. Therefore
-          # they must be built-in (y), not modules, for stock parity.
-          scripts/config --file out/.config --enable PERF_HELPER
+          # Isolate the six Millet providers first. PERF_HELPER is intentionally
+          # excluded here because its legacy file_operations procfs ABI must be
+          # tested under the runtime compatibility layer, not the raw tree.
           scripts/config --file out/.config --enable MILLET_CORE
           scripts/config --file out/.config --enable MILLET_BINDER
           scripts/config --file out/.config --enable MILLET_PKG
@@ -114,7 +113,7 @@ jobs:
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
 
-          for sym in PERF_HELPER MILLET_CORE MILLET_BINDER MILLET_PKG MILLET_HS MILLET_SIG MILLET_CGROUP; do
+          for sym in MILLET_CORE MILLET_BINDER MILLET_PKG MILLET_HS MILLET_SIG MILLET_CGROUP; do
             grep -Fqx "CONFIG_${sym}=y" out/.config || {
               echo "CONFIG_${sym} did not survive olddefconfig" >&2
               grep -E "^(# )?CONFIG_${sym}" out/.config || true
@@ -184,7 +183,6 @@ jobs:
               "millet_init",
               "millet_pkg_init",
               "oem_cgrp_init",
-              "perf_helper_init",
               "sig_mod_init",
           }
           missing_targets = sorted(targets - rebuilt)
