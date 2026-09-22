@@ -121,13 +121,14 @@ jobs:
 
           # Recover stock built-in providers that are present in the reconstructed
           # source. PERF_HELPER now uses the tree's backported struct proc_ops ABI.
-          # QTI_TZ_LOG depends on DEBUG_FS in drivers/firmware/qcom/Kconfig, so the
-          # dependency must be enabled explicitly before olddefconfig can retain it.
+          # Stock Lisa has QTI_TZ_LOG=y with DEBUG_FS disabled. The reconstructed
+          # QTI_TZ_LOG Kconfig now follows the stock/MIUI lineage and does not force
+          # DEBUG_FS, avoiding unrelated KGSL debug-only code.
           # MILLET_BINDER consumes query_binder_app_stat() and
           # oem_register_binder_hook(), both provided by binder_gki.c in this
           # QGKI source tree, so enable its provider as a built-in as well.
           scripts/config --file out/.config --enable PERF_HELPER
-          scripts/config --file out/.config --enable DEBUG_FS
+          scripts/config --file out/.config --disable DEBUG_FS
           scripts/config --file out/.config --enable QTI_TZ_LOG
           scripts/config --file out/.config --enable MILLET_CORE
           scripts/config --file out/.config --enable MILLET_BINDER_GKI
@@ -143,7 +144,7 @@ jobs:
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
 
-          for sym in PERF_HELPER DEBUG_FS QTI_TZ_LOG MILLET_CORE MILLET_BINDER_GKI MILLET_BINDER MILLET_PKG MILLET_HS MILLET_SIG MILLET_CGROUP; do
+          for sym in PERF_HELPER QTI_TZ_LOG MILLET_CORE MILLET_BINDER_GKI MILLET_BINDER MILLET_PKG MILLET_HS MILLET_SIG MILLET_CGROUP; do
             grep -Fqx "CONFIG_${sym}=y" out/.config || {
               echo "CONFIG_${sym} did not survive olddefconfig" >&2
               grep -E "^(# )?CONFIG_${sym}" out/.config || true
@@ -151,7 +152,13 @@ jobs:
             }
           done
 
-          grep -E '^(CONFIG_(MIHW|PERF_HELPER|DEBUG_FS|QTI_TZ_LOG|MILLET_))' out/.config | tee enabled-stock-initcall-configs.txt
+          grep -Fqx '# CONFIG_DEBUG_FS is not set' out/.config || {
+            echo "CONFIG_DEBUG_FS unexpectedly enabled" >&2
+            grep -E '^(# )?CONFIG_DEBUG_FS' out/.config || true
+            exit 1
+          }
+
+          grep -E '^(CONFIG_(MIHW|PERF_HELPER|QTI_TZ_LOG|MILLET_)|# CONFIG_DEBUG_FS is not set)' out/.config | tee enabled-stock-initcall-configs.txt
 
       - name: Build Image with stock-proven built-ins
         env:
