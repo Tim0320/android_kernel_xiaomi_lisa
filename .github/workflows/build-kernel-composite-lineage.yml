@@ -174,9 +174,6 @@ jobs:
               "net/qrtr",
               "techpack/dataipa/drivers/platform/msm/ipa",
           ]
-          companion_files = [
-              "include/trace/events/sched.h",
-          ]
           excluded_files = {
               "kernel/sched/psi.c",
           }
@@ -195,20 +192,47 @@ jobs:
                   target.parent.mkdir(parents=True, exist_ok=True)
                   shutil.copyfile(p, target)
                   copied.append(rel.as_posix())
-          for rel_text in companion_files:
-              p = src / rel_text
-              if not p.is_file():
-                  raise SystemExit(f"missing redwood companion header: {rel_text}")
-              target = dst / rel_text
-              target.parent.mkdir(parents=True, exist_ok=True)
-              shutil.copyfile(p, target)
-              copied.append(rel_text)
+
+          # Keep the reconstructed sched trace generation because kernel/kthread.c
+          # requires the kthread-work tracepoints.  Import only the Redwood-only
+          # sched_setaffinity event required by the Redwood scheduler core.
+          sched_rel = Path("include/trace/events/sched.h")
+          redwood_sched_path = src / sched_rel
+          target_sched_path = dst / sched_rel
+          if not redwood_sched_path.is_file():
+              raise SystemExit(f"missing redwood companion header: {sched_rel}")
+          if not target_sched_path.is_file():
+              raise SystemExit(f"missing reconstructed companion header: {sched_rel}")
+
+          redwood_sched = redwood_sched_path.read_text()
+          target_sched = target_sched_path.read_text()
+          marker = "TRACE_EVENT(sched_setaffinity,"
+          if marker not in redwood_sched:
+              raise SystemExit("redwood sched_setaffinity trace event not found")
+          if marker not in target_sched:
+              start = redwood_sched.index(marker)
+              end = redwood_sched.find("\n);\n", start)
+              if end < 0:
+                  raise SystemExit("could not isolate redwood sched_setaffinity trace event")
+              end += len("\n);\n")
+              block = redwood_sched[start:end].rstrip()
+              guard = "#endif /* _TRACE_SCHED_H */"
+              if guard not in target_sched:
+                  raise SystemExit("reconstructed sched trace guard not found")
+              target_sched = target_sched.replace(guard, block + "\n\n" + guard, 1)
+              target_sched_path.write_text(target_sched)
+          copied.append(sched_rel.as_posix())
+
           copied = sorted(set(copied))
           manifest.write_text("\n".join(copied) + "\n")
           print(f"REDWOOD_PRIVATE_FILES={len(copied)}")
           PY
           test -s redwood-overlay-manifest.txt
           grep -Fqx 'include/trace/events/sched.h' redwood-overlay-manifest.txt
+          grep -q 'TRACE_EVENT(sched_setaffinity,' include/trace/events/sched.h
+          grep -q 'sched_kthread_work_queue_work' include/trace/events/sched.h
+          grep -q 'sched_kthread_work_execute_start' include/trace/events/sched.h
+          grep -q 'sched_kthread_work_execute_end' include/trace/events/sched.h
           grep -q '^struct proc_ops {' include/linux/proc_fs.h
           grep -q '^static const struct proc_ops psi_io_proc_ops = {' kernel/sched/psi.c
           if grep -q '^fs/proc/' redwood-overlay-manifest.txt; then
