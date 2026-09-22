@@ -97,12 +97,12 @@ jobs:
           mkdir -p out
           cp baseline/out/.config out/.config
 
-          # Isolate the six Millet providers first. PERF_HELPER is intentionally
-          # excluded here because its legacy file_operations procfs ABI must be
-          # tested under the runtime compatibility layer, not the raw tree.
+          # Recover stock built-in providers that are present in the reconstructed
+          # source. PERF_HELPER now uses the tree's backported struct proc_ops ABI.
           # MILLET_BINDER consumes query_binder_app_stat() and
           # oem_register_binder_hook(), both provided by binder_gki.c in this
           # QGKI source tree, so enable its provider as a built-in as well.
+          scripts/config --file out/.config --enable PERF_HELPER
           scripts/config --file out/.config --enable MILLET_CORE
           scripts/config --file out/.config --enable MILLET_BINDER_GKI
           scripts/config --file out/.config --enable MILLET_BINDER
@@ -117,7 +117,7 @@ jobs:
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
 
-          for sym in MILLET_CORE MILLET_BINDER_GKI MILLET_BINDER MILLET_PKG MILLET_HS MILLET_SIG MILLET_CGROUP; do
+          for sym in PERF_HELPER MILLET_CORE MILLET_BINDER_GKI MILLET_BINDER MILLET_PKG MILLET_HS MILLET_SIG MILLET_CGROUP; do
             grep -Fqx "CONFIG_${sym}=y" out/.config || {
               echo "CONFIG_${sym} did not survive olddefconfig" >&2
               grep -E "^(# )?CONFIG_${sym}" out/.config || true
@@ -187,6 +187,7 @@ jobs:
               "millet_init",
               "millet_pkg_init",
               "oem_cgrp_init",
+              "perf_helper_init",
               "sig_mod_init",
           }
           missing_targets = sorted(targets - rebuilt)
