@@ -1,0 +1,221 @@
+name: Probe Lisa stock-only built-in initcall configs
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-stock-initcall-config-probe.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-qgki-stock-initcall-config-probe
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      COMPAT_ARTIFACT_ID: "10678326339"
+      DIAG_ARTIFACT_ID: "10697586302"
+
+    steps:
+      - name: Checkout reconstructed source
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Install build and kallsyms dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 python3-pip curl unzip git rsync kmod
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git
+          command -v kallsyms-finder
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Download validated baseline config and latest stock symbol diagnosis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${COMPAT_ARTIFACT_ID}/zip" \
+            -o compat.zip
+          mkdir -p baseline
+          unzip -q compat.zip -d baseline
+          test -s baseline/out/.config
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${DIAG_ARTIFACT_ID}/zip" \
+            -o diag.zip
+          mkdir -p diag
+          unzip -q diag.zip -d diag
+          test -s diag/stock.kallsyms
+          test -s diag/normalized-stock-only-initcalls.txt
+
+      - name: Enable stock-proven Xiaomi built-in initcall providers
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          rm -rf out
+          mkdir -p out
+          cp baseline/out/.config out/.config
+
+          # Stock Image contains these initcalls, while the validated rebuilt
+          # config currently has their provider configs disabled. Therefore
+          # they must be built-in (y), not modules, for stock parity.
+          scripts/config --file out/.config --enable PERF_HELPER
+          scripts/config --file out/.config --enable MILLET_CORE
+          scripts/config --file out/.config --enable MILLET_BINDER
+          scripts/config --file out/.config --enable MILLET_PKG
+          scripts/config --file out/.config --enable MILLET_HS
+          scripts/config --file out/.config --enable MILLET_SIG
+          scripts/config --file out/.config --enable MILLET_CGROUP
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          for sym in PERF_HELPER MILLET_CORE MILLET_BINDER MILLET_PKG MILLET_HS MILLET_SIG MILLET_CGROUP; do
+            grep -Fqx "CONFIG_${sym}=y" out/.config || {
+              echo "CONFIG_${sym} did not survive olddefconfig" >&2
+              grep -E "^(# )?CONFIG_${sym}" out/.config || true
+              exit 1
+            }
+          done
+
+          grep -E '^(CONFIG_(MIHW|PERF_HELPER|MILLET_))' out/.config | tee enabled-stock-initcall-configs.txt
+
+      - name: Build Image with stock-proven built-ins
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          KBUILD_BUILD_USER: builder
+          KBUILD_BUILD_HOST: pangu-build-component-vendor
+        run: |
+          set -euo pipefail
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- Image 2>&1 | tee stock-initcall-config-build.log
+          test -s out/arch/arm64/boot/Image
+          sha256sum out/arch/arm64/boot/Image | tee rebuilt-image-sha256.txt
+
+      - name: Compare normalized stock and rebuilt initcalls
+        run: |
+          set -euo pipefail
+          kallsyms-finder out/arch/arm64/boot/Image > rebuilt.kallsyms
+          test -s rebuilt.kallsyms
+
+          python3 - <<'PY' | tee normalized-initcall-probe-summary.txt
+          from pathlib import Path
+          import re
+
+          line_rx = re.compile(r"^[0-9a-fA-F]+\s+[A-Za-z?]\s+(.+?)\s*$")
+          prefix = re.compile(r"^__initcall_\d+_\d+_")
+
+          def normalize(name):
+              name = prefix.sub("", name)
+              if name.endswith("early"):
+                  name = name[:-5]
+              elif name.endswith("rootfs"):
+                  name = name[:-6]
+              else:
+                  name = re.sub(r"([0-7])s?$", "", name)
+              return re.sub(r"\.\d+$", "", name)
+
+          def initcalls(path):
+              out = set()
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m = line_rx.match(raw)
+                  if not m:
+                      continue
+                  name = m.group(1)
+                  if "__initcall_" in name:
+                      out.add(normalize(name))
+              return out
+
+          stock = initcalls("diag/stock.kallsyms")
+          rebuilt = initcalls("rebuilt.kallsyms")
+          stock_only = sorted(stock - rebuilt)
+          rebuilt_only = sorted(rebuilt - stock)
+
+          targets = {
+              "init_millet_binder_drv",
+              "millet_hs_init",
+              "millet_init",
+              "millet_pkg_init",
+              "oem_cgrp_init",
+              "perf_helper_init",
+              "sig_mod_init",
+          }
+          missing_targets = sorted(targets - rebuilt)
+
+          print(f"NORMALIZED_STOCK_INITCALLS={len(stock)}")
+          print(f"NORMALIZED_REBUILT_INITCALLS={len(rebuilt)}")
+          print(f"NORMALIZED_STOCK_ONLY_INITCALLS={len(stock_only)}")
+          print("NORMALIZED_STOCK_ONLY_LIST=" + ",".join(stock_only))
+          print(f"TARGETS_RECOVERED={len(targets) - len(missing_targets)}/{len(targets)}")
+          print("TARGETS_STILL_MISSING=" + ",".join(missing_targets))
+
+          Path("normalized-stock-only-after-config.txt").write_text("\n".join(stock_only) + "\n")
+          Path("normalized-rebuilt-only-after-config.txt").write_text("\n".join(rebuilt_only) + "\n")
+          if missing_targets:
+              raise SystemExit("stock-proven config providers did not all become built-in initcalls")
+          PY
+
+      - name: Upload stock initcall config probe
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-stock-initcall-config-probe
+          retention-days: 7
+          if-no-files-found: warn
+          path: |
+            enabled-stock-initcall-configs.txt
+            stock-initcall-config-build.log
+            rebuilt-image-sha256.txt
+            normalized-initcall-probe-summary.txt
+            normalized-stock-only-after-config.txt
+            normalized-rebuilt-only-after-config.txt
+            rebuilt.kallsyms
+            out/.config
+            out/arch/arm64/boot/Image
