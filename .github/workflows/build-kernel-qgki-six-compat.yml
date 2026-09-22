@@ -1,4 +1,5 @@
 name: Build Lisa QGKI runtime-layout compatibility prototype
+# source-validation-trigger: 8899b7be79e2799170a12d549201498ac38197db
 
 on:
   workflow_dispatch:
