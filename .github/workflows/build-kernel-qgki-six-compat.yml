@@ -311,6 +311,27 @@ jobs:
           cp reconstruction/stock_ikconfig out/.config
           scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
 
+          # Restore Lisa stock watchdog timing constraints in the donor Kconfig.
+          # The donor hard-locks bark/pet to 11000/9360, while stock IKCONFIG
+          # requires 20000/15000. Without changing the Kconfig range,
+          # olddefconfig silently rewrites the stock values back to donor values.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("drivers/soc/qcom/Kconfig")
+          s = p.read_text()
+          pairs = [
+              ("default 11000\n\trange 11000 11000",
+               "default 20000\n\trange 20000 20000"),
+              ("default 9360\n\trange 9360 9360",
+               "default 15000\n\trange 15000 15000"),
+          ]
+          for old, new in pairs:
+              if old not in s:
+                  raise SystemExit(f"watchdog Kconfig block not found: {old!r}")
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
           make -j"$(nproc)" O=out \
             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
