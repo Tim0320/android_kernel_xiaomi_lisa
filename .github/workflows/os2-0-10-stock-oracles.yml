@@ -26,6 +26,7 @@ jobs:
       TARGET_RELEASE: 5.4.289-qgki-g4c23b1a30923
       TARGET_COMMIT_TAG: g4c23b1a30923
       TARGET_IMAGE_SHA256: 2162041efe1e4ac3e86bd934d4ccd9a4e00c5cd80e23c8085dfd0e0995430166
+      TARGET_MODULE_LAYOUT: 0xba39cbb8
 
     steps:
       - name: Checkout reconstruction metadata and tools
@@ -50,7 +51,7 @@ jobs:
             binutils python3-pip python3-pyelftools \
             xz-utils tar cpio lz4 zstd gzip unzip
           python3 -m pip install --break-system-packages \
-            git+https://github.com/marin-m/vmlinux-to-elf.git
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
           command -v kallsyms-finder
           test -x reconstructed-source/scripts/extract-ikconfig
 
@@ -256,23 +257,32 @@ jobs:
           echo "STOCK_VENDOR_BOOT_MODULES=$(wc -l < stock-vendor-modules.txt)"
           test "$(wc -l < stock-vendor-modules.txt)" -eq 46
 
-      - name: Build g4c23 module CRC oracle from all vendor_boot modules
+      - name: Build target QGKI module CRC oracle and preserve all ABI cohorts
         run: |
           set -euo pipefail
-          python3 - stock-vendor-modules.txt g4c23-module-oracle.txt g4c23-module-summary.tsv <<'PY'
+          python3 - stock-vendor-modules.txt g4c23-module-oracle.txt g4c23-module-summary.tsv g4c23-module-cohorts.tsv "$TARGET_RELEASE" "$TARGET_MODULE_LAYOUT" <<'PY'
+          import collections
           import sys
           from pathlib import Path
           from elftools.elf.elffile import ELFFile
 
-          module_list, oracle_out, summary_out = map(Path, sys.argv[1:])
+          module_list = Path(sys.argv[1])
+          oracle_out = Path(sys.argv[2])
+          summary_out = Path(sys.argv[3])
+          cohorts_out = Path(sys.argv[4])
+          target_release = sys.argv[5]
+          target_layout = int(sys.argv[6], 0)
+
           modules = [Path(x) for x in module_list.read_text().splitlines() if x.strip()]
           oracle = {}
           owners = {}
           summaries = []
+          cohorts = collections.Counter()
+          selected = 0
 
           for path in modules:
               vermagic = "-"
-              entries = 0
+              entries = []
               with path.open("rb") as f:
                   elf = ELFFile(f)
                   modinfo = elf.get_section_by_name(".modinfo")
@@ -282,42 +292,68 @@ jobs:
                               vermagic = field.split(b"=", 1)[1].decode("utf-8", "replace")
                               break
                   sec = elf.get_section_by_name("__versions")
-                  if sec is None:
-                      summaries.append((str(path), vermagic, 0))
-                      continue
-                  data = sec.data()
-                  if len(data) % 64:
-                      raise SystemExit(f"bad __versions size for {path}: {len(data)}")
-                  for off in range(0, len(data), 64):
-                      chunk = data[off:off + 64]
-                      crc = int.from_bytes(chunk[:8], "little") & 0xffffffff
-                      name = chunk[8:].split(b"\0", 1)[0].decode("ascii", "replace")
-                      if not name:
-                          continue
-                      entries += 1
-                      if name in oracle and oracle[name] != crc:
-                          raise SystemExit(
-                              f"conflicting CRC for {name}: 0x{oracle[name]:08x} from {owners[name]} vs 0x{crc:08x} from {path}"
-                          )
-                      oracle[name] = crc
-                      owners[name] = str(path)
-                  summaries.append((str(path), vermagic, entries))
+                  if sec is not None:
+                      data = sec.data()
+                      if len(data) % 64:
+                          raise SystemExit(f"bad __versions size for {path}: {len(data)}")
+                      for off in range(0, len(data), 64):
+                          chunk = data[off:off + 64]
+                          crc = int.from_bytes(chunk[:8], "little") & 0xffffffff
+                          name = chunk[8:].split(b"\0", 1)[0].decode("ascii", "replace")
+                          if name:
+                              entries.append((name, crc))
 
+              layout = next((crc for name, crc in entries if name == "module_layout"), None)
+              layout_text = "MISSING" if layout is None else f"0x{layout:08x}"
+              cohorts[(vermagic, layout_text)] += 1
+              is_target = vermagic.startswith(target_release + " ") and layout == target_layout
+              summaries.append((str(path), vermagic, layout_text, len(entries), int(is_target)))
+
+              if not is_target:
+                  continue
+              selected += 1
+              for name, crc in entries:
+                  if name in oracle and oracle[name] != crc:
+                      raise SystemExit(
+                          f"target-cohort CRC conflict for {name}: "
+                          f"0x{oracle[name]:08x} from {owners[name]} vs 0x{crc:08x} from {path}"
+                      )
+                  oracle[name] = crc
+                  owners[name] = str(path)
+
+          if selected < 1:
+              raise SystemExit("no vendor_boot modules matched exact QGKI target cohort")
           if len(oracle) < 500:
-              raise SystemExit(f"module oracle unexpectedly small: {len(oracle)}")
+              raise SystemExit(f"target QGKI module oracle unexpectedly small: {len(oracle)}")
+          if oracle.get("module_layout") != target_layout:
+              got = oracle.get("module_layout")
+              raise SystemExit(f"target module_layout mismatch: {got!r}")
 
           oracle_out.write_text(
               "\n".join(f"{name} 0x{oracle[name]:08x}" for name in sorted(oracle)) + "\n"
           )
           summary_out.write_text(
-              "\n".join(f"{p}\t{v}\t{n}" for p, v, n in summaries) + "\n"
+              "path\tvermagic\tmodule_layout\tversion_entries\tselected\n" +
+              "\n".join(f"{p}\t{v}\t{layout}\t{n}\t{sel}" for p, v, layout, n, sel in summaries) + "\n"
           )
-          print(f"G4C23_MODULE_ORACLE_SYMBOLS={len(oracle)}")
-          print(f"G4C23_MODULE_FILES={len(modules)}")
+          cohorts_out.write_text(
+              "modules\tmodule_layout\tvermagic\n" +
+              "\n".join(
+                  f"{count}\t{layout}\t{vermagic}"
+                  for (vermagic, layout), count in sorted(cohorts.items(), key=lambda x: (-x[1], x[0]))
+              ) + "\n"
+          )
+
+          print(f"G4C23_VENDOR_BOOT_MODULES={len(modules)}")
+          print(f"G4C23_TARGET_QGKI_MODULES={selected}")
+          print(f"G4C23_TARGET_ORACLE_SYMBOLS={len(oracle)}")
+          for (vermagic, layout), count in sorted(cohorts.items(), key=lambda x: (-x[1], x[0])):
+              print(f"G4C23_ABI_COHORT modules={count} module_layout={layout} vermagic={vermagic}")
           PY
 
-          grep -F "$TARGET_COMMIT_TAG" g4c23-module-summary.tsv | head -n 20
-          grep -q '^module_layout 0xba39cbb8$' g4c23-module-oracle.txt
+          grep -F "$TARGET_RELEASE" g4c23-module-summary.tsv | head -n 30
+          grep -F "${TARGET_MODULE_LAYOUT}" g4c23-module-cohorts.tsv
+          grep -q "^module_layout ${TARGET_MODULE_LAYOUT}$" g4c23-module-oracle.txt
 
       - name: Recover complete g4c23 stock exported-symbol CRC oracle
         run: |
@@ -334,7 +370,7 @@ jobs:
           full_count="$(grep -cv '^#\|^$' stock.full.crcs)"
           echo "G4C23_FULL_STOCK_EXPORTS=$full_count"
           test "$full_count" -gt 10000
-          cat stock.image.crcs
+          grep -E '^score=|^direct_score=|^relative_score=' stock.image.crcs
 
       - name: Record exact OS2.0.10 stock oracle gate
         run: |
@@ -344,15 +380,18 @@ jobs:
           ikconfig_sha="$(sha256sum stock_ikconfig_g4c23 | awk '{print $1}')"
           header_count="$(wc -l < stock-kheaders-files.txt)"
           module_symbols="$(wc -l < g4c23-module-oracle.txt)"
+          selected_modules="$(awk -F '\t' 'NR>1 && $5==1 {n++} END {print n+0}' g4c23-module-summary.tsv)"
           full_exports="$(grep -cv '^#\|^$' stock.full.crcs)"
 
           {
             echo "# Lisa OS2.0.10.0.UKOCNXM exact stock kernel oracles"
             echo "target_release=$TARGET_RELEASE"
+            echo "target_module_layout=$TARGET_MODULE_LAYOUT"
             echo "image_sha256=$image_sha"
             echo "kheaders_archive_sha256=$kheaders_sha"
             echo "ikconfig_sha256=$ikconfig_sha"
             echo "kheaders_file_count=$header_count"
+            echo "target_qgki_modules=$selected_modules"
             echo "module_oracle_symbols=$module_symbols"
             echo "full_stock_exports=$full_exports"
             echo "OS2_0_10_STOCK_ORACLES_GATE=PASS"
@@ -377,6 +416,7 @@ jobs:
             vendor-ramdisks/vendor-boot-layout.txt
             stock-vendor-modules.txt
             g4c23-module-summary.tsv
+            g4c23-module-cohorts.tsv
             g4c23-module-oracle.txt
             stock.image.crcs
             stock.full.crcs
