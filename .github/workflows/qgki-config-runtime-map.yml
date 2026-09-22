@@ -1,0 +1,111 @@
+name: Map Lisa stock config differences to runtime source
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-config-runtime-map.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  map-config:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    env:
+      DIAG_ARTIFACT_ID: "10672999872"
+
+    steps:
+      - name: Checkout reconstructed source
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          fetch-depth: 1
+
+      - name: Download config diagnosis
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${DIAG_ARTIFACT_ID}/zip" \
+            -o diag.zip
+          mkdir diag
+          unzip -q diag.zip -d diag
+          test -s diag/stock-Image.config
+          test -s diag/rebuilt-Image.config
+
+      - name: Map all effective config differences
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee config-runtime-map.txt
+          from pathlib import Path
+          import re, subprocess
+
+          def parse(p):
+              d = {}
+              for raw in Path(p).read_text(errors="replace").splitlines():
+                  if raw.startswith("# CONFIG_") and raw.endswith(" is not set"):
+                      d[raw.split()[1]] = "n"
+                  elif raw.startswith("CONFIG_") and "=" in raw:
+                      k,v = raw.split("=",1)
+                      d[k]=v
+              return d
+
+          stock = parse("diag/stock-Image.config")
+          rebuilt = parse("diag/rebuilt-Image.config")
+          keys = sorted(set(stock) | set(rebuilt))
+          diffs = [(k, stock.get(k,"<missing>"), rebuilt.get(k,"<missing>"))
+                   for k in keys if stock.get(k,"<missing>") != rebuilt.get(k,"<missing>")]
+
+          print(f"CONFIG_DIFF_COUNT={len(diffs)}")
+          print("symbol\tstock\trebuilt\tkconfig_defs\tsource_refs\tpaths")
+
+          high_terms = (
+              "UFS", "F2FS", "EROFS", "WATCHDOG", "MINIDUMP", "TZ_LOG",
+              "OEM_KERNEL", "PASSTHROUGH", "ARM64", "RELR", "VDSO",
+              "BINDER", "ZRAM", "QTI_BATTERY", "IIO_TRIGGERED"
+          )
+          high = []
+
+          for sym, sv, rv in diffs:
+              bare = sym.removeprefix("CONFIG_")
+              kproc = subprocess.run(
+                  ["git","grep","-n","-E",rf"^[[:space:]]*(menu)?config[[:space:]]+{re.escape(bare)}([[:space:]]|$)","--","*Kconfig*"],
+                  text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+              )
+              sproc = subprocess.run(
+                  ["git","grep","-l","-F",sym,"--",":(exclude)*Kconfig*",":(exclude).config"],
+                  text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL
+              )
+              kdefs = [x for x in kproc.stdout.splitlines() if x.strip()]
+              paths = [x for x in sproc.stdout.splitlines() if x.strip()]
+              row = f"{sym}\t{sv}\t{rv}\t{len(kdefs)}\t{len(paths)}\t{','.join(paths[:12])}"
+              print(row)
+              if any(t in sym for t in high_terms):
+                  high.append((sym,sv,rv,len(kdefs),len(paths),paths[:20],kdefs[:10]))
+
+          print()
+          print("HIGH_PRIORITY_BEGIN")
+          for sym,sv,rv,kc,refs,paths,kdefs in high:
+              print(f"[{sym}] stock={sv} rebuilt={rv} kconfig_defs={kc} source_refs={refs}")
+              for x in kdefs:
+                  print("  KCONFIG " + x)
+              for x in paths:
+                  print("  REF " + x)
+          print("HIGH_PRIORITY_END")
+          PY
+
+      - name: Upload runtime map
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-config-runtime-map
+          retention-days: 7
+          path: config-runtime-map.txt
