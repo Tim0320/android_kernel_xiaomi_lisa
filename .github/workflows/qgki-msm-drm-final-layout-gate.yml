@@ -92,11 +92,49 @@ jobs:
           cp reconstruction/stock_ikconfig out/.config
           scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
 
+          # Match the effective early-boot config used by the validated
+          # 0364806 compatibility build.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("drivers/soc/qcom/Kconfig")
+          s = p.read_text()
+          pairs = [
+              ("default 11000\n\trange 11000 11000",
+               "default 20000\n\trange 20000 20000"),
+              ("default 9360\n\trange 9360 9360",
+               "default 15000\n\trange 15000 15000"),
+          ]
+          for old, new in pairs:
+              if old not in s:
+                  raise SystemExit(f"watchdog Kconfig block not found: {old!r}")
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          scripts/config --file out/.config --disable ARM64_USE_LSE_ATOMICS
+          scripts/config --file out/.config --disable COMPAT_VDSO
+          scripts/config --file out/.config --disable RELR
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_BARK_TIME 20000
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_PET_TIME 15000
+
           make -j"$(nproc)" O=out \
             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts
+
+          grep -Fqx '# CONFIG_ARM64_USE_LSE_ATOMICS is not set' out/.config
+          grep -Fqx '# CONFIG_COMPAT_VDSO is not set' out/.config
+          grep -Fqx '# CONFIG_RELR is not set' out/.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' out/.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' out/.config
+          echo "FINAL_GATE_EARLY_BOOT_CONFIG_ALIGNMENT=PASS"
 
       - name: Compile exact field-offset probes
         env:
@@ -123,6 +161,7 @@ jobs:
 
           PROBE(inode_size, sizeof(struct inode))
           PROBE(inode_i_mapping, __builtin_offsetof(struct inode, i_mapping))
+          PROBE(inode_i_private, __builtin_offsetof(struct inode, i_private))
 
           PROBE(panel_size, sizeof(struct drm_panel))
           PROBE(panel_drm, __builtin_offsetof(struct drm_panel, drm))
