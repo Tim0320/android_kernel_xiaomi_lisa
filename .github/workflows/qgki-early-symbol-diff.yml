@@ -18,14 +18,22 @@ jobs:
     timeout-minutes: 25
     env:
       COMPAT_ARTIFACT_ID: "10675087797"
-      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT: stock-main/reconstruction/stock/stock-Image/boot.img
 
     steps:
-      - name: Checkout reconstructed source and stock images
+      - name: Checkout main stock images
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: stock-main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Checkout reconstructed source
         uses: actions/checkout@v4
         with:
           ref: reconstruction/5.4.289-qgki
-          lfs: true
+          path: reconstructed-src
           fetch-depth: 1
 
       - name: Install symbol recovery tools
@@ -67,7 +75,7 @@ jobs:
           from pathlib import Path
           import struct
 
-          data = Path("reconstruction/stock/stock-Image/boot.img").read_bytes()
+          data = Path("stock-main/reconstruction/stock/stock-Image/boot.img").read_bytes()
           if data[:8] != b"ANDROID!":
               raise SystemExit("stock boot magic invalid")
           kernel_size = struct.unpack_from("<I", data, 8)[0]
@@ -215,7 +223,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -s critical-stock-only-symbols.txt ]]; then
-            git grep -n -F -f critical-stock-only-symbols.txt -- \
+            git -C reconstructed-src grep -n -F -f ../critical-stock-only-symbols.txt -- \
               '*.c' '*.h' '*.S' '*.s' '*.Kconfig' '*Kconfig*' \
               > stock-only-symbol-source-hits.txt || true
           else
