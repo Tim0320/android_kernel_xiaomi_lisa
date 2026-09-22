@@ -87,22 +87,38 @@ jobs:
 
           report="$(find stock-oracle -type f -name os2-0-10-stock-oracle-report.txt -print -quit)"
           ikconfig="$(find stock-oracle -type f -name stock_ikconfig_g4c23 -print -quit)"
-          kheaders="$(find stock-oracle -type d -name stock-kheaders -print -quit)"
+          kheaders_archive="$(find stock-oracle -type f -name stock-kheaders.tar.xz -print -quit)"
           stock_crc="$(find stock-oracle -type f -name stock.full.crcs -print -quit)"
           module_oracle="$(find stock-oracle -type f -name g4c23-module-oracle.txt -print -quit)"
 
           test -n "$report"
           test -n "$ikconfig"
-          test -n "$kheaders"
+          test -n "$kheaders_archive"
           test -n "$stock_crc"
           test -n "$module_oracle"
           grep -Fqx 'OS2_0_10_STOCK_ORACLES_GATE=PASS' "$report"
 
+          expected_header_count="$(awk -F= '$1=="kheaders_file_count" {print $2}' "$report")"
+          expected_kheaders_sha="$(awk -F= '$1=="kheaders_archive_sha256" {print $2}' "$report")"
+          test "$expected_header_count" = "7804"
+          test -n "$expected_kheaders_sha"
+          actual_kheaders_sha="$(sha256sum "$kheaders_archive" | awk '{print $1}')"
+          echo "OS2_0_10_KHEADERS_ARCHIVE_SHA256=$actual_kheaders_sha"
+          test "$actual_kheaders_sha" = "$expected_kheaders_sha"
+
           cp "$ikconfig" stock_ikconfig_g4c23
           cp "$stock_crc" stock.full.crcs
           cp "$module_oracle" g4c23-module-oracle.txt
-          rm -rf stock-kheaders
-          cp -a "$kheaders" stock-kheaders
+
+          rm -rf stock-kheaders stock-kheaders-unpack
+          mkdir -p stock-kheaders-unpack
+          tar -xJf "$kheaders_archive" -C stock-kheaders-unpack
+          if [[ -d stock-kheaders-unpack/stock-kheaders ]]; then
+            mv stock-kheaders-unpack/stock-kheaders stock-kheaders
+            rmdir stock-kheaders-unpack 2>/dev/null || true
+          else
+            mv stock-kheaders-unpack stock-kheaders
+          fi
 
           header_count="$(find stock-kheaders -type f | wc -l)"
           export_count="$(grep -cv '^#\|^$' stock.full.crcs)"
@@ -110,7 +126,7 @@ jobs:
           echo "OS2_0_10_STOCK_HEADERS=$header_count"
           echo "OS2_0_10_STOCK_EXPORTS=$export_count"
           echo "OS2_0_10_QGKI_MODULE_ORACLE=$module_symbols"
-          test "$header_count" -eq 7804
+          test "$header_count" -eq "$expected_header_count"
           test "$export_count" -eq 13360
           test "$module_symbols" -eq 736
           grep -q "^module_layout ${TARGET_MODULE_LAYOUT}$" g4c23-module-oracle.txt
