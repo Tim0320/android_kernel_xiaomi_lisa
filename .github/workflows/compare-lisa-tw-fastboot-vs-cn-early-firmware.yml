@@ -1,0 +1,275 @@
+name: Compare Lisa TW fastboot baseline vs CN early firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/compare-lisa-tw-fastboot-vs-cn-early-firmware.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-tw-fastboot-vs-cn-early-firmware
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    env:
+      TW_FASTBOOT_URL: https://bigota.d.miui.com/OS2.0.5.0.UKOTWXM/lisa_tw_global_images_OS2.0.5.0.UKOTWXM_20250820.0000.00_14.0_tw_a24303267f.tgz
+      CN_OTA_URL: https://bigota.d.miui.com/OS2.0.16.0.UKOCNXM/lisa-ota_full-OS2.0.16.0.UKOCNXM-user-14.0-6326c122fd.zip
+      LIVE_TW_VENDOR_BOOT_SHA256: 5443a3b33102627fcb9110dbf871f000e6b24ee84d13f76a1af33e5faa18b3bf
+      LIVE_TW_DTBO_SHA256: 2f0978d3c76ef96e9416321d849531b8c0c07bfb6560b56bcecd065b78760611
+      KNOWN_CN_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+      KNOWN_CN_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
+
+    steps:
+      - name: Checkout reconstruction metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - name: Install dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl tar gzip file git pkg-config libbrotli-dev liblzma-dev libzstd-dev
+
+      - name: Build pinned payload dumper
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/xishang0128/payload-dumper-go.git /tmp/payload-dumper-go
+          cd /tmp/payload-dumper-go
+          git checkout --detach 4cc6ef94039470d659e4199c67f76d8962280023
+          go build -trimpath -o "$GITHUB_WORKSPACE/payload-dumper" ./cmd/payload-dumper
+
+      - name: Download TW fastboot package
+        run: |
+          set -euo pipefail
+          curl -fL --retry 3 --retry-delay 5 "$TW_FASTBOOT_URL" -o tw-fastboot.tgz
+          sha256sum tw-fastboot.tgz | tee tw-fastboot-package-sha256.txt
+          tar -tzf tw-fastboot.tgz | head -n 80 | tee tw-fastboot-package-list-head.txt
+
+      - name: Extract selected TW fastboot early firmware
+        run: |
+          set -euo pipefail
+          mkdir -p tw-fastboot
+
+          python3 - <<'PY'
+          import subprocess
+          from pathlib import Path
+
+          names = [
+              "abl","aop","boot","cpucp","devcfg","dtbo","featenabler","hyp",
+              "imagefv","keymaster","qupfw","shrm","tz","uefisecapp",
+              "vendor_boot","vbmeta","vbmeta_system","xbl","xbl_config"
+          ]
+
+          listing = subprocess.check_output(["tar","-tzf","tw-fastboot.tgz"], text=True).splitlines()
+          selected = {}
+          for n in names:
+              matches = [x for x in listing if x.endswith(f"/images/{n}.img")]
+              if len(matches) == 1:
+                  selected[n] = matches[0]
+
+          if "vendor_boot" not in selected or "dtbo" not in selected or "boot" not in selected:
+              raise SystemExit(f"critical images missing from fastboot package: {selected.keys()}")
+
+          for name, member in selected.items():
+              subprocess.check_call(["tar","-xzf","tw-fastboot.tgz","-O",member], stdout=open(f"tw-fastboot/{name}.img","wb"))
+
+          Path("tw-fastboot-selected.txt").write_text(
+              "\n".join(f"{k}={v}" for k,v in selected.items()) + "\n"
+          )
+          print(Path("tw-fastboot-selected.txt").read_text(), end="")
+          PY
+
+          sha256sum tw-fastboot/*.img | sort | tee tw-fastboot-sha256.txt
+
+      - name: Authenticate TW fastboot against post-9008 live companion
+        run: |
+          set -euo pipefail
+
+          tw_vendor="$(sha256sum tw-fastboot/vendor_boot.img | awk '{print $1}')"
+          tw_dtbo="$(sha256sum tw-fastboot/dtbo.img | awk '{print $1}')"
+
+          vendor_match=0
+          dtbo_match=0
+          if [ "$tw_vendor" = "$LIVE_TW_VENDOR_BOOT_SHA256" ]; then vendor_match=1; fi
+          if [ "$tw_dtbo" = "$LIVE_TW_DTBO_SHA256" ]; then dtbo_match=1; fi
+
+          {
+            echo "tw_fastboot_vendor_boot_sha256=$tw_vendor"
+            echo "live_post_9008_vendor_boot_sha256=$LIVE_TW_VENDOR_BOOT_SHA256"
+            echo "tw_fastboot_vendor_boot_matches_live=$vendor_match"
+            echo "tw_fastboot_dtbo_sha256=$tw_dtbo"
+            echo "live_post_9008_dtbo_sha256=$LIVE_TW_DTBO_SHA256"
+            echo "tw_fastboot_dtbo_matches_live=$dtbo_match"
+          } | tee tw-fastboot-live-authentication.txt
+
+      - name: Extract matching CN early firmware set
+        run: |
+          set -euo pipefail
+          mkdir -p cn
+
+          parts="$(find tw-fastboot -maxdepth 1 -type f -name '*.img' -printf '%f\n'             | sed 's/\.img$//' | sort | paste -sd, -)"
+
+          ./payload-dumper extract "$CN_OTA_URL"             -p "$parts"             -o cn             --http-workers 4             --part-size 8M
+
+          sha256sum cn/*.img | sort | tee cn-sha256.txt
+
+          test "$(sha256sum cn/vendor_boot.img | awk '{print $1}')" = "$KNOWN_CN_VENDOR_BOOT_SHA256"
+          test "$(sha256sum cn/dtbo.img | awk '{print $1}')" = "$KNOWN_CN_DTBO_SHA256"
+
+      - name: Compare TW fastboot and CN bytes
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          def sha(p):
+              return hashlib.sha256(p.read_bytes()).hexdigest()
+
+          rows = []
+          for tw in sorted(Path("tw-fastboot").glob("*.img")):
+              name = tw.stem
+              cn = Path("cn") / tw.name
+              if not cn.exists():
+                  continue
+              stw, scn = sha(tw), sha(cn)
+              rows.append((name, tw.stat().st_size, cn.stat().st_size, stw, scn, int(stw == scn)))
+
+          with open("tw-fastboot-vs-cn.tsv", "w") as fh:
+              fh.write("partition\ttw_bytes\tcn_bytes\ttw_sha256\tcn_sha256\tbyte_identical\n")
+              for r in rows:
+                  fh.write("\t".join(map(str, r)) + "\n")
+
+          same = [r[0] for r in rows if r[-1] == 1]
+          changed = [r[0] for r in rows if r[-1] == 0]
+
+          Path("tw-fastboot-vs-cn-summary.txt").write_text(
+              f"compared_count={len(rows)}\n"
+              f"byte_identical_count={len(same)}\n"
+              f"byte_changed_count={len(changed)}\n"
+              "byte_identical=" + ",".join(same) + "\n"
+              "byte_changed=" + ",".join(changed) + "\n"
+          )
+
+          print(Path("tw-fastboot-vs-cn-summary.txt").read_text(), end="")
+          PY
+
+          column -t -s $'\t' tw-fastboot-vs-cn.tsv | tee tw-fastboot-vs-cn.pretty.txt
+
+      - name: Classify pre-kernel differences
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import csv
+
+          pre_kernel = {
+              "abl","aop","cpucp","devcfg","featenabler","hyp","imagefv",
+              "keymaster","qupfw","shrm","tz","uefisecapp","xbl","xbl_config"
+          }
+
+          rows = list(csv.DictReader(open("tw-fastboot-vs-cn.tsv"), delimiter="\t"))
+          chosen = [r for r in rows if r["partition"] in pre_kernel]
+          same = [r["partition"] for r in chosen if r["byte_identical"] == "1"]
+          changed = [r["partition"] for r in chosen if r["byte_identical"] == "0"]
+
+          Path("pre-kernel-fastboot-classification.txt").write_text(
+              f"pre_kernel_compared_count={len(chosen)}\n"
+              f"pre_kernel_byte_identical_count={len(same)}\n"
+              f"pre_kernel_byte_changed_count={len(changed)}\n"
+              "pre_kernel_byte_identical=" + ",".join(same) + "\n"
+              "pre_kernel_byte_changed=" + ",".join(changed) + "\n"
+          )
+
+          print(Path("pre-kernel-fastboot-classification.txt").read_text(), end="")
+          PY
+
+      - name: Compare stock boot kernel banners
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import re
+          import struct
+
+          lines = []
+          for label, path in [
+              ("tw_fastboot", Path("tw-fastboot/boot.img")),
+              ("cn", Path("cn/boot.img")),
+          ]:
+              b = path.read_bytes()
+              if b[:8] != b"ANDROID!":
+                  raise SystemExit(f"{label}: android boot magic mismatch")
+              kernel_size = struct.unpack_from("<I", b, 8)[0]
+              kernel = b[4096:4096+kernel_size]
+              m = re.search(rb"Linux version 5\.4\.[^\x00\r\n]{1,500}", kernel)
+              banner = m.group(0).decode("utf-8","replace") if m else ""
+              lines += [
+                  f"{label}_boot_sha256={hashlib.sha256(b).hexdigest()}",
+                  f"{label}_kernel_sha256={hashlib.sha256(kernel).hexdigest()}",
+                  f"{label}_kernel_banner={banner}",
+              ]
+
+          Path("stock-boot-fastboot-banners.txt").write_text("\n".join(lines) + "\n")
+          print("\n".join(lines))
+          PY
+
+      - name: Final fastboot-baseline gate
+        run: |
+          set -euo pipefail
+
+          vendor_match="$(grep '^tw_fastboot_vendor_boot_matches_live=' tw-fastboot-live-authentication.txt | cut -d= -f2)"
+          dtbo_match="$(grep '^tw_fastboot_dtbo_matches_live=' tw-fastboot-live-authentication.txt | cut -d= -f2)"
+          pre_changed="$(grep '^pre_kernel_byte_changed_count=' pre-kernel-fastboot-classification.txt | cut -d= -f2)"
+
+          {
+            echo "TW_FASTBOOT_BASELINE_COMPARE=PASS"
+            echo "tw_fastboot_vendor_boot_matches_live=$vendor_match"
+            echo "tw_fastboot_dtbo_matches_live=$dtbo_match"
+            echo "pre_kernel_byte_changed_count=$pre_changed"
+            echo "next_decision=if_live_companion_matches_fastboot_use_tw_fastboot_as_exact_post_9008_baseline"
+          } | tee final-fastboot-baseline.txt
+
+          grep -Fqx 'TW_FASTBOOT_BASELINE_COMPARE=PASS' final-fastboot-baseline.txt
+
+      - name: Upload comparison artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-tw-fastboot-vs-cn-early-firmware
+          retention-days: 14
+          compression-level: 6
+          if-no-files-found: error
+          path: |
+            tw-fastboot-package-sha256.txt
+            tw-fastboot-package-list-head.txt
+            tw-fastboot-selected.txt
+            tw-fastboot-sha256.txt
+            tw-fastboot-live-authentication.txt
+            cn-sha256.txt
+            tw-fastboot-vs-cn.tsv
+            tw-fastboot-vs-cn.pretty.txt
+            tw-fastboot-vs-cn-summary.txt
+            pre-kernel-fastboot-classification.txt
+            stock-boot-fastboot-banners.txt
+            final-fastboot-baseline.txt
