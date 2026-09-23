@@ -1,0 +1,296 @@
+name: Reproduce Lisa Candidate 0008 known-g598 old-baseline control
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-known-g598-old-baseline-control.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0008-known-g598-old-baseline-control
+  cancel-in-progress: true
+
+jobs:
+  control:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      OLD_STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      OLD_STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      OLD_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+      EXACT_BASELINE_ARTIFACT_ID: "10754191797"
+      EXACT_STOCK_BOOT_SHA256: 0959eaa1bc914d570792b53207fc9f481b3986c8b9f2a0ec2a76a1fd625a3c1f
+      EXACT_RAMDISK_SHA256: b85cef81456baa5bdeb6f1ab676cc20682c2ded9e7d49f07f646e10f6c389019
+      G598_ARTIFACT_ID: "10710943414"
+      G598_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      G598_RELEASE: 5.4.289-qgki-g5987d69e25da
+      EXPECTED_HISTORICAL_BOOT_SHA256: 585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063
+      STOCK_BOOT_BYTES: "201326592"
+
+    steps:
+      - name: Checkout historical stock baseline with Git LFS
+        uses: actions/checkout@v4
+        with:
+          lfs: true
+          fetch-depth: 1
+
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip file python3
+
+      - name: Authenticate old stock baseline
+        run: |
+          set -euo pipefail
+          test -s "$OLD_STOCK_BOOT"
+          if grep -q '^version https://git-lfs.github.com/spec/v1' "$OLD_STOCK_BOOT"; then
+            echo "old stock boot is still an LFS pointer" >&2
+            exit 20
+          fi
+          test "$(stat -c '%s' "$OLD_STOCK_BOOT")" = "$STOCK_BOOT_BYTES"
+          test "$(sha256sum "$OLD_STOCK_BOOT" | awk '{print $1}')" = "$OLD_STOCK_BOOT_SHA256"
+          cp "$OLD_STOCK_BOOT" old-stock-boot.img
+          sha256sum old-stock-boot.img | tee old-stock-boot.sha256
+
+      - name: Download exact OS2.0.10 baseline and known-g598 Image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p exact-baseline g598-evidence
+
+          download_artifact() {
+            local artifact_id="$1"
+            local output="$2"
+            curl -fL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              -o "$output"
+          }
+
+          download_artifact "$EXACT_BASELINE_ARTIFACT_ID" exact-baseline.zip
+          unzip -q exact-baseline.zip -d exact-baseline
+          download_artifact "$G598_ARTIFACT_ID" g598-evidence.zip
+          unzip -q g598-evidence.zip -d g598-evidence
+
+          exact_boot="$(find exact-baseline -type f -path '*/official/boot.img' -print -quit)"
+          image="$(find g598-evidence -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
+          if [[ -z "$image" ]]; then
+            image="$(find g598-evidence -type f -name Image -print -quit)"
+          fi
+
+          test -n "$exact_boot" && test -s "$exact_boot"
+          test -n "$image" && test -s "$image"
+          test "$(sha256sum "$exact_boot" | awk '{print $1}')" = "$EXACT_STOCK_BOOT_SHA256"
+          test "$(sha256sum "$image" | awk '{print $1}')" = "$G598_IMAGE_SHA256"
+
+          cp "$exact_boot" exact-stock-boot.img
+          cp "$image" known-g598-Image
+          sha256sum exact-stock-boot.img known-g598-Image | tee downloaded-evidence.sha256
+
+      - name: Compare old baseline and exact OS2.0.10 boot byte layout
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee baseline-comparison.txt
+          from pathlib import Path
+          import hashlib, os, struct
+
+          PAGE = 4096
+
+          def align(v, a):
+              return (v + a - 1) // a * a
+
+          def sha(b):
+              return hashlib.sha256(b).hexdigest()
+
+          def parse(path):
+              b = Path(path).read_bytes()
+              if b[:8] != b"ANDROID!":
+                  raise SystemExit(f"{path}: bad Android boot magic")
+              kernel_size = struct.unpack_from("<I", b, 8)[0]
+              ramdisk_size = struct.unpack_from("<I", b, 12)[0]
+              os_version = struct.unpack_from("<I", b, 16)[0]
+              header_size = struct.unpack_from("<I", b, 20)[0]
+              reserved = struct.unpack_from("<4I", b, 24)
+              header_version = struct.unpack_from("<I", b, 40)[0]
+              cmdline = b[44:44+1536].split(b"\0",1)[0]
+              ramdisk_off = align(PAGE + kernel_size, PAGE)
+              ramdisk = b[ramdisk_off:ramdisk_off+ramdisk_size]
+              logical_end = align(ramdisk_off + ramdisk_size, PAGE)
+              tail = b[logical_end:]
+              return b, {
+                  "sha256": sha(b),
+                  "kernel_size": kernel_size,
+                  "ramdisk_size": ramdisk_size,
+                  "ramdisk_offset": ramdisk_off,
+                  "ramdisk_sha256": sha(ramdisk),
+                  "os_version_raw": os_version,
+                  "header_size": header_size,
+                  "header_version": header_version,
+                  "reserved": reserved,
+                  "cmdline": cmdline.decode("utf-8","replace"),
+                  "logical_end": logical_end,
+                  "tail_nonzero": sum(x != 0 for x in tail),
+                  "avb_footer": int(len(b) >= 64 and b[-64:-60] == b"AVBf"),
+                  "header_page_sha256": sha(b[:PAGE]),
+              }
+
+          old_b, old = parse("old-stock-boot.img")
+          exact_b, exact = parse("exact-stock-boot.img")
+
+          print("[old]")
+          for k,v in old.items():
+              print(f"{k}={v}")
+          print("[exact]")
+          for k,v in exact.items():
+              print(f"{k}={v}")
+
+          print("[compare]")
+          keys=("kernel_size","ramdisk_size","os_version_raw","header_size","header_version","reserved",
+                "cmdline","ramdisk_sha256","header_page_sha256","logical_end","tail_nonzero","avb_footer")
+          for k in keys:
+              print(f"{k}_equal={int(old[k] == exact[k])}")
+
+          hd=[i for i,(a,b) in enumerate(zip(old_b[:PAGE], exact_b[:PAGE])) if a != b]
+          print(f"header_page_diff_bytes={len(hd)}")
+          print("header_page_first_diff_offsets=" + ",".join(hex(x) for x in hd[:128]))
+
+          if old["sha256"] != os.environ["OLD_STOCK_BOOT_SHA256"]:
+              raise SystemExit("old stock boot SHA mismatch")
+          if exact["sha256"] != os.environ["EXACT_STOCK_BOOT_SHA256"]:
+              raise SystemExit("exact stock boot SHA mismatch")
+          if old["ramdisk_sha256"] != os.environ["OLD_RAMDISK_SHA256"]:
+              raise SystemExit("old ramdisk SHA mismatch")
+          if exact["ramdisk_sha256"] != os.environ["EXACT_RAMDISK_SHA256"]:
+              raise SystemExit("exact ramdisk SHA mismatch")
+          if old["header_version"] != 3 or exact["header_version"] != 3:
+              raise SystemExit("expected boot header v3")
+          print("BASELINE_BYTE_COMPARISON=PASS")
+          PY
+
+      - name: Reproduce historical known-g598 old-baseline boot
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee candidate-0008-static-validation.txt
+          from pathlib import Path
+          import hashlib, os, struct
+
+          PAGE=4096
+
+          def align(v,a):
+              return (v+a-1)//a*a
+          def sha(b):
+              return hashlib.sha256(b).hexdigest()
+
+          stock=Path("old-stock-boot.img").read_bytes()
+          kernel=Path("known-g598-Image").read_bytes()
+          target=os.environ["G598_RELEASE"].encode()
+
+          if stock[:8] != b"ANDROID!":
+              raise SystemExit("bad old stock boot magic")
+          if struct.unpack_from("<I",stock,40)[0] != 3:
+              raise SystemExit("expected boot v3")
+          if struct.unpack_from("<I",kernel,0x38)[0] != 0x644D5241:
+              raise SystemExit("known g598 ARM64 magic missing")
+          if target not in kernel:
+              raise SystemExit("known g598 release missing")
+
+          stock_kernel_size=struct.unpack_from("<I",stock,8)[0]
+          ramdisk_size=struct.unpack_from("<I",stock,12)[0]
+          stock_ramdisk_off=align(PAGE+stock_kernel_size,PAGE)
+          ramdisk=stock[stock_ramdisk_off:stock_ramdisk_off+ramdisk_size]
+          if sha(ramdisk) != os.environ["OLD_RAMDISK_SHA256"]:
+              raise SystemExit("old baseline ramdisk hash mismatch")
+
+          header=bytearray(stock[:PAGE])
+          struct.pack_into("<I",header,8,len(kernel))
+          out=bytearray(header)
+          out.extend(kernel)
+          out.extend(b"\0"*(align(len(out),PAGE)-len(out)))
+          new_ramdisk_off=len(out)
+          out.extend(ramdisk)
+          out.extend(b"\0"*(align(len(out),PAGE)-len(out)))
+          logical_end=len(out)
+          if logical_end > len(stock):
+              raise SystemExit("reproduced payload exceeds partition size")
+          out.extend(b"\0"*(len(stock)-len(out)))
+          out=bytes(out)
+
+          Path("boot.img").write_bytes(out)
+          boot_sha=sha(out)
+
+          checks={
+              "old_stock_boot_exact":sha(stock)==os.environ["OLD_STOCK_BOOT_SHA256"],
+              "known_g598_image_exact":sha(kernel)==os.environ["G598_IMAGE_SHA256"],
+              "old_ramdisk_exact":sha(ramdisk)==os.environ["OLD_RAMDISK_SHA256"],
+              "historical_boot_sha_exact":boot_sha==os.environ["EXPECTED_HISTORICAL_BOOT_SHA256"],
+              "partition_size_preserved":len(out)==len(stock)==int(os.environ["STOCK_BOOT_BYTES"]),
+              "header_metadata_except_kernel_size_preserved":out[12:PAGE]==stock[12:PAGE],
+              "target_release_present":target in out[PAGE:PAGE+len(kernel)],
+              "tail_zeroed":not any(out[logical_end:]),
+              "stale_avb_footer_absent":not(len(out)>=64 and out[-64:-60]==b"AVBf"),
+          }
+
+          print("# Lisa Candidate 0008 historical old-baseline control")
+          print(f"old_stock_boot_sha256={sha(stock)}")
+          print(f"known_g598_image_sha256={sha(kernel)}")
+          print(f"old_ramdisk_sha256={sha(ramdisk)}")
+          print(f"new_ramdisk_offset={new_ramdisk_off}")
+          print(f"new_logical_end={logical_end}")
+          print(f"boot_img_sha256={boot_sha}")
+          for k,v in checks.items():
+              print(f"check_{k}={int(v)}")
+
+          failed=[k for k,v in checks.items() if not v]
+          if failed:
+              raise SystemExit("Candidate 0008 reproduction failed: "+", ".join(failed))
+          print("LISA_CANDIDATE_0008_REPRODUCTION_GATE=PASS")
+          PY
+
+          sha256sum boot.img | tee boot.img.sha256
+          file boot.img
+
+      - name: Final Candidate 0008 control gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'BASELINE_BYTE_COMPARISON=PASS' baseline-comparison.txt
+          grep -Fqx 'LISA_CANDIDATE_0008_REPRODUCTION_GATE=PASS' candidate-0008-static-validation.txt
+          grep -Fqx "boot_img_sha256=$EXPECTED_HISTORICAL_BOOT_SHA256" candidate-0008-static-validation.txt
+          test "$(sha256sum boot.img | awk '{print $1}')" = "$EXPECTED_HISTORICAL_BOOT_SHA256"
+
+          {
+            echo '# Lisa Candidate 0008 historical baseline control'
+            echo "old_stock_boot_sha256=$OLD_STOCK_BOOT_SHA256"
+            echo "exact_stock_boot_sha256=$EXACT_STOCK_BOOT_SHA256"
+            echo "known_g598_image_sha256=$G598_IMAGE_SHA256"
+            echo "candidate_0008_boot_sha256=$EXPECTED_HISTORICAL_BOOT_SHA256"
+            echo 'purpose=confirm-old-baseline-control-on-current-device-state'
+            echo 'final_vendor_module_compatibility=NOT_APPLICABLE'
+            echo 'LISA_CANDIDATE_0008_CONTROL_GATE=PASS'
+          } | tee candidate-0008-report.txt
+
+      - name: Upload Candidate 0008 and baseline diff
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0008-known-g598-old-baseline-control
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0008-report.txt
+            candidate-0008-static-validation.txt
+            baseline-comparison.txt
+            old-stock-boot.sha256
+            downloaded-evidence.sha256
