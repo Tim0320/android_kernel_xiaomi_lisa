@@ -1,0 +1,319 @@
+name: Compare Lisa TW OS2.0.5 vs CN OS2.0.16 early firmware
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/compare-lisa-tw-os2-0-5-vs-cn-os2-0-16-early-firmware.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-tw-os2-0-5-vs-cn-os2-0-16-early-firmware
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    env:
+      TW_OTA_URL: https://bigota.d.miui.com/OS2.0.5.0.UKOTWXM/lisa_tw_global-ota_full-OS2.0.5.0.UKOTWXM-user-14.0-358c0962fa.zip
+      CN_OTA_URL: https://bigota.d.miui.com/OS2.0.16.0.UKOCNXM/lisa-ota_full-OS2.0.16.0.UKOCNXM-user-14.0-6326c122fd.zip
+      LIVE_TW_VENDOR_BOOT_SHA256: 5443a3b33102627fcb9110dbf871f000e6b24ee84d13f76a1af33e5faa18b3bf
+      LIVE_TW_DTBO_SHA256: 2f0978d3c76ef96e9416321d849531b8c0c07bfb6560b56bcecd065b78760611
+      KNOWN_CN_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+      KNOWN_CN_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
+
+    steps:
+      - name: Checkout reconstruction metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - name: Install extraction dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip file git pkg-config libbrotli-dev liblzma-dev libzstd-dev
+
+      - name: Build pinned payload dumper
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/xishang0128/payload-dumper-go.git /tmp/payload-dumper-go
+          cd /tmp/payload-dumper-go
+          git checkout --detach 4cc6ef94039470d659e4199c67f76d8962280023
+          go build -trimpath -o "$GITHUB_WORKSPACE/payload-dumper" ./cmd/payload-dumper
+
+      - name: List both OTA payloads and choose common early firmware partitions
+        run: |
+          set -euo pipefail
+          ./payload-dumper list "$TW_OTA_URL" | tee tw-partitions.txt
+          ./payload-dumper list "$CN_OTA_URL" | tee cn-partitions.txt
+
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          import os
+
+          candidates = [
+              "abl", "aop", "bluetooth", "boot", "cpucp", "devcfg", "dsp",
+              "dtbo", "featenabler", "hyp", "imagefv", "keymaster", "modem",
+              "multiimgoem", "qupfw", "shrm", "tz", "uefisecapp",
+              "vendor_boot", "vbmeta", "vbmeta_system", "xbl", "xbl_config",
+          ]
+
+          def found(text, name):
+              return bool(re.search(rf"(?m)\b{re.escape(name)}\b", text))
+
+          tw = Path("tw-partitions.txt").read_text(errors="replace")
+          cn = Path("cn-partitions.txt").read_text(errors="replace")
+
+          common = [p for p in candidates if found(tw, p) and found(cn, p)]
+          tw_only = [p for p in candidates if found(tw, p) and not found(cn, p)]
+          cn_only = [p for p in candidates if found(cn, p) and not found(tw, p)]
+          missing = [p for p in candidates if not found(tw, p) and not found(cn, p)]
+
+          if not common:
+              raise SystemExit("No common early-firmware partitions detected")
+
+          Path("selected-partitions.txt").write_text("\n".join(common) + "\n")
+          Path("partition-selection.txt").write_text(
+              "common=" + ",".join(common) + "\n"
+              + "tw_only=" + ",".join(tw_only) + "\n"
+              + "cn_only=" + ",".join(cn_only) + "\n"
+              + "missing_both=" + ",".join(missing) + "\n"
+          )
+
+          with open(os.environ["GITHUB_ENV"], "a") as fh:
+              fh.write("COMMON_PARTITIONS=" + ",".join(common) + "\n")
+
+          print("common=" + ",".join(common))
+          print("tw_only=" + ",".join(tw_only))
+          print("cn_only=" + ",".join(cn_only))
+          print("missing_both=" + ",".join(missing))
+          PY
+
+      - name: Extract selected TW and CN early firmware
+        run: |
+          set -euo pipefail
+          mkdir -p tw cn
+
+          ./payload-dumper extract "$TW_OTA_URL"             -p "$COMMON_PARTITIONS"             -o tw             --http-workers 4             --part-size 8M
+
+          ./payload-dumper extract "$CN_OTA_URL"             -p "$COMMON_PARTITIONS"             -o cn             --http-workers 4             --part-size 8M
+
+          sha256sum tw/*.img | sort | tee tw-sha256.txt
+          sha256sum cn/*.img | sort | tee cn-sha256.txt
+
+      - name: Authenticate current TW companion and known CN companion
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import os
+
+          def sha(path):
+              return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+          rows = []
+          for name, expected_env in [
+              ("vendor_boot", "LIVE_TW_VENDOR_BOOT_SHA256"),
+              ("dtbo", "LIVE_TW_DTBO_SHA256"),
+          ]:
+              p = Path("tw") / f"{name}.img"
+              if p.exists():
+                  actual = sha(p)
+                  expected = os.environ[expected_env]
+                  rows.append((f"tw_official_{name}_sha256", actual))
+                  rows.append((f"tw_official_{name}_matches_live_9008", "1" if actual == expected else "0"))
+
+          for name, expected_env in [
+              ("vendor_boot", "KNOWN_CN_VENDOR_BOOT_SHA256"),
+              ("dtbo", "KNOWN_CN_DTBO_SHA256"),
+          ]:
+              p = Path("cn") / f"{name}.img"
+              if p.exists():
+                  actual = sha(p)
+                  expected = os.environ[expected_env]
+                  rows.append((f"cn_official_{name}_sha256", actual))
+                  rows.append((f"cn_official_{name}_known_hash_match", "1" if actual == expected else "0"))
+
+          Path("baseline-authentication.txt").write_text(
+              "\n".join(f"{k}={v}" for k, v in rows) + "\n"
+          )
+          print(Path("baseline-authentication.txt").read_text(), end="")
+          PY
+
+      - name: Compare partition bytes
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          names = [x.strip() for x in Path("selected-partitions.txt").read_text().splitlines() if x.strip()]
+
+          def sha(p):
+              return hashlib.sha256(p.read_bytes()).hexdigest()
+
+          rows = []
+          exact = []
+          changed = []
+
+          for name in names:
+              tw = Path("tw") / f"{name}.img"
+              cn = Path("cn") / f"{name}.img"
+              if not tw.exists() or not cn.exists():
+                  continue
+              stw, scn = sha(tw), sha(cn)
+              same = stw == scn
+              rows.append((name, tw.stat().st_size, cn.stat().st_size, stw, scn, int(same)))
+              (exact if same else changed).append(name)
+
+          with open("partition-compare.tsv", "w") as fh:
+              fh.write("partition\ttw_bytes\tcn_bytes\ttw_sha256\tcn_sha256\tbyte_identical\n")
+              for row in rows:
+                  fh.write("\t".join(map(str, row)) + "\n")
+
+          Path("partitions-byte-identical.txt").write_text("\n".join(exact) + ("\n" if exact else ""))
+          Path("partitions-byte-changed.txt").write_text("\n".join(changed) + ("\n" if changed else ""))
+
+          print(f"selected_partition_count={len(rows)}")
+          print(f"byte_identical_count={len(exact)}")
+          print(f"byte_changed_count={len(changed)}")
+          print("byte_identical=" + ",".join(exact))
+          print("byte_changed=" + ",".join(changed))
+          PY
+
+          column -t -s $'\t' partition-compare.tsv | tee partition-compare.pretty.txt
+
+      - name: Compare pre-kernel firmware subset
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import csv
+
+          pre_kernel = {
+              "abl", "aop", "cpucp", "devcfg", "featenabler", "hyp",
+              "imagefv", "keymaster", "multiimgoem", "qupfw", "shrm",
+              "tz", "uefisecapp", "xbl", "xbl_config",
+          }
+
+          rows = list(csv.DictReader(open("partition-compare.tsv"), delimiter="\t"))
+          chosen = [r for r in rows if r["partition"] in pre_kernel]
+          exact = [r["partition"] for r in chosen if r["byte_identical"] == "1"]
+          changed = [r["partition"] for r in chosen if r["byte_identical"] == "0"]
+
+          out = [
+              f"pre_kernel_compared_count={len(chosen)}",
+              f"pre_kernel_byte_identical_count={len(exact)}",
+              f"pre_kernel_byte_changed_count={len(changed)}",
+              "pre_kernel_byte_identical=" + ",".join(exact),
+              "pre_kernel_byte_changed=" + ",".join(changed),
+          ]
+          Path("pre-kernel-classification.txt").write_text("\n".join(out) + "\n")
+          print("\n".join(out))
+          PY
+
+      - name: Identify stock boot kernel banners
+        run: |
+          set -euo pipefail
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import struct
+          import hashlib
+
+          lines = []
+
+          for label in ("tw", "cn"):
+              p = Path(label) / "boot.img"
+              if not p.exists():
+                  continue
+              b = p.read_bytes()
+              if b[:8] != b"ANDROID!":
+                  lines.append(f"{label}_boot_android_magic=0")
+                  continue
+
+              kernel_size = struct.unpack_from("<I", b, 8)[0]
+              header_version = struct.unpack_from("<I", b, 40)[0]
+              kernel_off = 4096
+              kernel = b[kernel_off:kernel_off + kernel_size]
+
+              banner = ""
+              matches = re.findall(rb"Linux version 5\.4\.[^\x00\r\n]{1,500}", kernel)
+              if matches:
+                  banner = matches[0].decode("utf-8", "replace")
+
+              lines.extend([
+                  f"{label}_boot_sha256={hashlib.sha256(b).hexdigest()}",
+                  f"{label}_boot_header_version={header_version}",
+                  f"{label}_kernel_size={kernel_size}",
+                  f"{label}_kernel_sha256={hashlib.sha256(kernel).hexdigest()}",
+                  f"{label}_kernel_banner={banner}",
+              ])
+
+          Path("stock-boot-banners.txt").write_text("\n".join(lines) + "\n")
+          print("\n".join(lines))
+          PY
+
+      - name: Final early-firmware classification
+        run: |
+          set -euo pipefail
+
+          tw_vendor_match="$(grep '^tw_official_vendor_boot_matches_live_9008=' baseline-authentication.txt | cut -d= -f2 || true)"
+          tw_dtbo_match="$(grep '^tw_official_dtbo_matches_live_9008=' baseline-authentication.txt | cut -d= -f2 || true)"
+          pre_changed="$(grep '^pre_kernel_byte_changed_count=' pre-kernel-classification.txt | cut -d= -f2)"
+
+          if [ -z "$tw_vendor_match" ]; then tw_vendor_match=unknown; fi
+          if [ -z "$tw_dtbo_match" ]; then tw_dtbo_match=unknown; fi
+
+          {
+            echo "TW_OS2_0_5_VS_CN_OS2_0_16_EARLY_FIRMWARE_COMPARE=PASS"
+            echo "tw_official_vendor_boot_matches_live_9008=$tw_vendor_match"
+            echo "tw_official_dtbo_matches_live_9008=$tw_dtbo_match"
+            echo "pre_kernel_byte_changed_count=$pre_changed"
+            echo "decision_rule=if_pre_kernel_diff_is_nonzero_inspect_exact_changed_firmware_before_any_more_kernel_mutation"
+          } | tee final-early-firmware-classification.txt
+
+          grep -Fqx 'TW_OS2_0_5_VS_CN_OS2_0_16_EARLY_FIRMWARE_COMPARE=PASS' final-early-firmware-classification.txt
+
+      - name: Upload comparison report
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-tw-os2-0-5-vs-cn-os2-0-16-early-firmware
+          retention-days: 14
+          compression-level: 6
+          if-no-files-found: error
+          path: |
+            tw-partitions.txt
+            cn-partitions.txt
+            selected-partitions.txt
+            partition-selection.txt
+            tw-sha256.txt
+            cn-sha256.txt
+            baseline-authentication.txt
+            partition-compare.tsv
+            partition-compare.pretty.txt
+            partitions-byte-identical.txt
+            partitions-byte-changed.txt
+            pre-kernel-classification.txt
+            stock-boot-banners.txt
+            final-early-firmware-classification.txt
