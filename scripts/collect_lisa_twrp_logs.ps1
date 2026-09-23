@@ -297,22 +297,22 @@ Write-Step ("Collecting iteration " + $iteration + " into " + $iterationDir)
 
 $commands = @(
     @{ File = "01_identity.txt"; Command = "id; echo; uname -a; echo; cat /proc/version 2>/dev/null || true" },
-    @{ File = "02_boot_properties.txt"; Command = "for p in ro.product.device ro.product.model ro.bootmode ro.boot.slot_suffix ro.boot.bootreason sys.boot.reason ro.boot.vbmeta.device_state ro.boot.verifiedbootstate ro.boot.flash.locked ro.twrp.version; do printf '%s=' ""$p""; getprop ""$p""; done" },
+    @{ File = "02_boot_properties.txt"; Command = 'for p in ro.product.device ro.product.model ro.bootmode ro.boot.slot_suffix ro.boot.bootreason sys.boot.reason ro.boot.vbmeta.device_state ro.boot.verifiedbootstate ro.boot.flash.locked ro.twrp.version; do printf "%s=" "$p"; getprop "$p"; done' },
     @{ File = "03_proc_cmdline.txt"; Command = "cat /proc/cmdline 2>/dev/null || true" },
     @{ File = "04_proc_bootconfig.txt"; Command = "cat /proc/bootconfig 2>/dev/null || true" },
     @{ File = "05_mounts.txt"; Command = "cat /proc/mounts 2>/dev/null || mount" },
     @{ File = "06_df.txt"; Command = "df -h 2>/dev/null || df" },
     @{ File = "07_block_by_name.txt"; Command = "ls -la /dev/block/by-name 2>/dev/null || true; echo; ls -la /dev/block/bootdevice/by-name 2>/dev/null || true" },
     @{ File = "08_pstore_listing.txt"; Command = "ls -la /sys/fs/pstore 2>/dev/null || true" },
-    @{ File = "09_pstore_contents.txt"; Command = "if [ -d /sys/fs/pstore ]; then for f in /sys/fs/pstore/*; do [ -f ""$f"" ] || continue; echo '===== '""$f""' ====='; cat ""$f""; echo; done; fi" },
+    @{ File = "09_pstore_contents.txt"; Command = 'if [ -d /sys/fs/pstore ]; then for f in /sys/fs/pstore/*; do [ -f "$f" ] || continue; echo "===== $f ====="; cat "$f"; echo; done; fi' },
     @{ File = "10_last_kmsg.txt"; Command = "if [ -r /proc/last_kmsg ]; then cat /proc/last_kmsg; else echo NO_PROC_LAST_KMSG; fi" },
     @{ File = "11_dmesg_recovery.txt"; Command = "dmesg 2>&1" },
     @{ File = "12_logcat_recovery.txt"; Command = "logcat -b all -d 2>&1 || true" },
     @{ File = "13_twrp_recovery_log.txt"; Command = "if [ -r /tmp/recovery.log ]; then cat /tmp/recovery.log; else echo NO_TMP_RECOVERY_LOG; fi" },
     @{ File = "14_cache_recovery_log.txt"; Command = "if [ -r /cache/recovery/log ]; then cat /cache/recovery/log; else echo NO_CACHE_RECOVERY_LOG; fi" },
     @{ File = "15_cache_recovery_last_log.txt"; Command = "if [ -r /cache/recovery/last_log ]; then cat /cache/recovery/last_log; else echo NO_CACHE_RECOVERY_LAST_LOG; fi" },
-    @{ File = "16_boot_reason_sources.txt"; Command = "echo ro.boot.bootreason=$(getprop ro.boot.bootreason); echo sys.boot.reason=$(getprop sys.boot.reason); echo ro.bootmode=$(getprop ro.bootmode); echo ro.boot.slot_suffix=$(getprop ro.boot.slot_suffix); echo ro.boot.verifiedbootstate=$(getprop ro.boot.verifiedbootstate); echo ro.boot.vbmeta.device_state=$(getprop ro.boot.vbmeta.device_state)" },
-    @{ File = "17_kernel_message_sources.txt"; Command = "for p in /sys/fs/pstore /data/vendor/ramoops /cache/recovery /tmp; do echo '===== '""$p""' ====='; ls -la ""$p"" 2>&1 || true; done" }
+    @{ File = "16_boot_reason_sources.txt"; Command = 'echo ro.boot.bootreason=$(getprop ro.boot.bootreason); echo sys.boot.reason=$(getprop sys.boot.reason); echo ro.bootmode=$(getprop ro.bootmode); echo ro.boot.slot_suffix=$(getprop ro.boot.slot_suffix); echo ro.boot.verifiedbootstate=$(getprop ro.boot.verifiedbootstate); echo ro.boot.vbmeta.device_state=$(getprop ro.boot.vbmeta.device_state)' },
+    @{ File = "17_kernel_message_sources.txt"; Command = 'for p in /sys/fs/pstore /data/vendor/ramoops /cache/recovery /tmp; do echo "===== $p ====="; ls -la "$p" 2>&1 || true; done' }
 )
 
 foreach ($entry in $commands) {
@@ -346,7 +346,7 @@ $manifest = [ordered]@{
     collector = [ordered]@{
         name = "Lisa TWRP failure log collector"
         script_version = $ScriptVersion
-        script_path = $MyInvocation.MyCommand.Path
+        script_name = "collect_lisa_twrp_logs.ps1"
     }
     iteration = [ordered]@{
         number = $iteration
@@ -360,7 +360,6 @@ $manifest = [ordered]@{
         label = $BuildLabel
         kernel_commit = $KernelCommit
         boot_image_file = $bootFile
-        boot_image_path = $BootImagePath
         boot_image_sha256 = $bootSha256
         boot_image_bytes = $bootBytes
         boot_image_last_write_utc = $bootLastWriteUtc
