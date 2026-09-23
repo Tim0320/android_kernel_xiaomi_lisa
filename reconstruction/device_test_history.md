@@ -140,3 +140,76 @@ mdcompress 20971520
 Evidence remains insufficient for a safe kernel source change. The next test must collect `minidump`, `mdcompress`, and `logfs`. `rawdump` is intentionally opt-in because it is 200 MiB and may contain RAM-resident sensitive data.
 
 Collector v1.2.0 adds automatic capture for those smaller diagnostic partitions, records non-zero-byte statistics for raw dumps, records `pureason/pdreason`, and keeps `rawdump` behind `-IncludeRawDump`.
+
+
+## Iteration 0003 — 2026-09-23 21:10 +08:00
+
+- Candidate: reconstructed `boot.img`
+- Boot SHA256: `82697e2df7368c17d8d3ffd54947ff0213c6ed80f47edf5fb17475093b760a07`
+- Boot size: `201326592` bytes
+- Device: Xiaomi 11 Lite 5G NE (`lisa`)
+- Slot: `_a`
+- TWRP: `3.7.1_12-1_Rocky7842`
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Collector: `collect_lisa_twrp_logs.ps1 v1.2.0`
+
+### Dump partition results
+
+```text
+oops:
+  size=16777216
+  sha256=a78f91d0262e9b37823ee5060fdf5b4a3dd0b34614769149fc428a2a81ac6de2
+  unchanged from iterations 0001/0002
+
+logdump:
+  size=67108864
+  sha256=08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a
+  nonzero_bytes=29
+  not a usable crash payload
+
+minidump:
+  size=100663296
+  sha256=40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d
+  nonzero_bytes=36511917
+
+mdcompress:
+  size=20971520
+  sha256=072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea
+  nonzero_bytes=32
+  effectively empty
+
+logfs:
+  size=8388608
+  sha256=2767ec897ec4db8df5b2c8adc5e8f95e94f431408502254a5a41ef0d4c3328bb
+  FAT12 filesystem containing UefiLog0.txt through UefiLog4.txt
+```
+
+### Minidump finding
+
+The minidump contains historical kernel logs and panic records, including a fatal exception in `qcom_icc_set_qos -> regmap_mmio_read32le`, but the associated Linux release is `5.4.289-qgki-g5987d69e25da`, not the tested reconstructed `5.4.289-qgki-g4c23b1a30923`.
+
+The complete minidump contains no `g4c23` / `4c23b1a30923` release marker. Therefore the historical panic must not be attributed to iteration 0003.
+
+### UEFI / logfs finding
+
+The rotating UEFI logs show mission-mode boots of slot `_a` that load the modified `boot_a`, report the expected AVB hash mismatch while the unlocked device remains in orange state, and then continue through:
+
+```text
+VB2: Authenticate complete! boot state is: orange
+...
+Shutting Down UEFI Boot Services
+Start EBS
+```
+
+The retry count decreases between repeated mission boots. This demonstrates that the bootloader is handing control to the kernel rather than rejecting the candidate boot image.
+
+The newest fastboot/recovery session reports `pureason=0x80011`, `pdreason=0x2`. These remain context only.
+
+### Decision
+
+The blocker is now narrowed to after UEFI ExitBootServices / kernel handoff but before the reconstructed kernel leaves a reliable current-version persistent crash record.
+
+No kernel source change is made from the stale `g5987` minidump panic.
+
+The next required evidence is the 200 MiB `rawdump` partition from the same failed-boot state, collected before another boot attempt. If it also lacks the `g4c23` kernel marker, the failure is likely occurring before current-kernel dump capture becomes usable and a different early-boot instrumentation strategy will be required.
