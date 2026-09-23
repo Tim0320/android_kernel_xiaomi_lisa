@@ -1,0 +1,279 @@
+name: Build Lisa Candidate 0010 force slot A in CN vendor_boot
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-lisa-candidate-0010-force-slot-a.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0010-force-slot-a
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    env:
+      CANDIDATE_0009_ARTIFACT_ID: 10766569520
+      CANDIDATE_BOOT_SHA256: 585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063
+      ORIGINAL_CN_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+      PATCHED_CN_VENDOR_BOOT_SHA256: d4d1b33ef6d074cce05eab4391c663e5c8de7f0738eea8cc571e50ee2172a6b5
+      CN_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
+      EXPECTED_VENDOR_RAMDISK_SHA256: bfd1fee676cf5f01dd73a1952fea599b409e744f744f908b8b501ea406363b95
+      EXPECTED_VENDOR_DTB_SHA256: 3e2c5c57da481dae32e9e7b46bdc760b20bdca56baa0882d4c404bbff1b99aef
+
+    steps:
+      - name: Checkout reconstruction metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Download exact Candidate 0009 package
+        run: |
+          set -euo pipefail
+          mkdir -p input
+          curl -fL \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANDIDATE_0009_ARTIFACT_ID}/zip" \
+            -o candidate0009.zip
+          unzip -q candidate0009.zip -d input
+
+          test "$(sha256sum input/candidate-0009/boot.img | awk '{print $1}')" = "$CANDIDATE_BOOT_SHA256"
+          test "$(sha256sum input/candidate-0009/vendor_boot.img | awk '{print $1}')" = "$ORIGINAL_CN_VENDOR_BOOT_SHA256"
+          test "$(sha256sum input/candidate-0009/dtbo.img | awk '{print $1}')" = "$CN_DTBO_SHA256"
+
+          echo "CANDIDATE_0009_INPUT_GATE=PASS" | tee input-gate.txt
+
+      - name: Patch only vendor_boot header cmdline slot suffix
+        run: |
+          set -euo pipefail
+          mkdir -p candidate-0010 rollback-cn-os2-0-16
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import struct
+
+          src = Path("input/candidate-0009/vendor_boot.img")
+          out = Path("candidate-0010/vendor_boot.img")
+
+          original = src.read_bytes()
+          data = bytearray(original)
+
+          if data[:8] != b"VNDRBOOT":
+              raise SystemExit("vendor_boot magic mismatch")
+
+          header_version, page_size, kernel_addr, ramdisk_addr, vendor_ramdisk_size = struct.unpack_from("<5I", data, 8)
+          if header_version != 3:
+              raise SystemExit(f"expected vendor_boot v3, got {header_version}")
+          if page_size != 4096:
+              raise SystemExit(f"expected page_size 4096, got {page_size}")
+
+          cmdline_off = 28
+          cmdline_len = 2048
+          raw_cmdline = bytes(data[cmdline_off:cmdline_off + cmdline_len])
+          old_cmdline = raw_cmdline.split(b"\0", 1)[0]
+
+          suffix = b"androidboot.slot_suffix=_a"
+          if b"androidboot.slot_suffix=" in old_cmdline:
+              raise SystemExit("input vendor_boot already contains androidboot.slot_suffix")
+
+          new_cmdline = old_cmdline + b" " + suffix
+          if len(new_cmdline) >= cmdline_len:
+              raise SystemExit("vendor cmdline would overflow fixed header field")
+
+          data[cmdline_off:cmdline_off + cmdline_len] = b"\0" * cmdline_len
+          data[cmdline_off:cmdline_off + len(new_cmdline)] = new_cmdline
+
+          # Verify that every changed byte is confined to the fixed cmdline field.
+          changed = [i for i, (a, b) in enumerate(zip(original, data)) if a != b]
+          if not changed:
+              raise SystemExit("patch produced no changes")
+          if min(changed) < cmdline_off or max(changed) >= cmdline_off + cmdline_len:
+              raise SystemExit("vendor_boot changed outside cmdline field")
+
+          # Parse ramdisk/DTB offsets and prove those payloads remain byte-identical.
+          off = 28 + 2048 + 4 + 16
+          header_size, dtb_size = struct.unpack_from("<2I", original, off)
+          align = lambda x: ((x + page_size - 1) // page_size) * page_size
+          vendor_ramdisk_off = align(header_size)
+          dtb_off = align(vendor_ramdisk_off + vendor_ramdisk_size)
+
+          old_ramdisk = original[vendor_ramdisk_off:vendor_ramdisk_off + vendor_ramdisk_size]
+          new_ramdisk = data[vendor_ramdisk_off:vendor_ramdisk_off + vendor_ramdisk_size]
+          old_dtb = original[dtb_off:dtb_off + dtb_size]
+          new_dtb = data[dtb_off:dtb_off + dtb_size]
+
+          if old_ramdisk != new_ramdisk:
+              raise SystemExit("vendor ramdisk changed")
+          if old_dtb != new_dtb:
+              raise SystemExit("vendor DTB changed")
+
+          ramdisk_sha = hashlib.sha256(new_ramdisk).hexdigest()
+          dtb_sha = hashlib.sha256(new_dtb).hexdigest()
+
+          avb0_off = original.find(b"AVB0", dtb_off + dtb_size)
+          if avb0_off < 0:
+              raise SystemExit("AVB0 metadata not found")
+          if original[avb0_off:] != data[avb0_off:]:
+              raise SystemExit("AVB metadata/footer unexpectedly changed")
+
+          out.write_bytes(data)
+
+          print(f"vendor_boot_header_version={header_version}")
+          print(f"vendor_boot_page_size={page_size}")
+          print(f"old_cmdline={old_cmdline.decode()}")
+          print(f"new_cmdline={new_cmdline.decode()}")
+          print(f"changed_byte_count={len(changed)}")
+          print(f"changed_first_offset={min(changed)}")
+          print(f"changed_last_offset={max(changed)}")
+          print(f"vendor_ramdisk_sha256={ramdisk_sha}")
+          print(f"vendor_dtb_sha256={dtb_sha}")
+          print(f"patched_vendor_boot_sha256={hashlib.sha256(data).hexdigest()}")
+          PY
+
+          cp input/candidate-0009/boot.img candidate-0010/boot.img
+          cp input/candidate-0009/dtbo.img candidate-0010/dtbo.img
+          cp input/candidate-0009/vendor_boot.img rollback-cn-os2-0-16/vendor_boot.img
+
+      - name: Static Candidate 0010 gate
+        run: |
+          set -euo pipefail
+
+          test "$(sha256sum candidate-0010/boot.img | awk '{print $1}')" = "$CANDIDATE_BOOT_SHA256"
+          test "$(sha256sum candidate-0010/dtbo.img | awk '{print $1}')" = "$CN_DTBO_SHA256"
+          test "$(sha256sum rollback-cn-os2-0-16/vendor_boot.img | awk '{print $1}')" = "$ORIGINAL_CN_VENDOR_BOOT_SHA256"
+          test "$(sha256sum candidate-0010/vendor_boot.img | awk '{print $1}')" = "$PATCHED_CN_VENDOR_BOOT_SHA256"
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import struct
+
+          original = Path("rollback-cn-os2-0-16/vendor_boot.img").read_bytes()
+          patched = Path("candidate-0010/vendor_boot.img").read_bytes()
+
+          hv, ps, ka, ra, vrs = struct.unpack_from("<5I", original, 8)
+          off = 28 + 2048 + 4 + 16
+          hs, dtbs = struct.unpack_from("<2I", original, off)
+          align = lambda x: ((x + ps - 1) // ps) * ps
+          vro = align(hs)
+          dto = align(vro + vrs)
+
+          cmd = patched[28:28 + 2048].split(b"\0", 1)[0]
+          if not cmd.endswith(b" androidboot.slot_suffix=_a"):
+              raise SystemExit("slot suffix patch missing")
+
+          ramdisk_sha = hashlib.sha256(patched[vro:vro + vrs]).hexdigest()
+          dtb_sha = hashlib.sha256(patched[dto:dto + dtbs]).hexdigest()
+
+          if ramdisk_sha != "bfd1fee676cf5f01dd73a1952fea599b409e744f744f908b8b501ea406363b95":
+              raise SystemExit("vendor ramdisk hash drift")
+          if dtb_sha != "3e2c5c57da481dae32e9e7b46bdc760b20bdca56baa0882d4c404bbff1b99aef":
+              raise SystemExit("vendor DTB hash drift")
+
+          diffs = [i for i, (a, b) in enumerate(zip(original, patched)) if a != b]
+          if not diffs or min(diffs) < 28 or max(diffs) >= 28 + 2048:
+              raise SystemExit("unexpected byte delta outside vendor cmdline")
+
+          print("VENDOR_RAMDISK_EXACT=PASS")
+          print("VENDOR_DTB_EXACT=PASS")
+          print("VENDOR_BOOT_ONLY_CMDLINE_CHANGED=PASS")
+          PY
+
+          echo "LISA_CANDIDATE_0010_STATIC_GATE=PASS" | tee candidate-0010-gate.txt
+
+      - name: Write device test plan
+        run: |
+          set -euo pipefail
+          cat > FLASH_PLAN.txt <<'EOF'
+          Lisa Candidate 0010 — force active slot A in CN OS2.0.16 vendor_boot
+
+          Evidence motivating this candidate:
+          - Iteration 0011 bootloader: Booting from slot (_a)
+          - Iteration 0011 Linux: g598 reaches first-stage init and creates system_a/product_a/vendor_a logical devices.
+          - Iteration 0011 fatal path: init then asks for system_b and aborts.
+          - Failed-kernel command line contains no androidboot.slot_suffix.
+
+          Candidate 0010 changes exactly one thing:
+          - CN OS2.0.16 vendor_boot header cmdline appends:
+              androidboot.slot_suffix=_a
+
+          Unchanged:
+          - Candidate 0008 boot.img
+          - known-g598 kernel Image
+          - complete CN OS2.0.16 vendor ramdisk
+          - all vendor_boot kernel modules
+          - vendor_boot embedded DTB
+          - CN OS2.0.16 dtbo.img
+          - vendor_boot AVB metadata/footer bytes (descriptor hash will remain stale after header mutation; unlocked/orange device is expected)
+
+          If the device currently already has Candidate 0008 boot + CN OS2.0.16 dtbo:
+              fastboot flash vendor_boot_a candidate-0010\vendor_boot.img
+              fastboot --set-active=a
+              fastboot reboot
+
+          Full reproducible set if needed:
+              fastboot flash boot_a candidate-0010\boot.img
+              fastboot flash vendor_boot_a candidate-0010\vendor_boot.img
+              fastboot flash dtbo_a candidate-0010\dtbo.img
+              fastboot --set-active=a
+              fastboot reboot
+
+          Immediate rollback of this diagnostic vendor_boot change:
+              fastboot flash vendor_boot_a rollback-cn-os2-0-16\vendor_boot.img
+              fastboot --set-active=a
+              fastboot reboot
+
+          Do not change the kernel source based on Iteration 0011. The first actual blocker is first-stage slot selection.
+          EOF
+
+          {
+            echo "candidate_name=Lisa Candidate 0010 force slot A"
+            echo "boot_sha256=$CANDIDATE_BOOT_SHA256"
+            echo "original_cn_vendor_boot_sha256=$ORIGINAL_CN_VENDOR_BOOT_SHA256"
+            echo "patched_cn_vendor_boot_sha256=$PATCHED_CN_VENDOR_BOOT_SHA256"
+            echo "cn_dtbo_sha256=$CN_DTBO_SHA256"
+            echo "patch=vendor_boot header cmdline only"
+            echo "added_cmdline=androidboot.slot_suffix=_a"
+            echo "device_userspace_target=TW OS2.0.5.0"
+            echo "companion_target=CN OS2.0.16"
+            echo "LISA_CANDIDATE_0010_PACKAGE_GATE=PASS"
+          } | tee candidate-0010-manifest.txt
+
+          sha256sum candidate-0010/* rollback-cn-os2-0-16/* | sort | tee PACKAGE_SHA256SUMS.txt
+
+      - name: Final Candidate 0010 gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'CANDIDATE_0009_INPUT_GATE=PASS' input-gate.txt
+          grep -Fqx 'LISA_CANDIDATE_0010_STATIC_GATE=PASS' candidate-0010-gate.txt
+          grep -Fqx 'LISA_CANDIDATE_0010_PACKAGE_GATE=PASS' candidate-0010-manifest.txt
+          echo "LISA_CANDIDATE_0010_FINAL_GATE=PASS"
+
+      - name: Upload Candidate 0010 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0010-force-slot-a
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            candidate-0010/
+            rollback-cn-os2-0-16/
+            FLASH_PLAN.txt
+            candidate-0010-manifest.txt
+            candidate-0010-gate.txt
+            PACKAGE_SHA256SUMS.txt
+            input-gate.txt
