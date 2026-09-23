@@ -352,6 +352,150 @@ jobs:
           } > lz4-overlay-manifest.txt
           echo "LZ4_SOURCE_GENERATION=linux-v5.4"
 
+      - name: Apply proven stock QGKI proc ABI compatibility layer
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          # Keep current proc_ops callers on the current internal ABI while
+          # restoring the exact legacy file_operations ABI exported to stock
+          # Lisa vendor modules. This is the already-proven six-compat fix.
+          path = Path("include/linux/proc_fs.h")
+          text = path.read_text()
+          old = """extern struct proc_dir_entry *proc_create_data(const char *, umode_t,
+          					       struct proc_dir_entry *,
+          					       const struct proc_ops *,
+          					       void *);
+          """
+          new = """extern struct proc_dir_entry *proc_create_data_proc_ops(const char *, umode_t,
+          							struct proc_dir_entry *,
+          							const struct proc_ops *,
+          							void *);
+          #define proc_create_data proc_create_data_proc_ops
+          """
+          if old not in text:
+              raise SystemExit("current proc_create_data prototype block not found")
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path("fs/proc/internal.h")
+          text = path.read_text()
+          old = """	const struct inode_operations *proc_iops;
+          	union {
+          		const struct proc_ops *proc_ops;
+          		const struct file_operations *proc_dir_ops;
+          	};
+          	const struct dentry_operations *proc_dops;
+          """
+          new = """	const struct inode_operations *proc_iops;
+          #ifdef __GENKSYMS__
+          	const struct file_operations *proc_fops;
+          #else
+          	union {
+          		const struct proc_ops *proc_ops;
+          		const struct file_operations *proc_dir_ops;
+          	};
+          	struct proc_ops legacy_proc_ops;
+          #endif
+          	const struct dentry_operations *proc_dops;
+          """
+          if old not in text:
+              raise SystemExit("proc_dir_entry operations field block not found")
+          path.write_text(text.replace(old, new, 1))
+
+          path = Path("fs/proc/generic.c")
+          text = path.read_text()
+          old = """struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
+          		struct proc_dir_entry *parent,
+          		const struct proc_ops *proc_ops, void *data)
+          {
+          	struct proc_dir_entry *p;
+
+          	p = proc_create_reg(name, mode, &parent, data);
+          	if (!p)
+          		return NULL;
+          	p->proc_ops = proc_ops;
+          	return proc_register(parent, p);
+          }
+          EXPORT_SYMBOL(proc_create_data);
+           
+          struct proc_dir_entry *proc_create(const char *name, umode_t mode,
+          				   struct proc_dir_entry *parent,
+          				   const struct proc_ops *proc_ops)
+          {
+          	return proc_create_data(name, mode, parent, proc_ops, NULL);
+          }
+          EXPORT_SYMBOL(proc_create);
+          """
+          new = """struct proc_dir_entry *proc_create_data_proc_ops(const char *name, umode_t mode,
+          		struct proc_dir_entry *parent,
+          		const struct proc_ops *proc_ops, void *data)
+          {
+          	struct proc_dir_entry *p;
+
+          	p = proc_create_reg(name, mode, &parent, data);
+          	if (!p)
+          		return NULL;
+          	p->proc_ops = proc_ops;
+          	return proc_register(parent, p);
+          }
+          EXPORT_SYMBOL(proc_create_data_proc_ops);
+
+          struct proc_dir_entry *proc_create(const char *name, umode_t mode,
+          				   struct proc_dir_entry *parent,
+          				   const struct proc_ops *proc_ops)
+          {
+          	return proc_create_data_proc_ops(name, mode, parent, proc_ops, NULL);
+          }
+          EXPORT_SYMBOL(proc_create);
+
+          #undef proc_create_data
+
+          /*
+           * Stock Lisa QGKI compatibility entry point.
+           * Stock msm_drm.ko uses the pre-proc_ops file_operations ABI.
+           */
+          struct proc_dir_entry *proc_create_data(const char *name, umode_t mode,
+          		struct proc_dir_entry *parent,
+          		const struct file_operations *proc_fops, void *data)
+          {
+          	struct proc_dir_entry *p;
+          	struct proc_ops *ops;
+
+          	p = proc_create_reg(name, mode, &parent, data);
+          	if (!p)
+          		return NULL;
+
+          	ops = &p->legacy_proc_ops;
+          	if (proc_fops) {
+          		ops->proc_open = proc_fops->open;
+          		ops->proc_read = proc_fops->read;
+          		ops->proc_write = proc_fops->write;
+          		ops->proc_lseek = proc_fops->llseek;
+          		ops->proc_release = proc_fops->release;
+          		ops->proc_poll = proc_fops->poll;
+          		ops->proc_ioctl = proc_fops->unlocked_ioctl;
+          #ifdef CONFIG_COMPAT
+          		ops->proc_compat_ioctl = proc_fops->compat_ioctl;
+          #endif
+          		ops->proc_mmap = proc_fops->mmap;
+          		ops->proc_get_unmapped_area = proc_fops->get_unmapped_area;
+          	}
+
+          	p->proc_ops = ops;
+          	return proc_register(parent, p);
+          }
+          EXPORT_SYMBOL(proc_create_data);
+          """
+          if old not in text:
+              raise SystemExit("current proc_create_data implementation block not found")
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+          git diff -- include/linux/proc_fs.h fs/proc/internal.h fs/proc/generic.c > qgki-proc-compat.patch
+          test -s qgki-proc-compat.patch
+          cat qgki-proc-compat.patch
+
       - name: Generate build environment from exact OS2.0.10 IKCONFIG
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -364,11 +508,50 @@ jobs:
           scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
           printf '%s\n' "-${TARGET_GIT_SUFFIX}" > .scmversion
 
+          # The donor Kconfig hard-locks these values away from the exact
+          # OS2.0.10 stock IKCONFIG. Restore the stock ranges before olddefconfig.
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("drivers/soc/qcom/Kconfig")
+          s = p.read_text()
+          pairs = [
+              ("default 11000\n\trange 11000 11000",
+               "default 20000\n\trange 20000 20000"),
+              ("default 9360\n\trange 9360 9360",
+               "default 15000\n\trange 15000 15000"),
+          ]
+          for old, new in pairs:
+              if old not in s:
+                  raise SystemExit(f"watchdog Kconfig block not found: {old!r}")
+              s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
           make -j"$(nproc)" O=out \
             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
             CROSS_COMPILE=aarch64-linux-gnu- \
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          # Align runtime-affecting options that the exact stock config disables.
+          scripts/config --file out/.config --disable ARM64_USE_LSE_ATOMICS
+          scripts/config --file out/.config --disable COMPAT_VDSO
+          scripts/config --file out/.config --disable RELR
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_BARK_TIME 20000
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_PET_TIME 15000
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          grep -Fqx '# CONFIG_ARM64_USE_LSE_ATOMICS is not set' out/.config
+          grep -Fqx '# CONFIG_COMPAT_VDSO is not set' out/.config
+          grep -Fqx '# CONFIG_RELR is not set' out/.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' out/.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' out/.config
+          echo 'COMPOSITE_EARLY_BOOT_CONFIG_ALIGNMENT=PASS'
 
           cp out/.config os2-0-10-effective.config
           make -s O=out \
@@ -559,17 +742,84 @@ jobs:
           test -s composite-full-abi.txt
           sed -n '1,180p' composite-full-abi.txt
 
+      - name: Gate actual composite Image against g4c23 module oracle
+        run: |
+          set -euo pipefail
+          python3 - g4c23-module-oracle.txt out/Module.symvers qgki-module-oracle-current.txt <<'PY'
+          import sys
+          from pathlib import Path
+
+          oracle_path, symvers_path, out_path = sys.argv[1:]
+          oracle = {}
+          for raw in Path(oracle_path).read_text(errors="replace").splitlines():
+              p = raw.split()
+              if len(p) >= 2:
+                  oracle[p[0]] = p[1].lower()
+
+          current = {}
+          for raw in Path(symvers_path).read_text(errors="replace").splitlines():
+              p = raw.split()
+              if len(p) >= 3 and p[2] == "vmlinux":
+                  current[p[1]] = p[0].lower()
+
+          matches = []
+          mismatches = []
+          missing = []
+          for name, expected in sorted(oracle.items()):
+              actual = current.get(name)
+              if actual is None:
+                  missing.append((name, expected))
+              elif actual != expected:
+                  mismatches.append((name, expected, actual))
+              else:
+                  matches.append(name)
+
+          lines = [
+              f"oracle={len(oracle)}",
+              f"matches={len(matches)}",
+              f"mismatches={len(mismatches)}",
+              f"missing={len(missing)}",
+              "",
+              "## MISMATCH",
+          ]
+          lines += [f"MISMATCH\t{n}\tstock={e}\tcurrent={a}" for n,e,a in mismatches]
+          lines += ["", "## MISSING"]
+          lines += [f"MISSING\t{n}\tstock={e}" for n,e in missing]
+          Path(out_path).write_text("\n".join(lines) + "\n")
+          print(Path(out_path).read_text(), end="")
+
+          if len(oracle) != 736:
+              raise SystemExit(f"unexpected oracle size: {len(oracle)}")
+          if mismatches or missing or len(matches) != 736:
+              raise SystemExit("actual composite Image does not satisfy g4c23 736-symbol oracle")
+          print("ACTUAL_COMPOSITE_G4C23_MODULE_ORACLE=PASS")
+          PY
+
+          mismatch_count="$(awk -F= '/^mismatches=/{print $2}' composite-full-abi.txt)"
+          test "$mismatch_count" -eq 0
+          echo 'ACTUAL_COMPOSITE_FULL_CRC_MISMATCH_GATE=PASS'
+
       - name: Record OS2.0.10 composite preflight gate
         run: |
           set -euo pipefail
           mismatch_count="$(awk -F= '/^mismatches=/{print $2}' composite-full-abi.txt)"
           stock_only_count="$(awk -F= '/^stock_only=/{print $2}' composite-full-abi.txt)"
+          module_matches="$(awk -F= '/^matches=/{print $2}' qgki-module-oracle-current.txt)"
+          module_mismatches="$(awk -F= '/^mismatches=/{print $2}' qgki-module-oracle-current.txt)"
+          module_missing="$(awk -F= '/^missing=/{print $2}' qgki-module-oracle-current.txt)"
+          test "$mismatch_count" -eq 0
+          test "$module_matches" -eq 736
+          test "$module_mismatches" -eq 0
+          test "$module_missing" -eq 0
           image_sha="$(sha256sum out/arch/arm64/boot/Image | awk '{print $1}')"
           {
             echo "target_release=$TARGET_RELEASE"
             echo "image_sha256=$image_sha"
             echo "crc_mismatches=$mismatch_count"
             echo "stock_only=$stock_only_count"
+            echo "module_oracle_matches=$module_matches"
+            echo "module_oracle_mismatches=$module_mismatches"
+            echo "module_oracle_missing=$module_missing"
             echo "OS2_0_10_COMPOSITE_BUILD=PASS"
           } | tee os2-0-10-composite-report.txt
 
@@ -592,6 +842,8 @@ jobs:
             composite-build.log
             composite-genksyms-failures.txt
             composite-full-abi.txt
+            qgki-module-oracle-current.txt
+            qgki-proc-compat.patch
             os2-0-10-composite-report.txt
             g4c23-module-oracle.txt
             stock.full.crcs
