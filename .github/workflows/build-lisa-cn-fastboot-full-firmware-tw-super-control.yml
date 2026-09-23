@@ -1,0 +1,247 @@
+name: Build Lisa full CN fastboot firmware control for TW super
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-lisa-cn-fastboot-full-firmware-tw-super-control.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-cn-fastboot-full-firmware-tw-super-control
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+
+    env:
+      CN_FASTBOOT_URL: https://bigota.d.miui.com/OS2.0.16.0.UKOCNXM/lisa_images_OS2.0.16.0.UKOCNXM_20251221.0000.00_14.0_cn_48554e03ca.tgz
+      CN_CONTROL_ARTIFACT_ID: 10772598639
+      CN_CONTROL_ARTIFACT_SHA256: 1314cf9ecbd8e7f8b9faf6601cf699ba4ed9386c162bc0c91fd7e2a256cf35b2
+      EXPECT_CN_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      EXPECT_CN_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+      EXPECT_CN_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
+
+    steps:
+      - name: Checkout reconstruction metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl tar gzip unzip python3 file
+
+      - name: Stream extract CN fastboot firmware without TW-preserved images
+        run: |
+          set -euo pipefail
+          mkdir -p extracted package/images
+
+          # Do not store the ~7 GB tgz. Stream it and extract every image except
+          # the TW userspace/AVB-state partitions that this experiment preserves.
+          curl -fL --retry 3 --retry-delay 5 "$CN_FASTBOOT_URL" \
+            | tar -xz -C extracted \
+                --wildcards \
+                --exclude='*/images/super.img' \
+                --exclude='*/images/super_empty.img' \
+                --exclude='*/images/userdata.img' \
+                --exclude='*/images/metadata.img' \
+                --exclude='*/images/vbmeta.img' \
+                --exclude='*/images/vbmeta_system.img' \
+                --exclude='*/images/vbmeta_vendor.img' \
+                '*/images/*.img'
+
+          root="$(find extracted -type d -name images -printf '%h\n' | head -n1)"
+          test -n "$root"
+          test -d "$root/images"
+          cp -a "$root/images/." package/images/
+
+          find package/images -maxdepth 1 -type f -name '*.img' -printf '%f\n' | sort | tee package/FASTBOOT_IMAGE_INVENTORY.txt
+          sha256sum package/images/*.img | sort | tee package/SHA256SUMS.txt
+
+      - name: Authenticate exact CN OS2.0.16 boot chain
+        run: |
+          set -euo pipefail
+          test "$(sha256sum package/images/boot.img | awk '{print $1}')" = "$EXPECT_CN_BOOT_SHA256"
+          test "$(sha256sum package/images/vendor_boot.img | awk '{print $1}')" = "$EXPECT_CN_VENDOR_BOOT_SHA256"
+          test "$(sha256sum package/images/dtbo.img | awk '{print $1}')" = "$EXPECT_CN_DTBO_SHA256"
+
+          {
+            echo 'CN_FASTBOOT_BOOT_EXACT=PASS'
+            echo 'CN_FASTBOOT_VENDOR_BOOT_EXACT=PASS'
+            echo 'CN_FASTBOOT_DTBO_EXACT=PASS'
+          } | tee package/boot-chain-gate.txt
+
+      - name: Download validated recovery-OTA control artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CN_CONTROL_ARTIFACT_ID}/zip" \
+            -o cn-control.zip
+          echo "$CN_CONTROL_ARTIFACT_SHA256  cn-control.zip" | sha256sum -c -
+          mkdir -p cn-control
+          unzip -q cn-control.zip -d cn-control
+          control_root="$(find cn-control -type f -name final-gate.txt -printf '%h\n' | head -n1)"
+          test -n "$control_root"
+          grep -Fqx 'LISA_CN_FIRMWARE_TW_SUPER_CONTROL_GATE=PASS' "$control_root/final-gate.txt"
+          echo "CONTROL_ROOT=$control_root" >> "$GITHUB_ENV"
+
+      - name: Cross-check fastboot and recovery OTA overlap
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, os
+
+          fast = Path('package/images')
+          ctrl = Path(os.environ['CONTROL_ROOT']) / 'images'
+
+          def sha(p):
+              h = hashlib.sha256()
+              with p.open('rb') as f:
+                  for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
+                      h.update(chunk)
+              return h.hexdigest()
+
+          overlap = []
+          mismatch = []
+          for p in sorted(ctrl.glob('*.img')):
+              q = fast / p.name
+              if not q.exists():
+                  continue
+              sp, sq = sha(p), sha(q)
+              overlap.append((p.name, sp, sq, sp == sq))
+              if sp != sq:
+                  mismatch.append(p.name)
+
+          Path('package/FASTBOOT_VS_RECOVERY_OVERLAP.tsv').write_text(
+              'image\trecovery_sha256\tfastboot_sha256\tidentical\n' +
+              ''.join(f'{n}\t{a}\t{b}\t{int(ok)}\n' for n,a,b,ok in overlap)
+          )
+
+          fast_names = {p.name for p in fast.glob('*.img')}
+          ctrl_names = {p.name for p in ctrl.glob('*.img')}
+          extra = sorted(fast_names - ctrl_names)
+          Path('package/FASTBOOT_ONLY_IMAGES.txt').write_text('\n'.join(extra) + ('\n' if extra else ''))
+
+          print(f'overlap_count={len(overlap)}')
+          print('mismatch=' + ','.join(mismatch))
+          print('fastboot_only=' + ','.join(extra))
+
+          if not overlap:
+              raise SystemExit('no recovery/fastboot overlap found')
+          if mismatch:
+              raise SystemExit('same-version fastboot/recovery image mismatch: ' + ','.join(mismatch))
+
+          Path('package/OVERLAP_GATE.txt').write_text(
+              f'overlap_count={len(overlap)}\n'
+              'mismatch=\n'
+              'FASTBOOT_RECOVERY_OVERLAP_EXACT=PASS\n'
+          )
+          PY
+
+      - name: Write full CN firmware control matrix
+        run: |
+          set -euo pipefail
+          cat > package/PRESERVE_TW.txt <<'EOF'
+          super
+          vbmeta
+          vbmeta_system
+          vbmeta_vendor
+          userdata
+          metadata
+          EOF
+
+          cat > package/FLASH_MATRIX.md <<'EOF'
+          # Lisa full CN OS2.0.16 fastboot firmware + TW super control
+
+          This package is the stricter version of the earlier recovery-OTA control.
+          It comes from the official CN OS2.0.16.0.UKOCNXM **fastboot ROM**, so it also
+          captures firmware images that may not be shipped in the recovery OTA.
+
+          ## CN side
+
+          Every image present in `images/` is taken from the CN fastboot package.
+          `FASTBOOT_ONLY_IMAGES.txt` lists images that were absent from the validated
+          CN recovery-OTA control package. The overlapping images are required to be
+          byte-for-byte identical before this artifact is accepted.
+
+          ## Preserve from the current TW device state
+
+          - `super`
+          - `vbmeta`
+          - `vbmeta_system`
+          - `vbmeta_vendor` if present
+          - `userdata`
+          - `metadata`
+
+          `vbmeta*` stays with the TW dynamic userspace for the control test so an AVB
+          descriptor mismatch is not introduced as a second variable. The low-level
+          firmware and boot chain themselves are CN.
+
+          ## Device-test sequence
+
+          1. Keep a known-good recovery / fastboot path available.
+          2. First test this package with CN stock `boot`, `vendor_boot`, `dtbo` and the
+             CN fastboot firmware while preserving the TW partitions listed above.
+          3. If the stock-CN control boots with the TW `super`, replace **only** `boot`
+             with Candidate 0008 (`585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063`).
+          4. Keep every other partition unchanged for the Candidate 0008 test.
+          5. If Candidate 0008 fails after the stock-CN control succeeds, the
+             reconstructed kernel becomes the isolated changed variable.
+
+          No automatic device flashing is performed by CI.
+          EOF
+
+          cat > package/verify-package.ps1 <<'EOF'
+          $ErrorActionPreference = 'Stop'
+          Get-Content "$PSScriptRoot\SHA256SUMS.txt" | ForEach-Object {
+              if ($_ -match '^([0-9a-f]{64})\s+(.+)$') {
+                  $expected = $matches[1]
+                  $rel = ($matches[2] -replace '^package/', '')
+                  $path = Join-Path $PSScriptRoot $rel
+                  $actual = (Get-FileHash -Algorithm SHA256 $path).Hash.ToLowerInvariant()
+                  if ($actual -ne $expected) { throw "SHA256 mismatch: $path" }
+              }
+          }
+          Write-Host 'PACKAGE_SHA256_GATE=PASS'
+          EOF
+
+      - name: Final full-fastboot static gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'CN_FASTBOOT_BOOT_EXACT=PASS' package/boot-chain-gate.txt
+          grep -Fqx 'CN_FASTBOOT_VENDOR_BOOT_EXACT=PASS' package/boot-chain-gate.txt
+          grep -Fqx 'CN_FASTBOOT_DTBO_EXACT=PASS' package/boot-chain-gate.txt
+          grep -Fqx 'FASTBOOT_RECOVERY_OVERLAP_EXACT=PASS' package/OVERLAP_GATE.txt
+          test -s package/images/abl.img
+          test -s package/images/xbl.img
+          test -s package/images/xbl_config.img
+          test ! -e package/images/super.img
+          test ! -e package/images/vbmeta.img
+          test ! -e package/images/vbmeta_system.img
+          echo 'LISA_CN_FASTBOOT_FULL_FIRMWARE_TW_SUPER_CONTROL_GATE=PASS' | tee package/final-gate.txt
+
+      - name: Upload full CN fastboot firmware control package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-cn-os2-0-16-fastboot-full-firmware-tw-super-control
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+          path: package/
