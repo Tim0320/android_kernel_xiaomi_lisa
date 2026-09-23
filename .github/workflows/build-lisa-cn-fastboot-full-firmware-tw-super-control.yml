@@ -19,7 +19,7 @@ concurrency:
 jobs:
   package:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 330
 
     env:
       CN_FASTBOOT_URL: https://bigota.d.miui.com/OS2.0.16.0.UKOCNXM/lisa_images_OS2.0.16.0.UKOCNXM_20251221.0000.00_14.0_cn_48554e03ca.tgz
