@@ -1,4 +1,4 @@
-name: Repack Lisa g4c23 boot from exact OS2.0.10 baseline
+name: Repack Lisa Candidate 0006 from exact OS2.0.10 baseline
 
 on:
   workflow_dispatch:
@@ -13,44 +13,37 @@ permissions:
   actions: read
 
 concurrency:
-  group: lisa-qgki-stock-boot-repack-v3-exact-baseline
+  group: lisa-candidate-0006-exact-os2-0-10
   cancel-in-progress: true
 
 jobs:
   repack:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
-
     env:
       BASELINE_ARTIFACT_ID: "10754191797"
       BASELINE_BOOT_SHA256: 0959eaa1bc914d570792b53207fc9f481b3986c8b9f2a0ec2a76a1fd625a3c1f
       BASELINE_IMAGE_SHA256: 2162041efe1e4ac3e86bd934d4ccd9a4e00c5cd80e23c8085dfd0e0995430166
-      KERNEL_ARTIFACT_ID: "10735868177"
-      KERNEL_IMAGE_SHA256: 617c015a74e86b9a98479b6f4c657335484aa6351723cd41615e9f717226afb2
-      COMPAT_ARTIFACT_ID: "10699525039"
-      LAYOUT_ARTIFACT_ID: "10675328820"
+      KERNEL_ARTIFACT_ID: "10762792655"
+      KERNEL_IMAGE_SHA256: 4aa9995ae5ecbd2e3beb3018cd19a11a80e8970eb96c540874be547d2ecd90c6
+      LAYOUT_ARTIFACT_ID: "10763146594"
       TARGET_RELEASE: 5.4.289-qgki-g4c23b1a30923
+      RECONSTRUCTION_SHA: ab491ef6ecd4d35f9edcaa8ad00b568306c6ce64
       STOCK_BOOT_BYTES: "201326592"
 
     steps:
-      - name: Checkout metadata
-        uses: actions/checkout@v4
-        with:
-          ref: main
-          fetch-depth: 1
-
       - name: Install verification tools
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y curl unzip file python3
 
-      - name: Download exact baseline and validated kernel evidence
+      - name: Download exact baseline and current validated evidence
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p baseline-evidence kernel-evidence compat-evidence layout-evidence
+          mkdir -p baseline-evidence kernel-evidence layout-evidence
 
           download_artifact() {
             local artifact_id="$1"
@@ -67,12 +60,11 @@ jobs:
           unzip -q baseline-evidence.zip -d baseline-evidence
           download_artifact "$KERNEL_ARTIFACT_ID" kernel-evidence.zip
           unzip -q kernel-evidence.zip -d kernel-evidence
-          download_artifact "$COMPAT_ARTIFACT_ID" compat-evidence.zip
-          unzip -q compat-evidence.zip -d compat-evidence
           download_artifact "$LAYOUT_ARTIFACT_ID" layout-evidence.zip
           unzip -q layout-evidence.zip -d layout-evidence
 
-          find baseline-evidence kernel-evidence compat-evidence layout-evidence -maxdepth 4 -type f -printf '%p %s bytes\n' | sort | tee artifact-files.txt
+          find baseline-evidence kernel-evidence layout-evidence \
+            -maxdepth 6 -type f -printf '%p %s bytes\n' | sort | tee artifact-files.txt
 
       - name: Authenticate exact OS2.0.10 stock baseline
         run: |
@@ -102,9 +94,8 @@ jobs:
           cp "$baseline_report" baseline-report.txt
           cp "$stock_layout" official-boot-layout.txt
           sha256sum stock-boot.img stock-Image | tee exact-baseline.sha256
-          file stock-boot.img stock-Image
 
-      - name: Authenticate reconstructed g4c23 Image and ABI evidence
+      - name: Authenticate exact Candidate 0006 Image ABI and runtime layout
         run: |
           set -euo pipefail
           image="$(find kernel-evidence -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
@@ -113,44 +104,62 @@ jobs:
           fi
           report="$(find kernel-evidence -type f -name os2-0-10-composite-report.txt -print -quit)"
           full_abi="$(find kernel-evidence -type f -name composite-full-abi.txt -print -quit)"
+          module_gate="$(find kernel-evidence -type f -name qgki-module-oracle-current.txt -print -quit)"
           genksyms_failures="$(find kernel-evidence -type f -name composite-genksyms-failures.txt -print -quit)"
-          crc="$(find compat-evidence -type f -name qgki-six-crc.txt -print -quit)"
-          abi="$(find compat-evidence -type f -name qgki-msm-drm-abi.txt -print -quit)"
           final_gate="$(find layout-evidence -type f -name final-runtime-layout-gate.txt -print -quit)"
+          layout_image_sha="$(find layout-evidence -type f -name exact-composite-Image.sha256 -print -quit)"
 
           test -n "$image" && test -s "$image"
           test -n "$report" && test -s "$report"
           test -n "$full_abi" && test -s "$full_abi"
+          test -n "$module_gate" && test -s "$module_gate"
           test -n "$genksyms_failures"
-          test -n "$crc" && test -s "$crc"
-          test -n "$abi" && test -s "$abi"
           test -n "$final_gate" && test -s "$final_gate"
+          test -n "$layout_image_sha" && test -s "$layout_image_sha"
 
           test "$(sha256sum "$image" | awk '{print $1}')" = "$KERNEL_IMAGE_SHA256"
           grep -Fqx "target_release=$TARGET_RELEASE" "$report"
           grep -Fqx "image_sha256=$KERNEL_IMAGE_SHA256" "$report"
+          grep -Fqx 'crc_mismatches=0' "$report"
+          grep -Fqx 'module_oracle_matches=736' "$report"
+          grep -Fqx 'module_oracle_mismatches=0' "$report"
+          grep -Fqx 'module_oracle_missing=0' "$report"
           grep -Fqx 'OS2_0_10_COMPOSITE_BUILD=PASS' "$report"
           test ! -s "$genksyms_failures"
-          test "$(grep -c 'match=1$' "$crc")" -eq 6
-          grep -Fqx 'matches=736' "$abi"
-          grep -Fqx 'mismatches=0' "$abi"
-          grep -Fqx 'missing=0' "$abi"
+
+          grep -Fqx 'matches=736' "$module_gate"
+          grep -Fqx 'mismatches=0' "$module_gate"
+          grep -Fqx 'missing=0' "$module_gate"
+
+          grep -Fqx "reconstruction_sha=$RECONSTRUCTION_SHA" "$final_gate"
+          grep -Fqx "composite_artifact_id=$KERNEL_ARTIFACT_ID" "$final_gate"
+          grep -Fqx "image_sha256=$KERNEL_IMAGE_SHA256" "$final_gate"
+          grep -Fqx 'required_runtime_fields=17' "$final_gate"
+          grep -Fqx 'required_runtime_field_offsets_equal=1' "$final_gate"
+          grep -Fqx 'rwsem_size_current=48' "$final_gate"
+          grep -Fqx 'rwsem_size_stock=48' "$final_gate"
+          grep -Fqx 'inode_i_private_current=640' "$final_gate"
+          grep -Fqx 'inode_i_private_stock=640' "$final_gate"
+          grep -Fqx 'panel_size_current=104' "$final_gate"
+          grep -Fqx 'panel_size_stock=104' "$final_gate"
           grep -Fqx 'FINAL_RUNTIME_LAYOUT_GATE=PASS' "$final_gate"
+          grep -Fq "$KERNEL_IMAGE_SHA256" "$layout_image_sha"
 
           cp "$image" rebuilt-Image
           cp "$report" os2-0-10-composite-report.txt
           cp "$full_abi" composite-full-abi.txt
-          cp "$crc" qgki-six-crc.txt
-          cp "$abi" qgki-msm-drm-abi.txt
+          cp "$module_gate" qgki-module-oracle-current.txt
           cp "$final_gate" final-runtime-layout-gate.txt
+          cp "$layout_image_sha" layout-exact-composite-Image.sha256
           sha256sum rebuilt-Image | tee rebuilt-Image.sha256
+          echo 'CANDIDATE_0006_KERNEL_EVIDENCE_GATE=PASS'
 
       - name: Compare exact stock and rebuilt ARM64 Image headers
         run: |
           set -euo pipefail
           python3 - <<'PY' | tee exact-baseline-early-boot-diff.txt
           from pathlib import Path
-          import hashlib, re, struct
+          import hashlib, struct
 
           TARGET = b"5.4.289-qgki-g4c23b1a30923"
 
@@ -178,24 +187,20 @@ jobs:
 
           stock_b, stock = parse("stock-Image")
           rebuilt_b, rebuilt = parse("rebuilt-Image")
+          hard_fields = ("text_offset", "flags", "res2", "res3", "res4", "magic", "res5")
+          failed = []
 
           for label, h in (("stock", stock), ("rebuilt", rebuilt)):
               print(f"[{label}]")
               for k, v in h.items():
-                  if isinstance(v, int):
-                      print(f"{k}=0x{v:x}")
-                  else:
-                      print(f"{k}={v}")
+                  print(f"{k}={hex(v) if isinstance(v, int) else v}")
 
           print("[compare]")
-          hard_fields = ("text_offset", "flags", "res2", "res3", "res4", "magic", "res5")
-          failed = []
           for key in hard_fields:
               same = stock[key] == rebuilt[key]
               print(f"{key}_equal={int(same)}")
               if not same:
                   failed.append(key)
-
           print(f"code0_equal={int(stock['code0'] == rebuilt['code0'])}")
           print(f"code1_equal={int(stock['code1'] == rebuilt['code1'])}")
           print(f"image_size_delta={rebuilt['image_size'] - stock['image_size']}")
@@ -208,13 +213,12 @@ jobs:
               failed.append("unexpected-stock-flags")
           if TARGET not in rebuilt_b:
               failed.append("target-release-missing")
-
           if failed:
               raise SystemExit("critical ARM64 early-boot header mismatch: " + ", ".join(failed))
           print("EXACT_BASELINE_ARM64_HEADER_GATE=PASS")
           PY
 
-      - name: Repack exact OS2.0.10 boot with reconstructed Image
+      - name: Repack Candidate 0006 exact OS2.0.10 boot.img
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -287,7 +291,7 @@ jobs:
           }
           failed = [k for k, v in checks.items() if not v]
           lines = [
-              "# Lisa exact OS2.0.10 baseline repack",
+              "# Lisa Candidate 0006 exact OS2.0.10 baseline repack",
               f"stock_boot_sha256={sha(stock)}",
               f"stock_kernel_size={stock_kernel_size}",
               f"stock_ramdisk_size={ramdisk_size}",
@@ -307,11 +311,12 @@ jobs:
           sha256sum boot.img | tee boot.img.sha256
           file boot.img
 
-      - name: Final exact-baseline boot gate
+      - name: Final Candidate 0006 static gate
         run: |
           set -euo pipefail
           grep -Fqx 'EXACT_BASELINE_ARM64_HEADER_GATE=PASS' exact-baseline-early-boot-diff.txt
           grep -Fqx "stock_boot_sha256=$BASELINE_BOOT_SHA256" boot-static-validation.txt
+          grep -Fqx "new_kernel_sha256=$KERNEL_IMAGE_SHA256" boot-static-validation.txt
           grep -Fqx 'check_android_magic=1' boot-static-validation.txt
           grep -Fqx 'check_header_version_preserved=1' boot-static-validation.txt
           grep -Fqx 'check_header_metadata_except_kernel_size_preserved=1' boot-static-validation.txt
@@ -326,19 +331,36 @@ jobs:
           grep -Fqx 'check_stale_avb_footer_absent=1' boot-static-validation.txt
           test "$(stat -c '%s' boot.img)" = "$STOCK_BOOT_BYTES"
           test "$(sha256sum rebuilt-Image | awk '{print $1}')" = "$KERNEL_IMAGE_SHA256"
-          echo 'LISA_EXACT_OS2_0_10_REPACK_GATE=PASS'
 
-      - name: Upload exact-baseline reconstructed boot.img
+          boot_sha="$(sha256sum boot.img | awk '{print $1}')"
+          {
+            echo '# Lisa Candidate 0006'
+            echo "reconstruction_sha=$RECONSTRUCTION_SHA"
+            echo "baseline_artifact_id=$BASELINE_ARTIFACT_ID"
+            echo "kernel_artifact_id=$KERNEL_ARTIFACT_ID"
+            echo "layout_artifact_id=$LAYOUT_ARTIFACT_ID"
+            echo "kernel_image_sha256=$KERNEL_IMAGE_SHA256"
+            echo "boot_img_sha256=$boot_sha"
+            echo "target_release=$TARGET_RELEASE"
+            echo 'module_oracle=736/736'
+            echo 'crc_mismatches=0'
+            echo 'runtime_layout=PASS'
+            echo 'static_boot_gate=PASS'
+            echo 'LISA_CANDIDATE_0006_STATIC_GATE=PASS'
+          } | tee candidate-0006-report.txt
+
+      - name: Upload Candidate 0006 boot.img and exact evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-qgki-reconstructed-boot-img-v3-exact-os2-0-10
+          name: lisa-candidate-0006-exact-os2-0-10
           retention-days: 14
           compression-level: 1
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             boot.img
             boot.img.sha256
+            candidate-0006-report.txt
             boot-static-validation.txt
             exact-baseline-early-boot-diff.txt
             exact-baseline.sha256
@@ -349,7 +371,7 @@ jobs:
             rebuilt-Image.sha256
             os2-0-10-composite-report.txt
             composite-full-abi.txt
-            qgki-six-crc.txt
-            qgki-msm-drm-abi.txt
+            qgki-module-oracle-current.txt
             final-runtime-layout-gate.txt
+            layout-exact-composite-Image.sha256
             artifact-files.txt
