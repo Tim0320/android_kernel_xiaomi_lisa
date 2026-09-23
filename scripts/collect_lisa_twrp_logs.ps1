@@ -12,7 +12,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScriptVersion = "1.0.0"
+$ScriptVersion = "1.1.0"
 $SchemaVersion = 1
 
 function Write-Step {
@@ -103,18 +103,107 @@ function Pull-AdbPathIfPresent {
         New-Item -ItemType Directory -Force -Path $parent | Out-Null
     }
 
+    $oldPreference = $ErrorActionPreference
     try {
+        $ErrorActionPreference = "Continue"
         $pullOutput = & $AdbPath pull $RemotePath $LocalPath 2>&1
         $exitCode = $LASTEXITCODE
-        Add-Content -Path $StatusFile -Value ("PULL exit=" + $exitCode + " remote=" + $RemotePath + " local=" + $LocalPath)
-        if ($null -ne $pullOutput) {
-            $pullOutput | Add-Content -Path $StatusFile
-        }
-        return ($exitCode -eq 0)
     }
     catch {
-        Add-Content -Path $StatusFile -Value ("ERROR remote=" + $RemotePath + " message=" + $_.Exception.Message)
-        return $false
+        $exitCode = 255
+        $pullOutput = @($_.Exception.Message)
+    }
+    finally {
+        $ErrorActionPreference = $oldPreference
+    }
+
+    Add-Content -Path $StatusFile -Value ("PULL exit=" + $exitCode + " remote=" + $RemotePath + " local=" + $LocalPath)
+    if ($null -ne $pullOutput) {
+        $pullOutput | ForEach-Object { ([string]$_) | Add-Content -Path $StatusFile }
+    }
+    if ($exitCode -ne 0) {
+        Add-Content -Path $StatusFile -Value ("PULL_FAILED remote=" + $RemotePath)
+    }
+    return ($exitCode -eq 0)
+}
+
+function Pull-AdbGlobFiles {
+    param(
+        [string]$AdbPath,
+        [string]$RemoteGlob,
+        [string]$LocalDirectory,
+        [string]$StatusFile
+    )
+
+    New-Item -ItemType Directory -Force -Path $LocalDirectory | Out-Null
+    $listCommand = 'for f in ' + $RemoteGlob + '; do [ -f "$f" ] && echo "$f"; done'
+    $listed = Get-AdbShellText -AdbPath $AdbPath -Command $listCommand
+    $remoteFiles = @($listed -split "\r?\n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+    foreach ($remoteFileRaw in $remoteFiles) {
+        $remoteFile = ([string]$remoteFileRaw).Trim()
+        if (-not $remoteFile.StartsWith("/")) { continue }
+        $leaf = Split-Path -Leaf $remoteFile
+        $localFile = Join-Path $LocalDirectory $leaf
+        Pull-AdbPathIfPresent -AdbPath $AdbPath -RemotePath $remoteFile -LocalPath $localFile -StatusFile $StatusFile | Out-Null
+    }
+    return $remoteFiles.Count
+}
+
+function Capture-AdbBlockPartition {
+    param(
+        [string]$AdbPath,
+        [string]$PartitionName,
+        [string]$LocalDirectory,
+        [string]$Iteration,
+        [string]$StatusFile,
+        [int64]$MaxBytes = 268435456
+    )
+
+    $remoteBlock = "/dev/block/by-name/" + $PartitionName
+    $probe = Get-AdbShellText -AdbPath $AdbPath -Command ("if [ -e '" + $remoteBlock + "' ]; then echo PRESENT; else echo MISSING; fi")
+    if ($probe -notmatch "PRESENT") {
+        Add-Content -Path $StatusFile -Value ("BLOCK_MISSING " + $remoteBlock)
+        return $null
+    }
+
+    $sizeText = Get-AdbShellText -AdbPath $AdbPath -Command ("blockdev --getsize64 '" + $remoteBlock + "' 2>/dev/null")
+    [int64]$sizeBytes = 0
+    if (-not [int64]::TryParse(($sizeText.Trim()), [ref]$sizeBytes)) {
+        Add-Content -Path $StatusFile -Value ("BLOCK_SIZE_UNKNOWN partition=" + $PartitionName + " value=" + $sizeText)
+        return $null
+    }
+
+    Add-Content -Path $StatusFile -Value ("BLOCK partition=" + $PartitionName + " size_bytes=" + $sizeBytes)
+    if ($sizeBytes -le 0 -or $sizeBytes -gt $MaxBytes) {
+        Add-Content -Path $StatusFile -Value ("BLOCK_SKIP partition=" + $PartitionName + " size_bytes=" + $sizeBytes + " max_bytes=" + $MaxBytes)
+        return $null
+    }
+
+    New-Item -ItemType Directory -Force -Path $LocalDirectory | Out-Null
+    $remoteTemp = "/tmp/lisa_" + $PartitionName + "_iter" + $Iteration + ".bin"
+    $localFile = Join-Path $LocalDirectory ("lisa_" + $PartitionName + "_iter" + $Iteration + ".bin")
+
+    Write-Step ("Capturing " + $PartitionName + " partition (" + $sizeBytes + " bytes)...")
+    $ddCommand = "rm -f '" + $remoteTemp + "'; dd if='" + $remoteBlock + "' of='" + $remoteTemp + "' bs=1048576 2>&1; sync"
+    $ddOutput = Get-AdbShellText -AdbPath $AdbPath -Command $ddCommand
+    Add-Content -Path $StatusFile -Value ("DD partition=" + $PartitionName)
+    Add-Content -Path $StatusFile -Value $ddOutput
+
+    $pullOk = Pull-AdbPathIfPresent -AdbPath $AdbPath -RemotePath $remoteTemp -LocalPath $localFile -StatusFile $StatusFile
+    Get-AdbShellText -AdbPath $AdbPath -Command ("rm -f '" + $remoteTemp + "'") | Out-Null
+    if (-not $pullOk) { return $null }
+
+    $localInfo = Get-Item -LiteralPath $localFile
+    $localHash = (Get-FileHash -LiteralPath $localFile -Algorithm SHA256).Hash.ToLowerInvariant()
+    Add-Content -Path $StatusFile -Value ("BLOCK_CAPTURED partition=" + $PartitionName + " local_bytes=" + $localInfo.Length + " sha256=" + $localHash)
+
+    return [pscustomobject][ordered]@{
+        partition = $PartitionName
+        remote_path = $remoteBlock
+        size_bytes = [int64]$localInfo.Length
+        sha256 = $localHash
+        local_file = ("pulled/block_partitions/" + $localInfo.Name)
     }
 }
 
@@ -335,11 +424,35 @@ $redactedProps | Out-File -LiteralPath $getpropPath -Encoding utf8
 
 $pullStatus = Join-Path $rawDir "19_pull_status.txt"
 "Lisa TWRP pull status" | Set-Content -LiteralPath $pullStatus -Encoding utf8
+
 Pull-AdbPathIfPresent -AdbPath $adbPath -RemotePath "/sys/fs/pstore" -LocalPath (Join-Path $pulledDir "pstore") -StatusFile $pullStatus | Out-Null
 Pull-AdbPathIfPresent -AdbPath $adbPath -RemotePath "/data/vendor/ramoops" -LocalPath (Join-Path $pulledDir "data_vendor_ramoops") -StatusFile $pullStatus | Out-Null
 Pull-AdbPathIfPresent -AdbPath $adbPath -RemotePath "/tmp/recovery.log" -LocalPath (Join-Path $pulledDir "twrp_recovery.log") -StatusFile $pullStatus | Out-Null
-Pull-AdbPathIfPresent -AdbPath $adbPath -RemotePath "/cache/recovery/log" -LocalPath (Join-Path $pulledDir "cache_recovery.log") -StatusFile $pullStatus | Out-Null
-Pull-AdbPathIfPresent -AdbPath $adbPath -RemotePath "/cache/recovery/last_log" -LocalPath (Join-Path $pulledDir "cache_recovery_last_log") -StatusFile $pullStatus | Out-Null
+
+$cacheHistoryDir = Join-Path $pulledDir "cache_recovery_history"
+$cacheLastKmsgCount = Pull-AdbGlobFiles -AdbPath $adbPath -RemoteGlob "/cache/recovery/last_kmsg*" -LocalDirectory $cacheHistoryDir -StatusFile $pullStatus
+$cacheLastLogCount = Pull-AdbGlobFiles -AdbPath $adbPath -RemoteGlob "/cache/recovery/last_log*" -LocalDirectory $cacheHistoryDir -StatusFile $pullStatus
+
+foreach ($cacheFile in @("/cache/recovery/last_status", "/cache/recovery/last_install", "/cache/recovery/last_extension_parameters", "/cache/recovery/last_virtualpartition_log", "/cache/recovery/recovery.fstab")) {
+    $leaf = Split-Path -Leaf $cacheFile
+    Pull-AdbPathIfPresent -AdbPath $adbPath -RemotePath $cacheFile -LocalPath (Join-Path $cacheHistoryDir $leaf) -StatusFile $pullStatus | Out-Null
+}
+
+$blockDumpDir = Join-Path $pulledDir "block_partitions"
+$blockCaptures = @()
+foreach ($partitionName in @("oops", "logdump")) {
+    $capture = Capture-AdbBlockPartition -AdbPath $adbPath -PartitionName $partitionName -LocalDirectory $blockDumpDir -Iteration $iteration -StatusFile $pullStatus
+    if ($null -ne $capture) { $blockCaptures += $capture }
+}
+
+$dumpInventoryPath = Join-Path $rawDir "20_dump_partition_inventory.txt"
+$dumpInventory = New-Object System.Collections.Generic.List[string]
+foreach ($partitionName in @("oops", "logdump", "minidump", "rawdump", "logfs", "mdcompress")) {
+    $remoteBlock = "/dev/block/by-name/" + $partitionName
+    $line = Get-AdbShellText -AdbPath $adbPath -Command ("if [ -e '" + $remoteBlock + "' ]; then printf '" + $partitionName + " '; blockdev --getsize64 '" + $remoteBlock + "' 2>/dev/null || echo SIZE_UNKNOWN; else echo '" + $partitionName + " MISSING'; fi")
+    $dumpInventory.Add($line)
+}
+$dumpInventory | Set-Content -LiteralPath $dumpInventoryPath -Encoding utf8
 
 $manifest = [ordered]@{
     schema_version = $SchemaVersion
@@ -374,8 +487,13 @@ $manifest = [ordered]@{
     }
     collection = [ordered]@{
         adb_state = $state
-        pstore_present = (Test-Path -LiteralPath (Join-Path $pulledDir "pstore"))
+        pstore_path_present = (Test-Path -LiteralPath (Join-Path $pulledDir "pstore"))
+        pstore_file_count = @(Get-ChildItem -LiteralPath (Join-Path $pulledDir "pstore") -File -Recurse -ErrorAction SilentlyContinue).Count
         data_vendor_ramoops_present = (Test-Path -LiteralPath (Join-Path $pulledDir "data_vendor_ramoops"))
+        cache_recovery_last_kmsg_count = $cacheLastKmsgCount
+        cache_recovery_last_log_count = $cacheLastLogCount
+        block_partition_captures = @($blockCaptures)
+        dump_partition_inventory_file = "raw/20_dump_partition_inventory.txt"
         proc_last_kmsg_marker_file = "raw/10_last_kmsg.txt"
         recovery_dmesg_file = "raw/11_dmesg_recovery.txt"
         twrp_log_file = "raw/13_twrp_recovery_log.txt"
@@ -406,11 +524,19 @@ $summary = @(
     "note=$Note",
     "",
     "Primary failure evidence:",
-    "1. pulled/pstore and raw/09_pstore_contents.txt",
-    "2. raw/10_last_kmsg.txt",
-    "3. pulled/data_vendor_ramoops",
-    "4. raw/13_twrp_recovery_log.txt",
-    "5. raw/11_dmesg_recovery.txt"
+    "1. pulled/block_partitions/lisa_oops_iter" + $iteration + ".bin",
+    "2. pulled/block_partitions/lisa_logdump_iter" + $iteration + ".bin",
+    "3. pulled/pstore and raw/09_pstore_contents.txt",
+    "4. raw/10_last_kmsg.txt",
+    "5. pulled/data_vendor_ramoops",
+    "6. raw/11_dmesg_recovery.txt",
+    "",
+    "Recovery history (context only):",
+    "7. pulled/cache_recovery_history/last_kmsg*",
+    "8. pulled/cache_recovery_history/last_log*",
+    "",
+    "Additional dump inventory:",
+    "9. raw/20_dump_partition_inventory.txt"
 )
 $summary | Set-Content -LiteralPath (Join-Path $iterationDir "SUMMARY.txt") -Encoding utf8
 
