@@ -29,8 +29,10 @@ jobs:
       OS2_0_10_OTA_URL: https://bigota.d.miui.com/OS2.0.10.0.UKOCNXM/lisa-ota_full-OS2.0.10.0.UKOCNXM-user-14.0-698602d09c.zip
       EXPECTED_OS2_0_16_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
       EXPECTED_OS2_0_16_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
-      EXPECTED_OS2_0_10_VENDOR_BOOT_SHA256: 6d2c626cc325058ba4c6f16a8f4043978404dfb5ce2f420d770f53d1f5d089f2
-      EXPECTED_OS2_0_10_DTBO_SHA256: 423828174f86a7aab8823fc1cf5347e9cc97f0f41c246c489bdf5793d79a922e
+      EXPECTED_OS2_0_10_OFFICIAL_VENDOR_BOOT_SHA256: 9be4f2bcf3fcfe096c5d7d3d8adc36b59002750d51f1a437ec170e6afa908236
+      EXPECTED_OS2_0_10_OFFICIAL_DTBO_SHA256: d5a06c7aa1ee5b3aab5525e8984a980f0e52bdac4caad4fc14e554dd73556b5d
+      LIVE_OS2_0_10_VENDOR_BOOT_SHA256: 6d2c626cc325058ba4c6f16a8f4043978404dfb5ce2f420d770f53d1f5d089f2
+      LIVE_OS2_0_10_DTBO_SHA256: 423828174f86a7aab8823fc1cf5347e9cc97f0f41c246c489bdf5793d79a922e
 
     steps:
       - name: Checkout reconstruction metadata
@@ -89,7 +91,7 @@ jobs:
           test "$(sha256sum os2-0-16/dtbo.img | awk '{print $1}')" = "$EXPECTED_OS2_0_16_DTBO_SHA256"
           sha256sum os2-0-16/*.img | sort | tee os2-0-16-sha256.txt
 
-      - name: Extract OS2.0.10 rollback companions
+      - name: Extract official OS2.0.10 reference companions
         run: |
           set -euo pipefail
           mkdir -p os2-0-10
@@ -98,19 +100,38 @@ jobs:
             -o os2-0-10 \
             --http-workers 4 \
             --part-size 8M
-          test "$(sha256sum os2-0-10/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_VENDOR_BOOT_SHA256"
-          test "$(sha256sum os2-0-10/dtbo.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_DTBO_SHA256"
+
+          official_vendor_boot="$(sha256sum os2-0-10/vendor_boot.img | awk '{print $1}')"
+          official_dtbo="$(sha256sum os2-0-10/dtbo.img | awk '{print $1}')"
+          echo "official_os2_0_10_vendor_boot_sha256=$official_vendor_boot"
+          echo "official_os2_0_10_dtbo_sha256=$official_dtbo"
+          test "$official_vendor_boot" = "$EXPECTED_OS2_0_10_OFFICIAL_VENDOR_BOOT_SHA256"
+          test "$official_dtbo" = "$EXPECTED_OS2_0_10_OFFICIAL_DTBO_SHA256"
           sha256sum os2-0-10/*.img | sort | tee os2-0-10-sha256.txt
+
+          vendor_match=0
+          dtbo_match=0
+          if [[ "$official_vendor_boot" = "$LIVE_OS2_0_10_VENDOR_BOOT_SHA256" ]]; then vendor_match=1; fi
+          if [[ "$official_dtbo" = "$LIVE_OS2_0_10_DTBO_SHA256" ]]; then dtbo_match=1; fi
+          {
+            echo "OFFICIAL_OS2_0_10_VENDOR_BOOT_SHA256=$official_vendor_boot"
+            echo "LIVE_OS2_0_10_VENDOR_BOOT_SHA256=$LIVE_OS2_0_10_VENDOR_BOOT_SHA256"
+            echo "OFFICIAL_TO_LIVE_VENDOR_BOOT_MATCH=$vendor_match"
+            echo "OFFICIAL_OS2_0_10_DTBO_SHA256=$official_dtbo"
+            echo "LIVE_OS2_0_10_DTBO_SHA256=$LIVE_OS2_0_10_DTBO_SHA256"
+            echo "OFFICIAL_TO_LIVE_DTBO_MATCH=$dtbo_match"
+            echo "EXACT_LIVE_ROLLBACK_BYTES_IN_PACKAGE=0"
+          } | tee os2-0-10-live-drift.txt
 
       - name: Assemble controlled A/B package
         run: |
           set -euo pipefail
-          mkdir -p candidate-0009 rollback-os2-0-10 reference-only-os2-0-16
+          mkdir -p candidate-0009 reference-only-os2-0-10 reference-only-os2-0-16
           cp candidate0008-boot.img candidate-0009/boot.img
           cp os2-0-16/vendor_boot.img candidate-0009/vendor_boot.img
           cp os2-0-16/dtbo.img candidate-0009/dtbo.img
-          cp os2-0-10/vendor_boot.img rollback-os2-0-10/vendor_boot.img
-          cp os2-0-10/dtbo.img rollback-os2-0-10/dtbo.img
+          cp os2-0-10/vendor_boot.img reference-only-os2-0-10/vendor_boot.img
+          cp os2-0-10/dtbo.img reference-only-os2-0-10/dtbo.img
           cp os2-0-16/vbmeta.img reference-only-os2-0-16/vbmeta.img
           cp os2-0-16/vbmeta_system.img reference-only-os2-0-16/vbmeta_system.img
 
@@ -133,11 +154,14 @@ jobs:
           fastboot flash dtbo_a candidate-0009\dtbo.img
           fastboot reboot
 
-          Rollback companion partitions to current OS2.0.10:
-          fastboot flash vendor_boot_a rollback-os2-0-10\vendor_boot.img
-          fastboot flash dtbo_a rollback-os2-0-10\dtbo.img
-
-          The vbmeta images under reference-only-os2-0-16 are evidence only and are intentionally excluded from the test flash set.
+          IMPORTANT ROLLBACK REQUIREMENT:
+          - The current live OS2.0.10 vendor_boot_a and dtbo_a differ byte-for-byte from the official OS2.0.10 OTA images.
+          - This package therefore does NOT contain an exact byte-for-byte rollback of the device's current companion partitions.
+          - Do not perform the Candidate 0009 device flash until exact live vendor_boot_a and dtbo_a backups have been captured and verified against:
+              vendor_boot_a = 6d2c626cc325058ba4c6f16a8f4043978404dfb5ce2f420d770f53d1f5d089f2
+              dtbo_a        = 423828174f86a7aab8823fc1cf5347e9cc97f0f41c246c489bdf5793d79a922e
+          - reference-only-os2-0-10 contains the official OTA images only; they are not an exact live rollback.
+          - The vbmeta images under reference-only-os2-0-16 are evidence only and are intentionally excluded from the test flash set.
           EOF
 
           {
@@ -146,14 +170,17 @@ jobs:
             echo "known_g598_image_sha256=$KNOWN_G598_IMAGE_SHA256"
             echo "candidate_vendor_boot_sha256=$EXPECTED_OS2_0_16_VENDOR_BOOT_SHA256"
             echo "candidate_dtbo_sha256=$EXPECTED_OS2_0_16_DTBO_SHA256"
-            echo "rollback_vendor_boot_sha256=$EXPECTED_OS2_0_10_VENDOR_BOOT_SHA256"
-            echo "rollback_dtbo_sha256=$EXPECTED_OS2_0_10_DTBO_SHA256"
+            echo "official_os2_0_10_reference_vendor_boot_sha256=$EXPECTED_OS2_0_10_OFFICIAL_VENDOR_BOOT_SHA256"
+            echo "official_os2_0_10_reference_dtbo_sha256=$EXPECTED_OS2_0_10_OFFICIAL_DTBO_SHA256"
+            echo "live_os2_0_10_vendor_boot_sha256=$LIVE_OS2_0_10_VENDOR_BOOT_SHA256"
+            echo "live_os2_0_10_dtbo_sha256=$LIVE_OS2_0_10_DTBO_SHA256"
+            echo "exact_live_rollback_bytes_in_package=0"
             echo "vbmeta_flash_required=0"
             echo "test_scope=boot+vendor_boot+dtbo only"
             echo "LISA_CANDIDATE_0009_PACKAGE_GATE=PASS"
           } | tee candidate-0009-manifest.txt
 
-          sha256sum candidate-0009/* rollback-os2-0-10/* reference-only-os2-0-16/* | sort | tee PACKAGE_SHA256SUMS.txt
+          sha256sum candidate-0009/* reference-only-os2-0-10/* reference-only-os2-0-16/* | sort | tee PACKAGE_SHA256SUMS.txt
 
       - name: Final Candidate 0009 gate
         run: |
@@ -163,8 +190,9 @@ jobs:
           test "$(sha256sum candidate-0009/boot.img | awk '{print $1}')" = "$CANDIDATE_0008_BOOT_SHA256"
           test "$(sha256sum candidate-0009/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_OS2_0_16_VENDOR_BOOT_SHA256"
           test "$(sha256sum candidate-0009/dtbo.img | awk '{print $1}')" = "$EXPECTED_OS2_0_16_DTBO_SHA256"
-          test "$(sha256sum rollback-os2-0-10/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_VENDOR_BOOT_SHA256"
-          test "$(sha256sum rollback-os2-0-10/dtbo.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_DTBO_SHA256"
+          test "$(sha256sum reference-only-os2-0-10/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_OFFICIAL_VENDOR_BOOT_SHA256"
+          test "$(sha256sum reference-only-os2-0-10/dtbo.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_OFFICIAL_DTBO_SHA256"
+          grep -Fqx 'EXACT_LIVE_ROLLBACK_BYTES_IN_PACKAGE=0' os2-0-10-live-drift.txt
           echo "LISA_CANDIDATE_0009_FINAL_GATE=PASS"
 
       - name: Upload Candidate 0009 controlled A/B package
@@ -176,10 +204,11 @@ jobs:
           if-no-files-found: error
           path: |
             candidate-0009/
-            rollback-os2-0-10/
+            reference-only-os2-0-10/
             reference-only-os2-0-16/
             FLASH_PLAN.txt
             candidate-0009-manifest.txt
             PACKAGE_SHA256SUMS.txt
             os2-0-16-sha256.txt
             os2-0-10-sha256.txt
+            os2-0-10-live-drift.txt
