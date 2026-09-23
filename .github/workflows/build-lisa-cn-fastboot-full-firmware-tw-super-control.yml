@@ -23,6 +23,7 @@ jobs:
 
     env:
       CN_FASTBOOT_URL: https://bigota.d.miui.com/OS2.0.16.0.UKOCNXM/lisa_images_OS2.0.16.0.UKOCNXM_20251221.0000.00_14.0_cn_48554e03ca.tgz
+      EXPECT_CN_FASTBOOT_MD5: 48554e03ca0ad00d3b4cd7f32a1de4f3
       CN_CONTROL_ARTIFACT_ID: 10772598639
       CN_CONTROL_ARTIFACT_SHA256: 1314cf9ecbd8e7f8b9faf6601cf699ba4ed9386c162bc0c91fd7e2a256cf35b2
       EXPECT_CN_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
@@ -40,26 +41,48 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y curl tar gzip unzip python3 file
+          sudo apt-get install -y aria2 curl tar gzip unzip python3 file
 
-      - name: Stream extract CN fastboot firmware without TW-preserved images
+      - name: Download and extract CN fastboot firmware without TW-preserved images
         run: |
           set -euo pipefail
           mkdir -p extracted package/images
 
-          # Do not store the ~7 GB tgz. Stream it and extract every image except
-          # the TW userspace/AVB-state partitions that this experiment preserves.
-          curl -fL --retry 3 --retry-delay 5 "$CN_FASTBOOT_URL" \
-            | tar -xz -C extracted \
-                --wildcards \
-                --exclude='*/images/super.img' \
-                --exclude='*/images/super_empty.img' \
-                --exclude='*/images/userdata.img' \
-                --exclude='*/images/metadata.img' \
-                --exclude='*/images/vbmeta.img' \
-                --exclude='*/images/vbmeta_system.img' \
-                --exclude='*/images/vbmeta_vendor.img' \
-                '*/images/*.img'
+          # The previous run piped curl directly into tar. The Xiaomi CDN closed
+          # that 6.7 GB response after only ~15 MB, which makes a gzip stream
+          # unrecoverable. Download to disk with ranged, resumable connections
+          # first, authenticate the complete archive by its published MD5, and
+          # only then extract the small set of non-TW images.
+          df -h .
+          aria2c \
+            --continue=true \
+            --file-allocation=none \
+            --max-connection-per-server=16 \
+            --split=16 \
+            --min-split-size=4M \
+            --max-tries=20 \
+            --retry-wait=5 \
+            --connect-timeout=20 \
+            --timeout=60 \
+            --summary-interval=30 \
+            --console-log-level=warn \
+            --dir=. \
+            --out=cn-fastboot.tgz \
+            "$CN_FASTBOOT_URL"
+
+          echo "$EXPECT_CN_FASTBOOT_MD5  cn-fastboot.tgz" | md5sum -c -
+
+          tar -xzf cn-fastboot.tgz -C extracted \
+            --wildcards \
+            --exclude='*/images/super.img' \
+            --exclude='*/images/super_empty.img' \
+            --exclude='*/images/userdata.img' \
+            --exclude='*/images/metadata.img' \
+            --exclude='*/images/vbmeta.img' \
+            --exclude='*/images/vbmeta_system.img' \
+            --exclude='*/images/vbmeta_vendor.img' \
+            '*/images/*.img'
+          rm -f cn-fastboot.tgz cn-fastboot.tgz.aria2
 
           root="$(find extracted -type d -name images -printf '%h\n' | head -n1)"
           test -n "$root"
