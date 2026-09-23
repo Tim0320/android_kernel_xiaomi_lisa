@@ -66,3 +66,20 @@ Uploaded raw partition: `lisa_oops_iter0001.bin`
 - Conclusion: the failed reconstructed boot did not commit a new mtdoops record before reset. Do not use the stale g4c23 slot tail as the current crash root cause.
 
 The TWRP filesystem listing shows `/cache/recovery/last_kmsg` and rotated `last_kmsg.*` files, and the GPT exposes a `logdump` partition. These are the next evidence sources to collect before changing the kernel.
+
+
+### Iteration 0001 follow-up: cache recovery history and logdump
+
+Additional evidence:
+
+- `lisa_last_kmsg_iter0001.txt`: 213623 bytes, SHA256 `325d8781b2f55e029e11ff32d8e8f8581e262b3f772002de85c507c7c81ebdf8`.
+- `lisa_last_kmsg_iter0001_prev.txt`: 215564 bytes, SHA256 `bc0425962f7ec5edd84d2a21c9932b6b93994c513781f9e1a1b51e56f0c69f88`.
+- `lisa_logdump_iter0001.bin`: 67108864 bytes, SHA256 `3b6a07d0d404fab4e23b6d34bc6696a6a312dd92821332385e5af7c01c421351`.
+
+Both cache last_kmsg files are complete TWRP/recovery Linux 5.4.210 boots, not the failed reconstructed 5.4.289 boot. Their repeated dev_pm_attach_wake_irq warning is followed by continued recovery initialization and therefore is not treated as the current boot blocker.
+
+The 64 MiB logdump image is entirely zero-filled and contains no crash payload.
+
+Together with the stale mtdoops-ring result, Iteration 0001 still lacks a trustworthy crash trace from the newly tested reconstructed kernel. No kernel source change is justified from these records alone.
+
+Collector v1.1.0 now automatically captures oops, logdump, all cache/recovery last_kmsg* and last_log* history, and inventories minidump/rawdump/logfs/mdcompress partition sizes.
