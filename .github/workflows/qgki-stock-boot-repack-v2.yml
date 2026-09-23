@@ -1,0 +1,400 @@
+name: Repack validated Lisa QGKI stock-style boot.img v2
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/qgki-stock-boot-repack-v2.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-qgki-stock-boot-repack-v2
+  cancel-in-progress: true
+
+jobs:
+  repack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+
+    env:
+      KERNEL_ARTIFACT_ID: "10735868177"
+      KERNEL_IMAGE_SHA256: 617c015a74e86b9a98479b6f4c657335484aa6351723cd41615e9f717226afb2
+      COMPAT_ARTIFACT_ID: "10699525039"
+      LAYOUT_ARTIFACT_ID: "10675328820"
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_BOOT_BYTES: "201326592"
+      TARGET_RELEASE: 5.4.289-qgki-g4c23b1a30923
+
+    steps:
+      - name: Checkout stock images with Git LFS
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Install verification tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip file binutils
+
+      - name: Verify exact stock boot source
+        run: |
+          set -euo pipefail
+          test -s "$STOCK_BOOT"
+          if grep -q '^version https://git-lfs.github.com/spec/v1' "$STOCK_BOOT"; then
+            echo "stock boot.img is still an LFS pointer"
+            exit 20
+          fi
+          actual_sha="$(sha256sum "$STOCK_BOOT" | awk '{print $1}')"
+          actual_size="$(stat -c '%s' "$STOCK_BOOT")"
+          echo "STOCK_BOOT_SHA256=$actual_sha"
+          echo "STOCK_BOOT_BYTES=$actual_size"
+          test "$actual_sha" = "$STOCK_BOOT_SHA256"
+          test "$actual_size" = "$STOCK_BOOT_BYTES"
+          file "$STOCK_BOOT"
+
+      - name: Download and authenticate validated evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p kernel-evidence compat-evidence layout-evidence
+
+          download_artifact() {
+            local artifact_id="$1"
+            local output="$2"
+            curl -fL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              -o "$output"
+          }
+
+          download_artifact "$KERNEL_ARTIFACT_ID" kernel-evidence.zip
+          unzip -q kernel-evidence.zip -d kernel-evidence
+          download_artifact "$COMPAT_ARTIFACT_ID" compat-evidence.zip
+          unzip -q compat-evidence.zip -d compat-evidence
+          download_artifact "$LAYOUT_ARTIFACT_ID" layout-evidence.zip
+          unzip -q layout-evidence.zip -d layout-evidence
+
+          image="$(find kernel-evidence -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
+          if [[ -z "$image" ]]; then
+            image="$(find kernel-evidence -type f -name Image -print -quit)"
+          fi
+          report="$(find kernel-evidence -type f -name os2-0-10-composite-report.txt -print -quit)"
+          full_abi="$(find kernel-evidence -type f -name composite-full-abi.txt -print -quit)"
+          genksyms_failures="$(find kernel-evidence -type f -name composite-genksyms-failures.txt -print -quit)"
+
+          test -n "$image" && test -s "$image"
+          test -n "$report" && test -s "$report"
+          test -n "$full_abi" && test -s "$full_abi"
+          test -n "$genksyms_failures"
+
+          actual_image_sha="$(sha256sum "$image" | awk '{print $1}')"
+          echo "VALIDATED_IMAGE_SHA256=$actual_image_sha"
+          test "$actual_image_sha" = "$KERNEL_IMAGE_SHA256"
+          grep -Fqx "target_release=$TARGET_RELEASE" "$report"
+          grep -Fqx "image_sha256=$KERNEL_IMAGE_SHA256" "$report"
+          grep -Fqx 'OS2_0_10_COMPOSITE_BUILD=PASS' "$report"
+          test ! -s "$genksyms_failures"
+
+          report_mismatches="$(awk -F= '/^crc_mismatches=/{print $2}' "$report")"
+          report_stock_only="$(awk -F= '/^stock_only=/{print $2}' "$report")"
+          abi_mismatches="$(awk -F= '/^mismatches=/{print $2}' "$full_abi")"
+          abi_stock_only="$(awk -F= '/^stock_only=/{print $2}' "$full_abi")"
+          test -n "$report_mismatches"
+          test -n "$report_stock_only"
+          test "$report_mismatches" = "$abi_mismatches"
+          test "$report_stock_only" = "$abi_stock_only"
+          echo "COMPOSITE_FULL_ABI_MISMATCHES=$abi_mismatches"
+          echo "COMPOSITE_FULL_ABI_STOCK_ONLY=$abi_stock_only"
+
+          cp "$image" rebuilt-Image
+          cp "$report" os2-0-10-composite-report.txt
+          cp "$full_abi" composite-full-abi.txt
+          cp "$genksyms_failures" composite-genksyms-failures.txt
+
+          crc="$(find compat-evidence -type f -name qgki-six-crc.txt -print -quit)"
+          abi="$(find compat-evidence -type f -name qgki-msm-drm-abi.txt -print -quit)"
+          layout_assert="$(find compat-evidence -type f -name qgki-runtime-layout-assert.c -print -quit)"
+          final_gate="$(find layout-evidence -type f -name final-runtime-layout-gate.txt -print -quit)"
+          task_tsv="$(find layout-evidence -type f -name task-direct-accesses.tsv -print -quit)"
+
+          test -n "$crc" && test -s "$crc"
+          test -n "$abi" && test -s "$abi"
+          test -n "$layout_assert" && test -s "$layout_assert"
+          test -n "$final_gate" && test -s "$final_gate"
+          test -n "$task_tsv" && test -s "$task_tsv"
+
+          cp "$crc" qgki-six-crc.txt
+          cp "$abi" qgki-msm-drm-abi.txt
+          cp "$layout_assert" qgki-runtime-layout-assert.c
+          cp "$final_gate" final-runtime-layout-gate.txt
+          cp "$task_tsv" task-direct-accesses.tsv
+          sha256sum rebuilt-Image | tee rebuilt-Image.sha256
+
+      - name: Recheck compatibility hard gates
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          crc = [x for x in Path("qgki-six-crc.txt").read_text().splitlines() if x.strip()]
+          good_crc = [x for x in crc if x.rstrip().endswith("match=1")]
+          print(f"QGKI_SIX_CRC_RECHECK={len(good_crc)}/6")
+          if len(crc) != 6 or len(good_crc) != 6:
+              raise SystemExit("six-symbol stock CRC gate is not 6/6")
+
+          vals = {}
+          for line in Path("qgki-msm-drm-abi.txt").read_text().splitlines():
+              if "=" in line and not line.startswith("#"):
+                  k, v = line.split("=", 1)
+                  vals[k.strip()] = v.strip()
+          expected = {
+              "version_rows": "736",
+              "imports": "736",
+              "matches": "736",
+              "mismatches": "0",
+              "missing": "0",
+          }
+          for k, want in expected.items():
+              got = vals.get(k)
+              print(f"QGKI_MSM_DRM_{k.upper()}={got}")
+              if got != want:
+                  raise SystemExit(f"msm_drm gate failed: {k}={got}, expected {want}")
+
+          src = Path("qgki-runtime-layout-assert.c").read_text()
+          required_assertions = [
+              "sizeof(struct rw_semaphore) == 48",
+              "sizeof(struct blocking_notifier_head) == 56",
+              "sizeof(struct inode) == 664",
+              "__builtin_offsetof(struct inode, i_private) == 640",
+              "sizeof(struct drm_panel) == 104",
+          ]
+          for item in required_assertions:
+              if item not in src:
+                  raise SystemExit(f"missing runtime-layout assertion: {item}")
+
+          gate = Path("final-runtime-layout-gate.txt").read_text()
+          required_gate_lines = [
+              "required_runtime_field_offsets_equal=1",
+              "max_direct_current_task_offset=1620",
+              "task_common_prefix_last_field_offset=2752",
+              "direct_task_access_within_common_prefix=1",
+              "inode_direct_access_gate=PASS",
+              "drm_panel_notifier_internal_access_gate=PASS",
+              "FINAL_RUNTIME_LAYOUT_GATE=PASS",
+          ]
+          for item in required_gate_lines:
+              if item not in gate:
+                  raise SystemExit(f"missing final runtime gate evidence: {item}")
+
+          rows = Path("task-direct-accesses.tsv").read_text(errors="replace").splitlines()[1:]
+          offsets = []
+          for row in rows:
+              if not row.strip():
+                  continue
+              p = row.split("\t")
+              if len(p) < 5:
+                  raise SystemExit("malformed task-direct-access row")
+              offsets.append(int(p[3]))
+          unique = sorted(set(offsets))
+          print(f"DIRECT_CURRENT_ACCESS_COUNT={len(offsets)}")
+          print("DIRECT_CURRENT_OFFSETS=" + ",".join(map(str, unique)))
+          if len(offsets) != 1221:
+              raise SystemExit(f"unexpected direct-access count: {len(offsets)}")
+          if unique != [24, 62, 1616, 1620]:
+              raise SystemExit(f"unexpected direct-access offsets: {unique}")
+          if max(offsets) > 2752:
+              raise SystemExit("task_struct direct access exceeds common prefix")
+
+          report = {}
+          for line in Path("os2-0-10-composite-report.txt").read_text().splitlines():
+              if "=" in line:
+                  k, v = line.split("=", 1)
+                  report[k] = v
+          full = {}
+          for line in Path("composite-full-abi.txt").read_text().splitlines():
+              if "=" in line and not line.startswith("#"):
+                  k, v = line.split("=", 1)
+                  full[k] = v
+          if report.get("crc_mismatches") != full.get("mismatches"):
+              raise SystemExit("composite mismatch count disagrees with validated report")
+          if report.get("stock_only") != full.get("stock_only"):
+              raise SystemExit("composite stock-only count disagrees with validated report")
+          print(f"COMPOSITE_FULL_ABI_MISMATCHES={full.get('mismatches')}")
+          print(f"COMPOSITE_FULL_ABI_STOCK_ONLY={full.get('stock_only')}")
+          print("UPSTREAM_COMPATIBILITY_GATES=PASS")
+          PY
+
+      - name: Build stock-style boot.img
+        run: |
+          set -euo pipefail
+          python3 - "$STOCK_BOOT" rebuilt-Image boot.img boot-static-validation.txt "$TARGET_RELEASE" <<'PY'
+          import hashlib
+          import struct
+          import sys
+          from pathlib import Path
+
+          stock_path = Path(sys.argv[1])
+          kernel_path = Path(sys.argv[2])
+          out_path = Path(sys.argv[3])
+          report_path = Path(sys.argv[4])
+          target_release = sys.argv[5].encode()
+          stock = stock_path.read_bytes()
+          kernel = kernel_path.read_bytes()
+
+          def align(value, page):
+              return (value + page - 1) // page * page
+          def sha(data):
+              return hashlib.sha256(data).hexdigest()
+
+          if stock[:8] != b"ANDROID!":
+              raise SystemExit("stock boot source does not start with ANDROID!")
+          if len(kernel) < 0x40:
+              raise SystemExit("rebuilt Image is unexpectedly small")
+          if struct.unpack_from("<I", kernel, 0x38)[0] != 0x644D5241:
+              raise SystemExit("rebuilt kernel payload is not ARM64 Image")
+          if target_release not in kernel:
+              raise SystemExit("rebuilt Image does not contain target release")
+
+          stock_kernel_size = struct.unpack_from("<I", stock, 8)[0]
+          ramdisk_size = struct.unpack_from("<I", stock, 12)[0]
+          os_version = struct.unpack_from("<I", stock, 16)[0]
+          header_size = struct.unpack_from("<I", stock, 20)[0]
+          header_version = struct.unpack_from("<I", stock, 40)[0]
+          if header_version != 3:
+              raise SystemExit(f"expected Android boot header v3, got {header_version}")
+          if not (0 < header_size <= 4096):
+              raise SystemExit(f"invalid boot header size: {header_size}")
+
+          page = 4096
+          stock_kernel_off = page
+          stock_ramdisk_off = align(stock_kernel_off + stock_kernel_size, page)
+          stock_ramdisk_end = stock_ramdisk_off + ramdisk_size
+          stock_logical_end = align(stock_ramdisk_end, page)
+          if stock_logical_end > len(stock):
+              raise SystemExit("stock logical boot payload exceeds partition image")
+          ramdisk = stock[stock_ramdisk_off:stock_ramdisk_end]
+          if len(ramdisk) != ramdisk_size:
+              raise SystemExit("stock ramdisk is truncated")
+
+          stock_tail = stock[stock_logical_end:]
+          stock_avb_footer = len(stock) >= 64 and stock[-64:-60] == b"AVBf"
+          stock_tail_nonzero = sum(b != 0 for b in stock_tail)
+          header_page = bytearray(stock[:page])
+          struct.pack_into("<I", header_page, 8, len(kernel))
+
+          rebuilt = bytearray(header_page)
+          rebuilt.extend(kernel)
+          rebuilt.extend(b"\0" * (align(len(rebuilt), page) - len(rebuilt)))
+          rebuilt_ramdisk_off = len(rebuilt)
+          rebuilt.extend(ramdisk)
+          rebuilt.extend(b"\0" * (align(len(rebuilt), page) - len(rebuilt)))
+          rebuilt_logical_end = len(rebuilt)
+          if rebuilt_logical_end > len(stock):
+              raise SystemExit(f"new logical boot payload {rebuilt_logical_end} exceeds stock partition image {len(stock)}")
+          rebuilt.extend(b"\0" * (len(stock) - len(rebuilt)))
+          out = bytes(rebuilt)
+          out_path.write_bytes(out)
+
+          new_kernel_size = struct.unpack_from("<I", out, 8)[0]
+          new_ramdisk_size = struct.unpack_from("<I", out, 12)[0]
+          new_header_version = struct.unpack_from("<I", out, 40)[0]
+          check_kernel = out[page:page + new_kernel_size]
+          check_ramdisk_off = align(page + new_kernel_size, page)
+          check_ramdisk = out[check_ramdisk_off:check_ramdisk_off + new_ramdisk_size]
+          checks = {
+              "android_magic": out[:8] == b"ANDROID!",
+              "header_version_preserved": new_header_version == header_version,
+              "header_metadata_except_kernel_size_preserved": out[12:page] == stock[12:page],
+              "kernel_size_header_exact": new_kernel_size == len(kernel),
+              "kernel_payload_hash_exact": sha(check_kernel) == sha(kernel),
+              "ramdisk_size_preserved": new_ramdisk_size == ramdisk_size,
+              "ramdisk_payload_hash_preserved": sha(check_ramdisk) == sha(ramdisk),
+              "partition_size_preserved": len(out) == len(stock),
+              "arm64_image_magic": struct.unpack_from("<I", check_kernel, 0x38)[0] == 0x644D5241,
+              "target_release_present": target_release in check_kernel,
+              "stale_stock_tail_not_copied": not any(out[rebuilt_logical_end:]),
+              "stale_avb_footer_absent": not (len(out) >= 64 and out[-64:-60] == b"AVBf"),
+          }
+          failed = [name for name, ok in checks.items() if not ok]
+          lines = [
+              "# Lisa reconstructed stock-style boot.img",
+              f"stock_boot_bytes={len(stock)}",
+              f"stock_boot_sha256={sha(stock)}",
+              f"stock_kernel_size={stock_kernel_size}",
+              f"stock_ramdisk_size={ramdisk_size}",
+              f"stock_header_size={header_size}",
+              f"stock_header_version={header_version}",
+              f"stock_os_version_raw={os_version}",
+              f"stock_logical_end={stock_logical_end}",
+              f"stock_tail_bytes={len(stock_tail)}",
+              f"stock_tail_nonzero_bytes={stock_tail_nonzero}",
+              f"stock_avb_footer={int(stock_avb_footer)}",
+              f"new_kernel_size={len(kernel)}",
+              f"new_kernel_sha256={sha(kernel)}",
+              f"new_ramdisk_offset={rebuilt_ramdisk_off}",
+              f"new_logical_end={rebuilt_logical_end}",
+              f"new_boot_bytes={len(out)}",
+              f"new_boot_sha256={sha(out)}",
+          ]
+          lines.extend(f"check_{k}={int(v)}" for k, v in checks.items())
+          report_path.write_text("\n".join(lines) + "\n")
+          print(report_path.read_text(), end="")
+          if failed:
+              raise SystemExit("boot static validation failed: " + ", ".join(failed))
+          PY
+          sha256sum boot.img | tee boot.img.sha256
+          file boot.img
+
+      - name: Final boot.img static gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'check_android_magic=1' boot-static-validation.txt
+          grep -Fqx 'check_header_version_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_header_metadata_except_kernel_size_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_kernel_size_header_exact=1' boot-static-validation.txt
+          grep -Fqx 'check_kernel_payload_hash_exact=1' boot-static-validation.txt
+          grep -Fqx 'check_ramdisk_size_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_ramdisk_payload_hash_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_partition_size_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_arm64_image_magic=1' boot-static-validation.txt
+          grep -Fqx 'check_target_release_present=1' boot-static-validation.txt
+          grep -Fqx 'check_stale_stock_tail_not_copied=1' boot-static-validation.txt
+          grep -Fqx 'check_stale_avb_footer_absent=1' boot-static-validation.txt
+          test "$(stat -c '%s' boot.img)" = "$STOCK_BOOT_BYTES"
+          test "$(sha256sum rebuilt-Image | awk '{print $1}')" = "$KERNEL_IMAGE_SHA256"
+          echo 'LISA_RECONSTRUCTED_BOOT_STATIC_GATE=PASS'
+
+      - name: Upload reconstructed boot.img and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-qgki-reconstructed-boot-img-v2
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: warn
+          path: |
+            boot.img
+            boot.img.sha256
+            boot-static-validation.txt
+            rebuilt-Image
+            rebuilt-Image.sha256
+            os2-0-10-composite-report.txt
+            composite-full-abi.txt
+            composite-genksyms-failures.txt
+            qgki-six-crc.txt
+            qgki-msm-drm-abi.txt
+            qgki-runtime-layout-assert.c
+            final-runtime-layout-gate.txt
+            task-direct-accesses.tsv
