@@ -213,3 +213,36 @@ The blocker is now narrowed to after UEFI ExitBootServices / kernel handoff but 
 No kernel source change is made from the stale `g5987` minidump panic.
 
 The next required evidence is the 200 MiB `rawdump` partition from the same failed-boot state, collected before another boot attempt. If it also lacks the `g4c23` kernel marker, the failure is likely occurring before current-kernel dump capture becomes usable and a different early-boot instrumentation strategy will be required.
+
+
+## Iteration 0004 — 2026-09-23 21:18 +08:00
+
+- Candidate: reconstructed `boot.img`
+- Boot SHA256: `82697e2df7368c17d8d3ffd54947ff0213c6ed80f47edf5fb17475093b760a07`
+- Outcome: `black-screen-reboot`
+- Collector: `collect_lisa_twrp_logs.ps1 v1.2.0`
+- Package bytes: `14057078`
+- Package SHA256: `6f38bba2b219f96d957f83dec6e3a009b80d0f3a6d69cad08c5890fcf5025d65`
+
+### rawdump verification
+
+The small ZIP size is expected compression, not a truncated rawdump.
+
+```text
+rawdump logical size = 209715200 bytes
+rawdump SHA256 = 605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c
+nonzero_bytes = 10954478
+first_nonzero_offset = 0
+last_nonzero_offset = 67936879
+compressed size inside ZIP ~= 1.46 MiB
+```
+
+The complete rawdump contains no `g4c23b1a30923`, `5.4.289-qgki-g4c23`, or `4c23b1a30923` marker.
+
+All Linux 5.4.289 release strings found in rawdump identify the historical `5.4.289-qgki-g5987d69e25da` kernel. The panic records are likewise the stale `qcom_icc_set_qos -> regmap_mmio_read32le` failure from that older kernel.
+
+Therefore iteration 0004 confirms that the currently tested g4c23 candidate resets before it leaves an identifiable current-kernel persistent dump record.
+
+### Next diagnostic action
+
+Run the existing ARM64 early-boot binary comparison against the exact current validated/repacked candidate artifact (`10736688529`) rather than the stale artifact previously referenced by the workflow. Compare the stock OS2.0.10 Image against the exact reconstructed Image header, entry instructions, text offset, declared image size, flags, reserved fields, appended payloads, and embedded config.
