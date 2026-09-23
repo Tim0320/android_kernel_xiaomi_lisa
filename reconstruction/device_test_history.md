@@ -801,3 +801,67 @@ This is intended to make first-stage `slotselect` consume the same slot that UEF
 - Taiwan OS2.0.5 userspace may remain in place for this diagnostic
 - First blocker: **missing/incorrect first-stage slot suffix; init selects system_b while UEFI boots slot_a**
 - Next candidate: keep Candidate 0008 boot + exact CN OS2.0.16 DTBO; patch only CN OS2.0.16 vendor_boot cmdline with `androidboot.slot_suffix=_a`
+
+
+## Candidate 0010 — CN OS2.0.16 companion with forced slot A, awaiting device test
+
+- Workflow run: `35901248329`
+- Workflow head: `150f88d1c68c05998de8d7e18128c389ace02133`
+- Artifact ID: `10769645620`
+- Artifact name: `lisa-candidate-0010-force-slot-a`
+- Artifact digest: `sha256:bee9b5dfb47f79422284c90bbded08f07b219ad1da215cd9b17700b6bb62a154`
+- Conclusion: `success`
+
+### Exact mutation
+
+Candidate 0010 keeps the Candidate 0008 boot image and the exact CN OS2.0.16 DTBO. The only changed partition payload is `vendor_boot.img`, and within it the workflow changes only the fixed vendor header cmdline field.
+
+Original CN OS2.0.16 vendor_boot cmdline ends with:
+
+```text
+buildvariant=user
+```
+
+Candidate 0010 appends:
+
+```text
+androidboot.slot_suffix=_a
+```
+
+Static delta:
+
+```text
+changed_byte_count=27
+changed_first_offset=453
+changed_last_offset=479
+
+original_vendor_boot_sha256=
+c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+
+patched_vendor_boot_sha256=
+d4d1b33ef6d074cce05eab4391c663e5c8de7f0738eea8cc571e50ee2172a6b5
+```
+
+### Preserved payload gates
+
+```text
+vendor_ramdisk_sha256=
+bfd1fee676cf5f01dd73a1952fea599b409e744f744f908b8b501ea406363b95
+
+vendor_dtb_sha256=
+3e2c5c57da481dae32e9e7b46bdc760b20bdca56baa0882d4c404bbff1b99aef
+
+VENDOR_RAMDISK_EXACT=PASS
+VENDOR_DTB_EXACT=PASS
+VENDOR_BOOT_ONLY_CMDLINE_CHANGED=PASS
+LISA_CANDIDATE_0010_STATIC_GATE=PASS
+LISA_CANDIDATE_0010_FINAL_GATE=PASS
+```
+
+### Device-test gate
+
+The device currently uses Taiwan OS2.0.5.0 userspace with the CN OS2.0.16 companion direction. Iteration 0011 proved that the g598 kernel reaches first-stage init, but init selects `system_b` while UEFI boots slot `_a`.
+
+The next non-speculative test is therefore to flash Candidate 0010's patched `vendor_boot_a`, explicitly set active slot A, and boot. If the device still fails, collect a new TWRP evidence bundle before any further kernel or fstab mutation.
+
+No further GitHub-side mutation is justified until this device result is available.
