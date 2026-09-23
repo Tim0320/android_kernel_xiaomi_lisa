@@ -6,13 +6,14 @@ param(
     [string]$Outcome = "unknown",
     [string]$Note = "",
     [string]$OutputRoot = "",
+    [switch]$IncludeRawDump,
     [switch]$NoZip
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScriptVersion = "1.1.0"
+$ScriptVersion = "1.2.0"
 $SchemaVersion = 1
 
 function Write-Step {
@@ -148,6 +149,50 @@ function Pull-AdbGlobFiles {
         Pull-AdbPathIfPresent -AdbPath $AdbPath -RemotePath $remoteFile -LocalPath $localFile -StatusFile $StatusFile | Out-Null
     }
     return $remoteFiles.Count
+}
+
+
+function Get-BinaryContentStats {
+    param(
+        [string]$Path
+    )
+
+    $stream = [System.IO.File]::OpenRead($Path)
+    $buffer = New-Object byte[] (4MB)
+
+    [int64]$absoluteOffset = 0
+    [int64]$nonZeroBytes = 0
+    [int64]$firstNonZeroOffset = -1
+    [int64]$lastNonZeroOffset = -1
+
+    try {
+        while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            for ($i = 0; $i -lt $read; $i++) {
+                if ($buffer[$i] -ne 0) {
+                    $nonZeroBytes++
+                    $currentOffset = $absoluteOffset + $i
+
+                    if ($firstNonZeroOffset -lt 0) {
+                        $firstNonZeroOffset = $currentOffset
+                    }
+
+                    $lastNonZeroOffset = $currentOffset
+                }
+            }
+
+            $absoluteOffset += $read
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+
+    return [pscustomobject][ordered]@{
+        all_zero = ($nonZeroBytes -eq 0)
+        nonzero_bytes = $nonZeroBytes
+        first_nonzero_offset = $firstNonZeroOffset
+        last_nonzero_offset = $lastNonZeroOffset
+    }
 }
 
 function Capture-AdbBlockPartition {
@@ -375,6 +420,18 @@ $bootMode = Get-AdbShellText -AdbPath $adbPath -Command "getprop ro.bootmode"
 $bootReason = Get-AdbShellText -AdbPath $adbPath -Command "getprop ro.boot.bootreason"
 $twrpVersion = Get-AdbShellText -AdbPath $adbPath -Command "getprop ro.twrp.version"
 
+$cmdlineText = Get-AdbShellText -AdbPath $adbPath -Command "cat /proc/cmdline 2>/dev/null"
+$pureason = "UNKNOWN"
+$pdreason = "UNKNOWN"
+
+if ($cmdlineText -match '(?:^|\s)bootinfo\.pureason=([^\s]+)') {
+    $pureason = $Matches[1]
+}
+
+if ($cmdlineText -match '(?:^|\s)bootinfo\.pdreason=([^\s]+)') {
+    $pdreason = $Matches[1]
+}
+
 if ([string]::IsNullOrWhiteSpace($device)) { $device = "UNKNOWN" }
 if ([string]::IsNullOrWhiteSpace($model)) { $model = "UNKNOWN" }
 if ([string]::IsNullOrWhiteSpace($slot)) { $slot = "UNKNOWN" }
@@ -483,6 +540,8 @@ $manifest = [ordered]@{
         slot_suffix = $slot
         boot_mode = $bootMode
         boot_reason = $bootReason
+        cmdline_pureason = $pureason
+        cmdline_pdreason = $pdreason
         twrp_version = $twrpVersion
     }
     collection = [ordered]@{
@@ -519,24 +578,30 @@ $summary = @(
     "slot_suffix=$slot",
     "boot_mode=$bootMode",
     "boot_reason=$bootReason",
+    "cmdline_pureason=$pureason",
+    "cmdline_pdreason=$pdreason",
     "twrp_version=$twrpVersion",
     "outcome=$Outcome",
     "note=$Note",
     "",
     "Primary failure evidence:",
-    "1. pulled/block_partitions/lisa_oops_iter" + $iteration + ".bin",
-    "2. pulled/block_partitions/lisa_logdump_iter" + $iteration + ".bin",
-    "3. pulled/pstore and raw/09_pstore_contents.txt",
-    "4. raw/10_last_kmsg.txt",
-    "5. pulled/data_vendor_ramoops",
-    "6. raw/11_dmesg_recovery.txt",
+    "1. pulled/block_partitions/lisa_oops_iter$iteration.bin",
+    "2. pulled/block_partitions/lisa_logdump_iter$iteration.bin",
+    "3. pulled/block_partitions/lisa_minidump_iter$iteration.bin",
+    "4. pulled/block_partitions/lisa_mdcompress_iter$iteration.bin",
+    "5. pulled/block_partitions/lisa_logfs_iter$iteration.bin",
+    "6. pulled/pstore and raw/09_pstore_contents.txt",
+    "7. raw/10_last_kmsg.txt",
+    "8. pulled/data_vendor_ramoops",
+    "9. raw/11_dmesg_recovery.txt",
     "",
     "Recovery history (context only):",
-    "7. pulled/cache_recovery_history/last_kmsg*",
-    "8. pulled/cache_recovery_history/last_log*",
+    "10. pulled/cache_recovery_history/last_kmsg*",
+    "11. pulled/cache_recovery_history/last_log*",
     "",
     "Additional dump inventory:",
-    "9. raw/20_dump_partition_inventory.txt"
+    "12. raw/20_dump_partition_inventory.txt",
+    "13. rawdump is captured only when -IncludeRawDump is explicitly supplied"
 )
 $summary | Set-Content -LiteralPath (Join-Path $iterationDir "SUMMARY.txt") -Encoding utf8
 
