@@ -83,3 +83,60 @@ The 64 MiB logdump image is entirely zero-filled and contains no crash payload.
 Together with the stale mtdoops-ring result, Iteration 0001 still lacks a trustworthy crash trace from the newly tested reconstructed kernel. No kernel source change is justified from these records alone.
 
 Collector v1.1.0 now automatically captures oops, logdump, all cache/recovery last_kmsg* and last_log* history, and inventories minidump/rawdump/logfs/mdcompress partition sizes.
+
+
+## Iteration 0002 — 2026-09-23 20:51 +08:00
+
+- Candidate: reconstructed `boot.img`
+- Boot SHA256: `82697e2df7368c17d8d3ffd54947ff0213c6ed80f47edf5fb17475093b760a07`
+- Boot size: `201326592` bytes
+- Device: Xiaomi 11 Lite 5G NE (`lisa`)
+- Slot: `_a`
+- TWRP: `3.7.1_12-1_Rocky7842`
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Collector: `collect_lisa_twrp_logs.ps1 v1.1.0`
+- Package SHA256: `a757878e1f7fecce3b299ce7f200db06b7f1f3918788446265e292d1f45b744d`
+- Package integrity: all 55 listed files matched `SHA256SUMS.txt`.
+
+### Evidence
+
+The `oops` partition is byte-for-byte identical to iteration 0001:
+
+```text
+size=16777216
+sha256=a78f91d0262e9b37823ee5060fdf5b4a3dd0b34614769149fc428a2a81ac6de2
+```
+
+Therefore no new mtdoops record was committed by the failed reconstructed boot.
+
+The `logdump` partition is 64 MiB with SHA256 `08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a`. Only the first 29 bytes are non-zero and contain the ASCII marker `/dev/block/by-name/logdump -\n`; all remaining bytes are zero. This is not a usable crash payload.
+
+All 11 collected `/cache/recovery/last_kmsg*` files are recovery-kernel histories. They report Linux versions `5.4.210-qgki-*` or `5.4.86-qgki-*`, not the tested reconstructed `5.4.289-qgki-g4c23b1a30923`. They cannot identify the current failure root cause.
+
+Recovery cmdline after the failed boot reports:
+
+```text
+bootinfo.pureason=0x80011
+bootinfo.pdreason=0x2
+androidboot.ramdump=disable
+```
+
+These values are retained as reboot-context evidence only; they are not treated as standalone proof of kernel panic.
+
+The dump partition inventory shows:
+
+```text
+oops      16777216
+logdump   67108864
+minidump  100663296
+rawdump   209715200
+logfs     8388608
+mdcompress 20971520
+```
+
+### Decision
+
+Evidence remains insufficient for a safe kernel source change. The next test must collect `minidump`, `mdcompress`, and `logfs`. `rawdump` is intentionally opt-in because it is 200 MiB and may contain RAM-resident sensitive data.
+
+Collector v1.2.0 adds automatic capture for those smaller diagnostic partitions, records non-zero-byte statistics for raw dumps, records `pureason/pdreason`, and keeps `rawdump` behind `-IncludeRawDump`.
