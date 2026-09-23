@@ -15,7 +15,7 @@ permissions:
 jobs:
   diagnose:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 20
     env:
       BASELINE_ARTIFACT_ID: "10754191797"
       BASELINE_IMAGE_SHA256: "2162041efe1e4ac3e86bd934d4ccd9a4e00c5cd80e23c8085dfd0e0995430166"
@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y curl unzip file device-tree-compiler
+          sudo apt-get install -y curl unzip file device-tree-compiler binutils-aarch64-linux-gnu
 
       - name: Download exact OS2.0.10 baseline and Candidate 0005 artifacts
         env:
@@ -87,7 +87,7 @@ jobs:
           file stock-Image rebuilt-Image
           sha256sum stock-Image rebuilt-Image
 
-      - name: Compare ARM64 Image headers and appended payloads
+      - name: Classify ARM64 Image entry and memory layout
         run: |
           set -euo pipefail
           python3 - <<'PY' | tee early-boot-image-diff.txt
@@ -96,6 +96,14 @@ jobs:
 
           def sha(b):
               return hashlib.sha256(b).hexdigest()
+
+          def decode_b(word, insn_off=4):
+              if word & 0x7c000000 != 0x14000000:
+                  return None
+              imm = word & 0x03ffffff
+              if imm & (1 << 25):
+                  imm -= 1 << 26
+              return insn_off + (imm << 2)
 
           def parse(path):
               b = Path(path).read_bytes()
@@ -118,21 +126,18 @@ jobs:
                   "magic": magic,
                   "res5": struct.unpack_from("<I", b, 60)[0],
               }
+              h["branch_target"] = decode_b(h["code1"])
+              h["branch_target_valid"] = h["branch_target"] is not None and 64 <= h["branch_target"] < len(b)
+              h["memory_tail_bytes"] = h["image_size"] - len(b)
+              h["image_size_covers_file"] = h["image_size"] >= len(b)
               m = re.search(rb"Linux version ([^\x00\n]{1,500})", b)
               h["version"] = m.group(1).decode("utf-8", "replace") if m else "<missing>"
-              declared = h["image_size"]
-              if 0 < declared <= len(b):
-                  h["trailing_bytes_after_image_size"] = len(b) - declared
-                  h["trailing_sha256"] = sha(b[declared:]) if len(b) > declared else "-"
-              else:
-                  h["trailing_bytes_after_image_size"] = -1
-                  h["trailing_sha256"] = "-"
               return b, h
 
-          def fdt_candidates(b, start=0):
+          def fdt_candidates(b):
               out = []
               magic = b"\xd0\x0d\xfe\xed"
-              pos = max(0, start)
+              pos = 0
               while True:
                   pos = b.find(magic, pos)
                   if pos < 0:
@@ -153,15 +158,14 @@ jobs:
 
           for name, h, blob in (("STOCK", stock, stock_b), ("REBUILT", rebuilt, rebuilt_b)):
               print(f"[{name}]")
-              for k in ("file_bytes","sha256","code0","code1","text_offset","image_size","flags","res2","res3","res4","magic","res5","trailing_bytes_after_image_size","trailing_sha256","version"):
+              for k in ("file_bytes","sha256","code0","code1","branch_target","branch_target_valid","text_offset","image_size","memory_tail_bytes","image_size_covers_file","flags","res2","res3","res4","magic","res5","version"):
                   v = h[k]
-                  if isinstance(v, int) and k not in ("file_bytes","image_size","trailing_bytes_after_image_size"):
+                  if isinstance(v, int) and k in ("code0","code1","text_offset","flags","res2","res3","res4","magic","res5","branch_target"):
                       print(f"{k}=0x{v:x}")
                   else:
                       print(f"{k}={v}")
-              start = h["image_size"] if 0 < h["image_size"] < len(blob) else 0
-              candidates = fdt_candidates(blob, start)
-              print(f"valid_fdt_candidates_after_declared_image={len(candidates)}")
+              candidates = fdt_candidates(blob)
+              print(f"valid_fdt_candidates_total={len(candidates)}")
               for pos, total, version in candidates[:32]:
                   print(f"fdt offset={pos} size={total} version={version}")
               print()
@@ -169,9 +173,11 @@ jobs:
           print("[COMPARE]")
           for k in ("text_offset","flags","res2","res3","res4","res5"):
               print(f"{k}_equal={int(stock[k] == rebuilt[k])}")
-          print(f"stock_file_minus_declared={stock['file_bytes'] - stock['image_size'] if stock['image_size'] else -1}")
-          print(f"rebuilt_file_minus_declared={rebuilt['file_bytes'] - rebuilt['image_size'] if rebuilt['image_size'] else -1}")
+          print(f"code0_equal={int(stock['code0'] == rebuilt['code0'])}")
+          print(f"code1_equal={int(stock['code1'] == rebuilt['code1'])}")
+          print(f"image_size_equal={int(stock['image_size'] == rebuilt['image_size'])}")
           print(f"file_size_delta={rebuilt['file_bytes'] - stock['file_bytes']}")
+          print(f"memory_tail_delta={rebuilt['memory_tail_bytes'] - stock['memory_tail_bytes']}")
           common = min(len(stock_b), len(rebuilt_b))
           first_diff = next((i for i in range(common) if stock_b[i] != rebuilt_b[i]), common)
           print(f"first_byte_diff_offset={first_diff}")
@@ -181,56 +187,66 @@ jobs:
           print(f"rebuilt_first_64_sha256={sha(rebuilt_b[:64])}")
           print(f"stock_first_4096_sha256={sha(stock_b[:4096])}")
           print(f"rebuilt_first_4096_sha256={sha(rebuilt_b[:4096])}")
-          print(f"code0_equal={int(stock['code0'] == rebuilt['code0'])}")
-          print(f"code1_equal={int(stock['code1'] == rebuilt['code1'])}")
-          print(f"image_size_equal={int(stock['image_size'] == rebuilt['image_size'])}")
 
-          critical = []
-          if stock["code0"] != rebuilt["code0"] or stock["code1"] != rebuilt["code1"]:
-              critical.append("ARM64 entry instructions differ")
-          if stock["text_offset"] != rebuilt["text_offset"]:
-              critical.append("ARM64 text_offset differs")
-          if stock["image_size"] != rebuilt["image_size"]:
-              critical.append("ARM64 declared image_size differs")
-          if stock["flags"] != rebuilt["flags"]:
-              critical.append("ARM64 Image flags differ")
-          stock_tail = stock["file_bytes"] - stock["image_size"] if stock["image_size"] else 0
-          stock_fdts = fdt_candidates(stock_b, stock["image_size"] if stock["image_size"] else 0)
-          rebuilt_fdts = fdt_candidates(rebuilt_b, rebuilt["image_size"] if rebuilt["image_size"] else 0)
-          if stock_tail > 0 and stock_fdts and not rebuilt_fdts:
-              critical.append("stock Image has appended valid FDT payload(s) that rebuilt Image lacks")
-
-          print("CRITICAL_FINDINGS=" + ("; ".join(critical) if critical else "none-from-header-tail-check"))
+          structural = {
+              "stock_branch_target_valid": stock["branch_target_valid"],
+              "rebuilt_branch_target_valid": rebuilt["branch_target_valid"],
+              "stock_image_size_covers_file": stock["image_size_covers_file"],
+              "rebuilt_image_size_covers_file": rebuilt["image_size_covers_file"],
+              "text_offset_equal": stock["text_offset"] == rebuilt["text_offset"],
+              "flags_equal": stock["flags"] == rebuilt["flags"],
+              "reserved_equal": all(stock[k] == rebuilt[k] for k in ("res2","res3","res4","res5")),
+              "magic_equal": stock["magic"] == rebuilt["magic"] == 0x644d5241,
+              "code0_equal": stock["code0"] == rebuilt["code0"],
+          }
+          for k, v in structural.items():
+              print(f"check_{k}={int(v)}")
+          failed = [k for k, v in structural.items() if not v]
+          if failed:
+              print("EARLY_IMAGE_STRUCTURAL_GATE=FAIL:" + ",".join(failed))
+              raise SystemExit("malformed early Image structure: " + ", ".join(failed))
+          print("EARLY_IMAGE_STRUCTURAL_GATE=PASS")
+          print("NOTE=code1 and image_size are linker-layout values; numerical inequality alone is not classified as a boot failure when both branch targets and memory extents are structurally valid")
           PY
 
-      - name: Try extracting embedded kernel configs
+      - name: Disassemble both decoded entry targets
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > entry-targets.env
+          from pathlib import Path
+          import struct
+          def target(path):
+              b=Path(path).read_bytes()
+              w=struct.unpack_from('<I',b,4)[0]
+              imm=w & 0x03ffffff
+              if imm & (1<<25): imm -= 1<<26
+              return 4 + (imm<<2)
+          print(f"STOCK_ENTRY={target('stock-Image')}")
+          print(f"REBUILT_ENTRY={target('rebuilt-Image')}")
+          PY
+          source entry-targets.env
+          {
+            echo "[STOCK_ENTRY target=$STOCK_ENTRY]"
+            aarch64-linux-gnu-objdump -D -b binary -m aarch64 \
+              --start-address="$STOCK_ENTRY" --stop-address="$((STOCK_ENTRY+256))" stock-Image
+            echo
+            echo "[REBUILT_ENTRY target=$REBUILT_ENTRY]"
+            aarch64-linux-gnu-objdump -D -b binary -m aarch64 \
+              --start-address="$REBUILT_ENTRY" --stop-address="$((REBUILT_ENTRY+256))" rebuilt-Image
+          } | tee entry-target-disassembly.txt
+
+      - name: Extract and compare complete embedded kernel configs
         run: |
           set -euo pipefail
           extract="reconstructed-source/scripts/extract-ikconfig"
           chmod +x "$extract" || true
           for img in stock-Image rebuilt-Image; do
-            if "$extract" "$img" > "$img.config" 2> "$img.ikconfig.err"; then
-              echo "$img IKCONFIG=present"
-            else
-              echo "$img IKCONFIG=absent"
-              : > "$img.config"
-            fi
+            "$extract" "$img" > "$img.config" 2> "$img.ikconfig.err"
+            test -s "$img.config"
           done
 
-          python3 - <<'PY' | tee early-boot-config-diff.txt
+          python3 - <<'PY' | tee full-config-diff-summary.txt
           from pathlib import Path
-
-          keys = [
-              "CONFIG_ARM64","CONFIG_64BIT","CONFIG_SMP","CONFIG_PREEMPT",
-              "CONFIG_ARM64_4K_PAGES","CONFIG_ARM64_16K_PAGES","CONFIG_ARM64_64K_PAGES",
-              "CONFIG_ARM64_VA_BITS","CONFIG_RANDOMIZE_BASE","CONFIG_RELOCATABLE",
-              "CONFIG_BLK_DEV_INITRD","CONFIG_DEVTMPFS","CONFIG_DEVTMPFS_MOUNT",
-              "CONFIG_TMPFS","CONFIG_PROC_FS","CONFIG_SYSFS","CONFIG_CGROUPS",
-              "CONFIG_NAMESPACES","CONFIG_ANDROID_BINDER_IPC","CONFIG_ANDROID_BINDERFS",
-              "CONFIG_MODULES","CONFIG_MODVERSIONS","CONFIG_MODULE_UNLOAD",
-              "CONFIG_KALLSYMS","CONFIG_KALLSYMS_ALL","CONFIG_CMDLINE",
-              "CONFIG_CMDLINE_FORCE","CONFIG_CMDLINE_EXTEND","CONFIG_EFI",
-          ]
 
           def parse(p):
               d = {}
@@ -242,32 +258,44 @@ jobs:
                       d[k] = v
               return d
 
-          a = parse("stock-Image.config")
-          b = parse("rebuilt-Image.config")
-          print(f"STOCK_CONFIG_KEYS={len(a)}")
-          print(f"REBUILT_CONFIG_KEYS={len(b)}")
-          if not a or not b:
-              print("CONFIG_COMPARE=unavailable")
-          else:
-              diff = 0
-              for k in keys:
-                  av = a.get(k, "<missing>")
-                  bv = b.get(k, "<missing>")
-                  same = av == bv
-                  diff += int(not same)
-                  print(f"{k}\tstock={av}\trebuilt={bv}\tequal={int(same)}")
-              print(f"BOOT_CRITICAL_CONFIG_DIFF_COUNT={diff}")
+          stock = parse("stock-Image.config")
+          rebuilt = parse("rebuilt-Image.config")
+          keys = sorted(set(stock) | set(rebuilt))
+          diffs = [(k, stock.get(k,"<missing>"), rebuilt.get(k,"<missing>")) for k in keys if stock.get(k) != rebuilt.get(k)]
+          Path("full-config-diff.txt").write_text("\n".join(f"{k}\tstock={a}\trebuilt={b}" for k,a,b in diffs) + "\n")
+
+          prefixes = (
+              "CONFIG_ARM64", "CONFIG_ARM_", "CONFIG_ARCH_", "CONFIG_CPU_", "CONFIG_EFI",
+              "CONFIG_PSCI", "CONFIG_MMU", "CONFIG_RANDOMIZE", "CONFIG_RELOCATABLE",
+              "CONFIG_SMP", "CONFIG_PREEMPT", "CONFIG_VIRTUALIZATION", "CONFIG_HYPERVISOR",
+              "CONFIG_QCOM", "CONFIG_ARM_SMMU", "CONFIG_IOMMU", "CONFIG_DMA", "CONFIG_CMA",
+              "CONFIG_SPARSEMEM", "CONFIG_ZONE", "CONFIG_OF", "CONFIG_CLK", "CONFIG_COMMON_CLK",
+              "CONFIG_REGULATOR", "CONFIG_PINCTRL", "CONFIG_SERIAL", "CONFIG_PRINTK",
+              "CONFIG_PSTORE", "CONFIG_PANIC", "CONFIG_CMDLINE", "CONFIG_KASLR"
+          )
+          sensitive = [d for d in diffs if d[0].startswith(prefixes)]
+          Path("early-sensitive-config-diff.txt").write_text("\n".join(f"{k}\tstock={a}\trebuilt={b}" for k,a,b in sensitive) + "\n")
+
+          print(f"STOCK_CONFIG_KEYS={len(stock)}")
+          print(f"REBUILT_CONFIG_KEYS={len(rebuilt)}")
+          print(f"FULL_CONFIG_DIFF_COUNT={len(diffs)}")
+          print(f"EARLY_SENSITIVE_CONFIG_DIFF_COUNT={len(sensitive)}")
+          print("--- early-sensitive differences ---")
+          for k,a,b in sensitive[:240]:
+              print(f"{k}\tstock={a}\trebuilt={b}")
           PY
 
       - name: Write summary
         if: always()
         run: |
           {
-            echo "## Lisa early boot binary diagnosis"
+            echo "## Lisa exact Candidate 0005 early-boot diagnosis"
             echo
             cat early-boot-image-diff.txt 2>/dev/null || true
             echo
-            cat early-boot-config-diff.txt 2>/dev/null || true
+            cat full-config-diff-summary.txt 2>/dev/null || true
+            echo
+            sed -n '1,220p' entry-target-disassembly.txt 2>/dev/null || true
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload diagnosis
@@ -279,7 +307,11 @@ jobs:
           if-no-files-found: warn
           path: |
             early-boot-image-diff.txt
-            early-boot-config-diff.txt
+            entry-targets.env
+            entry-target-disassembly.txt
+            full-config-diff-summary.txt
+            full-config-diff.txt
+            early-sensitive-config-diff.txt
             stock-Image.config
             rebuilt-Image.config
             stock-Image.ikconfig.err
