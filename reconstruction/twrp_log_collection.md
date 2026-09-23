@@ -26,15 +26,15 @@ powershell -ExecutionPolicy Bypass -File .\scripts\collect_lisa_twrp_logs.ps1 -O
 For the most precise mapping, pass the exact candidate image and optional source commit:
 
 ~~~powershell
-powershell -ExecutionPolicy Bypass -File .\scripts\collect_lisa_twrp_logs.ps1 ^
-  -BootImagePath "F:\Rom_Port\candidate\boot.img" ^
-  -KernelCommit "2081aeb8d69a101fb596514ca494b943e44d931c" ^
-  -BuildLabel "qgki-repack-v2" ^
-  -Outcome "black-screen-reboot" ^
+powershell -ExecutionPolicy Bypass -File .\scripts\collect_lisa_twrp_logs.ps1 `
+  -BootImagePath "F:\Rom_Port\candidate\boot.img" `
+  -KernelCommit "2081aeb8d69a101fb596514ca494b943e44d931c" `
+  -BuildLabel "qgki-repack-v2" `
+  -Outcome "black-screen-reboot" `
   -Note "black screen for several seconds, then automatic reboot"
 ~~~
 
-For PowerShell itself, put the command on one line or use the PowerShell line-continuation character if preferred.
+This command is intended to run on your own Windows PC after the failed boot attempt, while the phone is connected in TWRP/recovery over ADB. Upload only the generated ZIP for analysis.
 
 KernelCommit is optional. The boot.img SHA256 is the primary identity. If the repository is cloned locally and KernelCommit is omitted, the script tries to record the local Git HEAD.
 
