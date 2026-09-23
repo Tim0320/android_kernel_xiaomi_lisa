@@ -258,7 +258,8 @@ jobs:
           p.write_text(s)
           PY
 
-          grep -Eq '^[[:space:]]*kgsl_trace\.o([[:space:]]|\\\\)*
+          grep -q 'kgsl_trace.o' drivers/gpu/msm/Makefile
+          grep -q 'adreno_trace.o' drivers/gpu/msm/Makefile
           grep -Fqx 'include/trace/events/sched.h' redwood-overlay-manifest.txt
           grep -q 'TRACE_EVENT(sched_setaffinity,' include/trace/events/sched.h
           grep -q 'sched_kthread_work_queue_work' include/trace/events/sched.h
