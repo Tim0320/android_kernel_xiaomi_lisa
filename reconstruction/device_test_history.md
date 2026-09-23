@@ -51,3 +51,18 @@ Collector v1.0.2 has three follow-up issues:
 ### Next evidence
 
 While still in TWRP, capture the raw `oops` partition and record its SHA256 before another boot attempt can overwrite it.
+
+
+### Iteration 0001 follow-up: raw oops partition
+
+Uploaded raw partition: `lisa_oops_iter0001.bin`
+
+- Size: `16777216` bytes
+- SHA256: `a78f91d0262e9b37823ee5060fdf5b4a3dd0b34614769149fc428a2a81ac6de2`
+- Layout observed: eight 2 MiB mtdoops slots.
+- Readable slot indices: `1293` through `1300`.
+- Highest index: `1300`, carrying an older `5.4.289-qgki-g5987d69e25da` record.
+- Slots carrying `5.4.289-qgki-g4c23b1a30923` are older indices (approximately `1293`-`1297`) and therefore cannot be treated as the just-tested boot.
+- Conclusion: the failed reconstructed boot did not commit a new mtdoops record before reset. Do not use the stale g4c23 slot tail as the current crash root cause.
+
+The TWRP filesystem listing shows `/cache/recovery/last_kmsg` and rotated `last_kmsg.*` files, and the GPT exposes a `logdump` partition. These are the next evidence sources to collect before changing the kernel.
