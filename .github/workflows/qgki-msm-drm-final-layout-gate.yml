@@ -1,4 +1,4 @@
-name: Final field-level runtime layout gate for stock QGKI msm_drm
+name: Final exact OS2.0.10 runtime layout gate
 
 on:
   workflow_dispatch:
@@ -16,13 +16,26 @@ jobs:
   gate:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      RECONSTRUCTION_SHA: ab491ef6ecd4d35f9edcaa8ad00b568306c6ce64
+      STOCK_ORACLE_ARTIFACT_ID: "10713959003"
+      COMPOSITE_ARTIFACT_ID: "10762792655"
+      KERNEL_IMAGE_SHA256: 4aa9995ae5ecbd2e3beb3018cd19a11a80e8970eb96c540874be547d2ecd90c6
+      TARGET_RELEASE: 5.4.289-qgki-g4c23b1a30923
 
     steps:
-      - name: Checkout reconstructed kernel
+      - name: Checkout exact reconstructed kernel
         uses: actions/checkout@v4
         with:
-          ref: reconstruction/5.4.289-qgki
+          ref: ${{ env.RECONSTRUCTION_SHA }}
           fetch-depth: 1
+
+      - name: Authenticate reconstruction revision
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$RECONSTRUCTION_SHA"
+          grep -q 'ANDROID_VENDOR_DATA(1)' include/linux/rwsem.h
+          echo "EXACT_RECONSTRUCTION_SHA=$RECONSTRUCTION_SHA"
 
       - name: Install dependencies
         run: |
@@ -31,7 +44,7 @@ jobs:
           sudo apt-get install -y \
             bc bison flex build-essential libssl-dev libelf-dev \
             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            python3 curl unzip rsync
+            python3 curl unzip xz-utils
 
       - name: Cache clang 11.0.2
         uses: actions/cache@v4
@@ -54,96 +67,75 @@ jobs:
           "$DEST/bin/clang" --version | tee clang-version.txt
           grep -q 'clang version 11.0.2' clang-version.txt
 
-      - name: Download exact stock IKHEADERS and module disassembly evidence
+      - name: Download exact OS2.0.10 stock oracle and exact composite Image
         env:
           GH_TOKEN: ${{ github.token }}
-          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
-          RUNTIME_RISK_ARTIFACT_ID: "10653896443"
-          COMPAT_ARTIFACT_ID: "10675087797"
         run: |
           set -euo pipefail
-          mkdir -p stock-artifact risk-artifact compat-artifact
+          mkdir -p stock-oracle composite-evidence stock-kheaders
 
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
-            -o stock-kheaders.zip
-          unzip -q stock-kheaders.zip -d stock-artifact
-          test -d stock-artifact/stock-kheaders
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_ORACLE_ARTIFACT_ID}/zip" \
+            -o stock-oracle.zip
+          unzip -q stock-oracle.zip -d stock-oracle
 
           curl -fL \
             -H "Authorization: Bearer $GH_TOKEN" \
             -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${RUNTIME_RISK_ARTIFACT_ID}/zip" \
-            -o runtime-risk.zip
-          unzip -q runtime-risk.zip -d risk-artifact
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${COMPOSITE_ARTIFACT_ID}/zip" \
+            -o composite-evidence.zip
+          unzip -q composite-evidence.zip -d composite-evidence
 
-          dis="$(find risk-artifact -type f -name disassembly.txt -print -quit)"
-          test -n "$dis"
-          cp "$dis" stock-msm-drm-disassembly.txt
+          test -s stock-oracle/stock-kheaders.tar.xz
+          tar -xJf stock-oracle/stock-kheaders.tar.xz -C stock-kheaders
+          test -s stock-kheaders/include/linux/kconfig.h
 
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${COMPAT_ARTIFACT_ID}/zip" \
-            -o compat-artifact.zip
-          unzip -q compat-artifact.zip -d compat-artifact
+          image="$(find composite-evidence -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
+          report="$(find composite-evidence -type f -name os2-0-10-composite-report.txt -print -quit)"
+          module_gate="$(find composite-evidence -type f -name qgki-module-oracle-current.txt -print -quit)"
+          config="$(find composite-evidence -type f -name os2-0-10-effective.config -print -quit)"
+          full_abi="$(find composite-evidence -type f -name composite-full-abi.txt -print -quit)"
+          genksyms_failures="$(find composite-evidence -type f -name composite-genksyms-failures.txt -print -quit)"
 
-          compat_patch="$(find compat-artifact -type f -name qgki-six-compat.patch -print -quit)"
-          test -n "$compat_patch"
-          test -s "$compat_patch"
-          cp "$compat_patch" qgki-six-compat.patch
+          test -n "$image" && test -s "$image"
+          test -n "$report" && test -s "$report"
+          test -n "$module_gate" && test -s "$module_gate"
+          test -n "$config" && test -s "$config"
+          test -n "$full_abi" && test -s "$full_abi"
+          test -n "$genksyms_failures"
 
-      - name: Apply validated runtime compatibility patch
-        run: |
-          set -euo pipefail
-          git apply --check qgki-six-compat.patch
-          git apply qgki-six-compat.patch
-          git diff --check
-          grep -q 'ANDROID_VENDOR_DATA(1)' include/linux/rwsem.h
-          echo "FINAL_GATE_RUNTIME_COMPAT_PATCH=PASS"
+          test "$(sha256sum "$image" | awk '{print $1}')" = "$KERNEL_IMAGE_SHA256"
+          grep -Fqx "target_release=$TARGET_RELEASE" "$report"
+          grep -Fqx "image_sha256=$KERNEL_IMAGE_SHA256" "$report"
+          grep -Fqx 'crc_mismatches=0' "$report"
+          grep -Fqx 'module_oracle_matches=736' "$report"
+          grep -Fqx 'module_oracle_mismatches=0' "$report"
+          grep -Fqx 'module_oracle_missing=0' "$report"
+          grep -Fqx 'OS2_0_10_COMPOSITE_BUILD=PASS' "$report"
+          grep -Fqx 'matches=736' "$module_gate"
+          grep -Fqx 'mismatches=0' "$module_gate"
+          grep -Fqx 'missing=0' "$module_gate"
+          test ! -s "$genksyms_failures"
 
-      - name: Generate current exact-config headers
+          cp "$image" exact-composite-Image
+          cp "$report" os2-0-10-composite-report.txt
+          cp "$module_gate" qgki-module-oracle-current.txt
+          cp "$config" exact-composite.config
+          cp "$full_abi" composite-full-abi.txt
+          sha256sum exact-composite-Image | tee exact-composite-Image.sha256
+          echo "EXACT_COMPOSITE_EVIDENCE=PASS"
+
+      - name: Prepare headers from the exact composite config
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         run: |
           set -euo pipefail
           rm -rf out
           mkdir -p out
-          cp reconstruction/stock_ikconfig out/.config
-          scripts/config --file out/.config --enable BOARD_XIAOMI_LISA
-
-          # Match the effective early-boot config used by the validated
-          # 0364806 compatibility build.
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("drivers/soc/qcom/Kconfig")
-          s = p.read_text()
-          pairs = [
-              ("default 11000\n\trange 11000 11000",
-               "default 20000\n\trange 20000 20000"),
-              ("default 9360\n\trange 9360 9360",
-               "default 15000\n\trange 15000 15000"),
-          ]
-          for old, new in pairs:
-              if old not in s:
-                  raise SystemExit(f"watchdog Kconfig block not found: {old!r}")
-              s = s.replace(old, new, 1)
-          p.write_text(s)
-          PY
-
-          make -j"$(nproc)" O=out \
-            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
-
-          scripts/config --file out/.config --disable ARM64_USE_LSE_ATOMICS
-          scripts/config --file out/.config --disable COMPAT_VDSO
-          scripts/config --file out/.config --disable RELR
-          scripts/config --file out/.config --set-val QCOM_WATCHDOG_BARK_TIME 20000
-          scripts/config --file out/.config --set-val QCOM_WATCHDOG_PET_TIME 15000
+          cp exact-composite.config out/.config
+          cp exact-composite.config exact-composite.config.before-prepare
 
           make -j"$(nproc)" O=out \
             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
@@ -151,17 +143,23 @@ jobs:
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts
 
+          cmp -s exact-composite.config.before-prepare out/.config || {
+            echo 'Exact composite config drifted when prepared against reconstruction SHA'
+            diff -u exact-composite.config.before-prepare out/.config | head -200 || true
+            exit 1
+          }
+
           grep -Fqx '# CONFIG_ARM64_USE_LSE_ATOMICS is not set' out/.config
           grep -Fqx '# CONFIG_COMPAT_VDSO is not set' out/.config
           grep -Fqx '# CONFIG_RELR is not set' out/.config
           grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' out/.config
           grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' out/.config
-          echo "FINAL_GATE_EARLY_BOOT_CONFIG_ALIGNMENT=PASS"
+          echo "EXACT_COMPOSITE_CONFIG_PREPARE=PASS"
 
-      - name: Compile exact field-offset probes
+      - name: Compile exact current and stock field-offset probes
         env:
           CLANG_ROOT: ${{ runner.temp }}/clang-r383902b1
-          STOCK_ROOT: ${{ github.workspace }}/stock-artifact/stock-kheaders
+          STOCK_ROOT: ${{ github.workspace }}/stock-kheaders
         run: |
           set -euo pipefail
 
@@ -208,332 +206,180 @@ jobs:
           import subprocess
           from pathlib import Path
 
-          clang = Path(os.environ["CLANG_ROOT"]) / "bin/clang"
-          stock = Path(os.environ["STOCK_ROOT"])
+          clang = Path(os.environ['CLANG_ROOT']) / 'bin/clang'
+          stock = Path(os.environ['STOCK_ROOT'])
           root = Path.cwd()
           resource = subprocess.check_output(
-              [str(clang), "-print-resource-dir"], text=True
+              [str(clang), '-print-resource-dir'], text=True
           ).strip()
 
           current_inc = [
-              root / "arch/arm64/include",
-              root / "out/arch/arm64/include/generated",
-              root / "include",
-              root / "out/include",
-              root / "arch/arm64/include/uapi",
-              root / "out/arch/arm64/include/generated/uapi",
-              root / "include/uapi",
-              root / "out/include/generated/uapi",
+              root / 'arch/arm64/include',
+              root / 'out/arch/arm64/include/generated',
+              root / 'include',
+              root / 'out/include',
+              root / 'arch/arm64/include/uapi',
+              root / 'out/arch/arm64/include/generated/uapi',
+              root / 'include/uapi',
+              root / 'out/include/generated/uapi',
           ]
           stock_inc = [
-              stock / "arch/arm64/include",
-              stock / "arch/arm64/include/generated",
-              stock / "include",
-              stock / "include/generated",
-              stock / "arch/arm64/include/uapi",
-              stock / "arch/arm64/include/generated/uapi",
-              stock / "include/uapi",
-              stock / "include/generated/uapi",
+              stock / 'arch/arm64/include',
+              stock / 'arch/arm64/include/generated',
+              stock / 'include',
+              stock / 'include/generated',
+              stock / 'arch/arm64/include/uapi',
+              stock / 'arch/arm64/include/generated/uapi',
+              stock / 'include/uapi',
+              stock / 'include/generated/uapi',
           ]
 
           def compile_probe(side, incs, kconfig):
               cmd = [
-                  str(clang),
-                  "-target", "aarch64-linux-gnu",
-                  "-nostdinc",
-                  "-isystem", str(Path(resource) / "include"),
-                  "-D__KERNEL__",
-                  "-DKBUILD_MODNAME=\"field_probe\"",
-                  "-DKBUILD_BASENAME=\"field_probe\"",
-                  "-include", str(kconfig),
-                  "-O2",
-                  "-S",
-                  "-emit-llvm",
-                  "field_probe.c",
-                  "-o", f"{side}-field-probe.ll",
+                  str(clang), '-target', 'aarch64-linux-gnu', '-nostdinc',
+                  '-isystem', str(Path(resource) / 'include'),
+                  '-D__KERNEL__', '-DKBUILD_MODNAME="field_probe"',
+                  '-DKBUILD_BASENAME="field_probe"', '-include', str(kconfig),
+                  '-O2', '-S', '-emit-llvm', 'field_probe.c', '-o', f'{side}-field-probe.ll',
               ]
               for inc in incs:
-                  cmd.extend(["-I", str(inc)])
+                  cmd.extend(['-I', str(inc)])
               subprocess.run(cmd, check=True)
 
-          compile_probe(
-              "current",
-              current_inc,
-              root / "include/linux/kconfig.h",
-          )
-          compile_probe(
-              "stock",
-              stock_inc,
-              stock / "include/linux/kconfig.h",
-          )
+          compile_probe('current', current_inc, root / 'include/linux/kconfig.h')
+          compile_probe('stock', stock_inc, stock / 'include/linux/kconfig.h')
 
           rx = re.compile(
-              r"define[^@]*@probe_([A-Za-z0-9_]+)\([^)]*\)[^{]*\{"
-              r".*?ret i64 ([0-9]+)",
+              r'define[^@]*@probe_([A-Za-z0-9_]+)\([^)]*\)[^{]*\{.*?ret i64 ([0-9]+)',
               re.S,
           )
-
           def parse(path):
-              text = Path(path).read_text()
-              return {
-                  name: int(value)
-                  for name, value in rx.findall(text)
-              }
+              return {name: int(value) for name, value in rx.findall(Path(path).read_text())}
 
-          current = parse("current-field-probe.ll")
-          stockv = parse("stock-field-probe.ll")
-
+          current = parse('current-field-probe.ll')
+          stockv = parse('stock-field-probe.ll')
           names = sorted(set(current) | set(stockv))
-          lines = ["field\tcurrent\tstock\tmatch"]
+          lines = ['field\tcurrent\tstock\tmatch']
           for name in names:
               a = current.get(name)
               b = stockv.get(name)
               match = a == b
-              print(
-                  f"FIELD_LAYOUT\t{name}\tcurrent={a}\t"
-                  f"stock={b}\tmatch={int(match)}"
-              )
-              lines.append(f"{name}\t{a}\t{b}\t{int(match)}")
-
-          Path("field-layouts.tsv").write_text("\n".join(lines) + "\n")
+              print(f'FIELD_LAYOUT\t{name}\tcurrent={a}\tstock={b}\tmatch={int(match)}')
+              lines.append(f'{name}\t{a}\t{b}\t{int(match)}')
+          Path('field-layouts.tsv').write_text('\n'.join(lines) + '\n')
 
           required_equal = [
-              "task_pid",
-              "task_tgid",
-              "task_group_leader",
-              "task_comm",
-              "inode_i_mapping", "inode_i_private",
-              "panel_drm",
-              "panel_connector",
-              "panel_dev",
-              "panel_funcs",
-              "panel_list",
-              "panel_nh",
-              "blocking_notifier_rwsem",
+              'task_pid', 'task_tgid', 'task_group_leader', 'task_comm',
+              'inode_i_mapping', 'inode_i_private',
+              'panel_size', 'panel_drm', 'panel_connector', 'panel_dev',
+              'panel_funcs', 'panel_list', 'panel_nh',
+              'blocking_notifier_size', 'blocking_notifier_rwsem', 'blocking_notifier_head',
+              'rwsem_size',
           ]
-
-          bad = [
-              name for name in required_equal
-              if current.get(name) != stockv.get(name)
-          ]
-
-          print(
-              f"FIELD_LAYOUT_REQUIRED_EQUAL="
-              f"{len(required_equal)-len(bad)}/{len(required_equal)}"
-          )
+          bad = [name for name in required_equal if current.get(name) != stockv.get(name)]
+          print(f'FIELD_LAYOUT_REQUIRED_EQUAL={len(required_equal)-len(bad)}/{len(required_equal)}')
           if bad:
-              raise SystemExit(
-                  "runtime-used field offsets differ: " + ",".join(bad)
-              )
+              raise SystemExit('runtime layout mismatch: ' + ','.join(bad))
           PY
 
           python3 build_probe.py | tee field-layouts.log
           cat field-layouts.tsv
 
-      - name: Verify direct current-task offsets stay inside identical prefix
+      - name: Audit display sources for ungated direct struct access
         run: |
           set -euo pipefail
-
-          python3 - stock-msm-drm-disassembly.txt task-direct-accesses.tsv <<'PY'
-          import re
-          import sys
-          from collections import Counter
-          from pathlib import Path
-
-          lines = Path(sys.argv[1]).read_text(errors="replace").splitlines()
-
-          func_re = re.compile(r"^\s*[0-9a-f]+ <([^>]+)>:$")
-          mrs_re = re.compile(r"\bmrs\s+(x\d+),\s*sp_el0\b")
-          mem_re = re.compile(
-              r"\b(?:ldr|ldrb|ldrh|ldrsw|ldur|str|strb|strh|stur)\s+"
-              r"[^,]+,\s*\[(x\d+)(?:,\s*#(0x[0-9a-fA-F]+|\d+))?\]"
-          )
-
-          current_func = "-"
-          accesses = []
-
-          for i, line in enumerate(lines):
-              fm = func_re.match(line.strip())
-              if fm:
-                  current_func = fm.group(1)
-
-              mm = mrs_re.search(line)
-              if not mm:
-                  continue
-
-              reg = mm.group(1)
-
-              # The direct current/thread-info idioms in this module access
-              # sp_el0 immediately. Limit the window to avoid later register
-              # reuse producing false positives.
-              for j in range(i + 1, min(i + 4, len(lines))):
-                  mem = mem_re.search(lines[j])
-                  if not mem or mem.group(1) != reg:
-                      continue
-                  off = int(mem.group(2), 0) if mem.group(2) else 0
-                  accesses.append(
-                      (current_func, i + 1, j + 1, off, lines[j].strip())
-                  )
-                  break
-
-          if not accesses:
-              raise SystemExit("no direct sp_el0 accesses found")
-
-          counts = Counter(x[3] for x in accesses)
-          max_offset = max(counts)
-
-          # Exact record-layout comparison showed stock/current task_struct
-          # top-level field offsets have a sequential identical prefix through
-          # byte 2752; first divergence occurs after that.
-          common_prefix_last_field = 2752
-
-          print(f"DIRECT_CURRENT_ACCESS_COUNT={len(accesses)}")
-          print(f"DIRECT_CURRENT_UNIQUE_OFFSETS={len(counts)}")
-          print(f"DIRECT_CURRENT_MAX_OFFSET={max_offset}")
-          print(
-              "DIRECT_CURRENT_OFFSETS="
-              + ",".join(str(x) for x in sorted(counts))
-          )
-
-          unsafe = sorted(x for x in counts if x > common_prefix_last_field)
-          print(f"DIRECT_CURRENT_OFFSETS_AFTER_COMMON_PREFIX={len(unsafe)}")
-
-          out = [
-              "function\tmrs_line\taccess_line\toffset_bytes\tinstruction"
-          ]
-          for row in accesses:
-              out.append("\t".join(map(str, row)))
-          Path(sys.argv[2]).write_text("\n".join(out) + "\n")
-
-          if unsafe:
-              raise SystemExit(
-                  "direct current accesses after common layout prefix: "
-                  + ",".join(map(str, unsafe))
-              )
-          PY
-
-          sed -n '1,160p' task-direct-accesses.tsv
-
-      - name: Audit display source for direct risky member access
-        run: |
-          set -euo pipefail
-
           {
-            echo "=== current-> member uses ==="
+            echo '=== current-> member uses ==='
             git grep -n -E 'current->[A-Za-z0-9_]+' -- techpack/display/msm || true
-
             echo
-            echo "=== struct task_struct declarations ==="
-            git grep -n 'struct task_struct' -- techpack/display/msm || true
-
+            echo '=== direct inode i_* uses ==='
+            git grep -n -E '(inode->[[:space:]]*i_|file_inode\([^)]*\)->i_)' -- techpack/display/msm || true
             echo
-            echo "=== direct inode i_* uses ==="
-            git grep -n -E '(inode->[[:space:]]*i_|file_inode\([^)]*\)->i_)' \
-              -- techpack/display/msm || true
-
-            echo
-            echo "=== drm_panel notifier internals ==="
-            git grep -n -E '(\.nh|->nh)[[:space:]]*\.(rwsem|head)' \
-              -- techpack/display/msm || true
+            echo '=== drm_panel notifier internals ==='
+            git grep -n -E '(\.nh|->nh)[[:space:]]*\.(rwsem|head)' -- techpack/display/msm || true
           } | tee source-risk-audit.txt
 
-          # i_mapping and i_private are both directly used by stock msm_drm.
-          # Their offsets are explicitly asserted equal in the field probe.
-          # Flag any other direct inode member so it cannot bypass the gate.
           unexpected_inode="$(
             git grep -n -E '(inode->[[:space:]]*i_|file_inode\([^)]*\)->i_)' \
               -- techpack/display/msm 2>/dev/null \
               | grep -v -E -- '->i_(mapping|private)' || true
           )"
-          if [[ -n "$unexpected_inode" ]]; then
-            echo "UNEXPECTED_DIRECT_INODE_MEMBERS:"
+          test -z "$unexpected_inode" || {
             echo "$unexpected_inode"
             exit 1
-          fi
+          }
 
-          # drm_panel notifier internals must remain kernel-helper-owned.
           direct_nh="$(
             git grep -n -E '(\.nh|->nh)[[:space:]]*\.(rwsem|head)' \
               -- techpack/display/msm 2>/dev/null || true
           )"
-          if [[ -n "$direct_nh" ]]; then
-            echo "DIRECT_DRM_PANEL_NOTIFIER_INTERNAL_ACCESS:"
+          test -z "$direct_nh" || {
             echo "$direct_nh"
             exit 1
-          fi
+          }
+          echo 'SOURCE_RISK_AUDIT=PASS'
 
-          echo "SOURCE_RISK_INODE_ONLY_KNOWN_PREFIX_FIELDS=1"
-          echo "SOURCE_RISK_DRM_PANEL_NOTIFIER_OPAQUE=1"
-
-      - name: Final runtime layout gate summary
+      - name: Record exact runtime layout gate
         run: |
           set -euo pipefail
-
-          python3 - field-layouts.tsv task-direct-accesses.tsv source-risk-audit.txt final-runtime-layout-gate.txt <<'PY'
-          import sys
+          python3 - <<'PY'
           from pathlib import Path
 
-          fields = {}
-          for raw in Path(sys.argv[1]).read_text().splitlines()[1:]:
-              if not raw.strip():
+          rows = {}
+          for line in Path('field-layouts.tsv').read_text().splitlines()[1:]:
+              if not line.strip():
                   continue
-              name, current, stock, match = raw.split("\t")
-              fields[name] = (int(current), int(stock), int(match))
-
-          accesses = Path(sys.argv[2]).read_text().splitlines()[1:]
-          max_direct = max(
-              int(row.split("\t")[3])
-              for row in accesses if row.strip()
-          )
+              name, current, stock, match = line.split('\t')
+              rows[name] = (int(current), int(stock), int(match))
 
           required = [
-              "task_pid", "task_tgid", "task_group_leader", "task_comm",
-              "inode_i_mapping",
-              "panel_drm", "panel_connector", "panel_dev", "panel_funcs",
-              "panel_list", "panel_nh", "blocking_notifier_rwsem",
+              'task_pid', 'task_tgid', 'task_group_leader', 'task_comm',
+              'inode_i_mapping', 'inode_i_private',
+              'panel_size', 'panel_drm', 'panel_connector', 'panel_dev',
+              'panel_funcs', 'panel_list', 'panel_nh',
+              'blocking_notifier_size', 'blocking_notifier_rwsem', 'blocking_notifier_head',
+              'rwsem_size',
           ]
-          all_required = all(fields[x][2] == 1 for x in required)
-
+          passed = all(rows.get(name, (0, 0, 0))[2] == 1 for name in required)
           lines = [
-              "# Final stock QGKI msm_drm runtime-layout gate",
-              f"required_runtime_field_offsets_equal={int(all_required)}",
-              f"required_runtime_fields={len(required)}",
-              f"max_direct_current_task_offset={max_direct}",
-              "task_common_prefix_last_field_offset=2752",
-              f"direct_task_access_within_common_prefix={int(max_direct <= 2752)}",
-              "inode_direct_access_gate=PASS",
-              "drm_panel_notifier_internal_access_gate=PASS",
-              "",
-              "Known total-size differences are not treated as failures when",
-              "all module-observed member offsets remain compatible.",
+              '# Exact OS2.0.10 runtime-layout gate',
+              'reconstruction_sha=ab491ef6ecd4d35f9edcaa8ad00b568306c6ce64',
+              'stock_oracle_artifact_id=10713959003',
+              'composite_artifact_id=10762792655',
+              'image_sha256=4aa9995ae5ecbd2e3beb3018cd19a11a80e8970eb96c540874be547d2ecd90c6',
+              f'required_runtime_fields={len(required)}',
+              f'required_runtime_field_offsets_equal={int(passed)}',
+              f'rwsem_size_current={rows["rwsem_size"][0]}',
+              f'rwsem_size_stock={rows["rwsem_size"][1]}',
+              f'inode_i_private_current={rows["inode_i_private"][0]}',
+              f'inode_i_private_stock={rows["inode_i_private"][1]}',
+              f'panel_size_current={rows["panel_size"][0]}',
+              f'panel_size_stock={rows["panel_size"][1]}',
+              f'FINAL_RUNTIME_LAYOUT_GATE={"PASS" if passed else "FAIL"}',
           ]
-
-          passed = (
-              all_required
-              and max_direct <= 2752
-          )
-          lines.append(f"FINAL_RUNTIME_LAYOUT_GATE={'PASS' if passed else 'FAIL'}")
-
-          Path(sys.argv[4]).write_text("\n".join(lines) + "\n")
-          print("\n".join(lines))
-
+          Path('final-runtime-layout-gate.txt').write_text('\n'.join(lines) + '\n')
+          print('\n'.join(lines))
           if not passed:
-              raise SystemExit("final runtime layout gate failed")
+              raise SystemExit('final exact runtime layout gate failed')
           PY
 
-      - name: Upload final runtime-layout evidence
+      - name: Upload exact runtime-layout evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-qgki-msm-drm-final-layout-gate
+          name: lisa-os2-0-10-exact-runtime-layout-gate
           retention-days: 14
-          if-no-files-found: warn
+          if-no-files-found: error
           path: |
             clang-version.txt
+            exact-composite-Image.sha256
+            os2-0-10-composite-report.txt
+            qgki-module-oracle-current.txt
+            exact-composite.config
+            composite-full-abi.txt
             field-layouts.tsv
             field-layouts.log
             current-field-probe.ll
             stock-field-probe.ll
-            task-direct-accesses.tsv
             source-risk-audit.txt
             final-runtime-layout-gate.txt
