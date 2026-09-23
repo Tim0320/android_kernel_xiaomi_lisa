@@ -1,4 +1,4 @@
-name: Diagnose current Lisa g4c23 early boot failure
+name: Diagnose Lisa Candidate 0005 early boot against exact OS2.0.10
 
 on:
   workflow_dispatch:
@@ -17,15 +17,17 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     env:
-      BOOT_ARTIFACT_ID: "10736688529"
-      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      BASELINE_ARTIFACT_ID: "10754191797"
+      BASELINE_IMAGE_SHA256: "2162041efe1e4ac3e86bd934d4ccd9a4e00c5cd80e23c8085dfd0e0995430166"
+      BOOT_ARTIFACT_ID: "10755230538"
+      REBUILT_IMAGE_SHA256: "617c015a74e86b9a98479b6f4c657335484aa6351723cd41615e9f717226afb2"
+      TARGET_RELEASE: "5.4.289-qgki-g4c23b1a30923"
 
     steps:
-      - name: Checkout stock images with Git LFS
+      - name: Checkout diagnostic metadata
         uses: actions/checkout@v4
         with:
           ref: main
-          lfs: true
           fetch-depth: 1
 
       - name: Checkout reconstructed kernel source
@@ -41,44 +43,46 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y curl unzip file device-tree-compiler
 
-      - name: Download exact current validated boot artifact
+      - name: Download exact OS2.0.10 baseline and Candidate 0005 artifacts
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          echo "BOOT_ARTIFACT_ID=${BOOT_ARTIFACT_ID}"
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${BOOT_ARTIFACT_ID}/zip" \
-            -o rebuilt-artifact.zip
-          mkdir rebuilt-artifact
-          unzip -q rebuilt-artifact.zip -d rebuilt-artifact
-          find rebuilt-artifact -maxdepth 3 -type f -printf '%p %s bytes\n' | sort
+          download_artifact() {
+            local artifact_id="$1"
+            local output="$2"
+            curl -fL \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+              -o "$output"
+          }
 
-      - name: Extract stock and rebuilt Image
+          echo "BASELINE_ARTIFACT_ID=${BASELINE_ARTIFACT_ID}"
+          echo "BOOT_ARTIFACT_ID=${BOOT_ARTIFACT_ID}"
+          download_artifact "$BASELINE_ARTIFACT_ID" baseline-artifact.zip
+          download_artifact "$BOOT_ARTIFACT_ID" rebuilt-artifact.zip
+          mkdir baseline-artifact rebuilt-artifact
+          unzip -q baseline-artifact.zip -d baseline-artifact
+          unzip -q rebuilt-artifact.zip -d rebuilt-artifact
+          find baseline-artifact rebuilt-artifact -maxdepth 4 -type f -printf '%p %s bytes\n' | sort
+
+      - name: Authenticate exact stock and Candidate 0005 Images
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import struct
+          stock_image="$(find baseline-artifact -type f -name official-stock-Image -print -quit)"
+          rebuilt_image="$(find rebuilt-artifact -type f -name rebuilt-Image -print -quit)"
+          test -n "$stock_image"
+          test -s "$stock_image"
+          test -n "$rebuilt_image"
+          test -s "$rebuilt_image"
+          cp "$stock_image" stock-Image
+          cp "$rebuilt_image" rebuilt-Image
 
-          stock = Path("reconstruction/stock/stock-Image/boot.img").read_bytes()
-          if stock[:8] != b"ANDROID!":
-              raise SystemExit("invalid stock boot magic")
-          kernel_size = struct.unpack_from("<I", stock, 8)[0]
-          header_version = struct.unpack_from("<I", stock, 40)[0]
-          page = 4096 if header_version >= 3 else struct.unpack_from("<I", stock, 36)[0]
-          Path("stock-Image").write_bytes(stock[page:page + kernel_size])
-          print(f"STOCK_BOOT_HEADER_VERSION={header_version}")
-          print(f"STOCK_KERNEL_PAYLOAD_BYTES={kernel_size}")
-          PY
-
-          image="$(find rebuilt-artifact -type f -name rebuilt-Image -print -quit)"
-          test -n "$image"
-          test -s "$image"
-          cp "$image" rebuilt-Image
+          test "$(sha256sum stock-Image | awk '{print $1}')" = "$BASELINE_IMAGE_SHA256"
+          test "$(sha256sum rebuilt-Image | awk '{print $1}')" = "$REBUILT_IMAGE_SHA256"
+          grep -aFq "$TARGET_RELEASE" rebuilt-Image
 
           file stock-Image rebuilt-Image
           sha256sum stock-Image rebuilt-Image
@@ -168,10 +172,26 @@ jobs:
           print(f"stock_file_minus_declared={stock['file_bytes'] - stock['image_size'] if stock['image_size'] else -1}")
           print(f"rebuilt_file_minus_declared={rebuilt['file_bytes'] - rebuilt['image_size'] if rebuilt['image_size'] else -1}")
           print(f"file_size_delta={rebuilt['file_bytes'] - stock['file_bytes']}")
+          common = min(len(stock_b), len(rebuilt_b))
+          first_diff = next((i for i in range(common) if stock_b[i] != rebuilt_b[i]), common)
+          print(f"first_byte_diff_offset={first_diff}")
+          print(f"first_64_bytes_equal={int(stock_b[:64] == rebuilt_b[:64])}")
+          print(f"first_4096_bytes_equal={int(stock_b[:4096] == rebuilt_b[:4096])}")
+          print(f"stock_first_64_sha256={sha(stock_b[:64])}")
+          print(f"rebuilt_first_64_sha256={sha(rebuilt_b[:64])}")
+          print(f"stock_first_4096_sha256={sha(stock_b[:4096])}")
+          print(f"rebuilt_first_4096_sha256={sha(rebuilt_b[:4096])}")
+          print(f"code0_equal={int(stock['code0'] == rebuilt['code0'])}")
+          print(f"code1_equal={int(stock['code1'] == rebuilt['code1'])}")
+          print(f"image_size_equal={int(stock['image_size'] == rebuilt['image_size'])}")
 
           critical = []
+          if stock["code0"] != rebuilt["code0"] or stock["code1"] != rebuilt["code1"]:
+              critical.append("ARM64 entry instructions differ")
           if stock["text_offset"] != rebuilt["text_offset"]:
               critical.append("ARM64 text_offset differs")
+          if stock["image_size"] != rebuilt["image_size"]:
+              critical.append("ARM64 declared image_size differs")
           if stock["flags"] != rebuilt["flags"]:
               critical.append("ARM64 Image flags differ")
           stock_tail = stock["file_bytes"] - stock["image_size"] if stock["image_size"] else 0
