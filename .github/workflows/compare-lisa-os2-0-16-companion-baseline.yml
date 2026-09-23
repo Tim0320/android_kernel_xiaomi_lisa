@@ -1,0 +1,225 @@
+name: Compare Lisa OS2.0.16 companion boot chain
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/compare-lisa-os2-0-16-companion-baseline.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-os2-0-16-companion-baseline
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    env:
+      TARGET_VERSION: OS2.0.16.0.UKOCNXM
+      TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
+      OTA_URL: https://bigota.d.miui.com/OS2.0.16.0.UKOCNXM/lisa-ota_full-OS2.0.16.0.UKOCNXM-user-14.0-6326c122fd.zip
+      HISTORICAL_STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      HISTORICAL_STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+      KNOWN_G598_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      CURRENT_OS2_0_10_VENDOR_BOOT_SHA256: 6d2c626cc325058ba4c6f16a8f4043978404dfb5ce2f420d770f53d1f5d089f2
+      CURRENT_OS2_0_10_DTBO_SHA256: 423828174f86a7aab8823fc1cf5347e9cc97f0f41c246c489bdf5793d79a922e
+
+    steps:
+      - name: Checkout reconstruction metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - name: Install payload and inspection dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y file binutils git python3 pkg-config libbrotli-dev liblzma-dev libzstd-dev
+
+      - name: Build pinned URL-aware payload dumper
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/xishang0128/payload-dumper-go.git /tmp/payload-dumper-go
+          cd /tmp/payload-dumper-go
+          git checkout --detach 4cc6ef94039470d659e4199c67f76d8962280023
+          go build -trimpath -o "$GITHUB_WORKSPACE/payload-dumper" ./cmd/payload-dumper
+
+      - name: Extract official OS2.0.16 boot-chain partitions
+        run: |
+          set -euo pipefail
+          rm -rf official
+          mkdir -p official
+          printf '%s\n' "$OTA_URL" | tee ota-source-url.txt
+
+          ./payload-dumper extract "$OTA_URL" \
+            -p boot,vendor_boot,dtbo,vbmeta,vbmeta_system \
+            -o official \
+            --http-workers 4 \
+            --part-size 8M
+
+          for part in boot vendor_boot dtbo vbmeta vbmeta_system; do
+            test -s "official/$part.img"
+          done
+
+          sha256sum official/*.img | sort | tee official-partition-sha256.txt
+          ls -lh official
+
+      - name: Authenticate historical OS2.0.16 boot lineage
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import re
+          import struct
+          from pathlib import Path
+
+          boot = Path("official/boot.img").read_bytes()
+          if boot[:8] != b"ANDROID!":
+              raise SystemExit("official OS2.0.16 boot.img has invalid Android magic")
+
+          def u32(off):
+              return struct.unpack_from("<I", boot, off)[0]
+
+          def align(v, a):
+              return (v + a - 1) // a * a
+
+          kernel_size = u32(8)
+          ramdisk_size = u32(12)
+          os_version = u32(16)
+          header_size = u32(20)
+          header_version = u32(40)
+          page = 4096
+
+          if header_version != 3:
+              raise SystemExit(f"expected boot header v3, got {header_version}")
+
+          kernel_off = page
+          kernel = boot[kernel_off:kernel_off + kernel_size]
+          ramdisk_off = align(kernel_off + kernel_size, page)
+          ramdisk = boot[ramdisk_off:ramdisk_off + ramdisk_size]
+
+          if len(kernel) != kernel_size or len(ramdisk) != ramdisk_size:
+              raise SystemExit("truncated boot payload")
+          if struct.unpack_from("<I", kernel, 0x38)[0] != 0x644D5241:
+              raise SystemExit("kernel payload is not ARM64 Image")
+
+          target_release = b"5.4.289-qgki-g5987d69e25da"
+          version = re.search(rb"Linux version ([^\x00\n]{1,500})", kernel)
+
+          lines = [
+              f"official_boot_bytes={len(boot)}",
+              f"official_boot_sha256={hashlib.sha256(boot).hexdigest()}",
+              f"boot_header_version={header_version}",
+              f"boot_header_size={header_size}",
+              f"boot_os_version_raw=0x{os_version:08x}",
+              f"kernel_bytes={kernel_size}",
+              f"kernel_sha256={hashlib.sha256(kernel).hexdigest()}",
+              f"ramdisk_bytes={ramdisk_size}",
+              f"ramdisk_sha256={hashlib.sha256(ramdisk).hexdigest()}",
+              f"target_release_present={int(target_release in kernel)}",
+              "linux_version=" + (version.group(0).decode("utf-8", "replace") if version else "<not-found>"),
+          ]
+          Path("os2-0-16-boot-layout.txt").write_text("\n".join(lines) + "\n")
+          PY
+
+          cat os2-0-16-boot-layout.txt
+
+          boot_sha="$(sha256sum official/boot.img | awk '{print $1}')"
+          ramdisk_sha="$(awk -F= '$1=="ramdisk_sha256" {print $2}' os2-0-16-boot-layout.txt)"
+          kernel_sha="$(awk -F= '$1=="kernel_sha256" {print $2}' os2-0-16-boot-layout.txt)"
+          release_present="$(awk -F= '$1=="target_release_present" {print $2}' os2-0-16-boot-layout.txt)"
+
+          test "$boot_sha" = "$HISTORICAL_STOCK_BOOT_SHA256"
+          test "$ramdisk_sha" = "$HISTORICAL_STOCK_RAMDISK_SHA256"
+          test "$release_present" = "1"
+
+          {
+            echo "HISTORICAL_STOCK_BOOT_IS_OFFICIAL_OS2_0_16=1"
+            echo "HISTORICAL_STOCK_RAMDISK_IS_OFFICIAL_OS2_0_16=1"
+            echo "OFFICIAL_OS2_0_16_KERNEL_SHA256=$kernel_sha"
+            echo "OFFICIAL_OS2_0_16_TARGET_RELEASE=$TARGET_RELEASE"
+            echo "OS2_0_16_BOOT_LINEAGE_GATE=PASS"
+          } | tee os2-0-16-lineage-gate.txt
+
+      - name: Compare companion partitions with current OS2.0.10 device state
+        run: |
+          set -euo pipefail
+
+          vendor_boot_sha="$(sha256sum official/vendor_boot.img | awk '{print $1}')"
+          dtbo_sha="$(sha256sum official/dtbo.img | awk '{print $1}')"
+          vbmeta_sha="$(sha256sum official/vbmeta.img | awk '{print $1}')"
+          vbmeta_system_sha="$(sha256sum official/vbmeta_system.img | awk '{print $1}')"
+
+          vendor_match=0
+          dtbo_match=0
+          if [[ "$vendor_boot_sha" = "$CURRENT_OS2_0_10_VENDOR_BOOT_SHA256" ]]; then vendor_match=1; fi
+          if [[ "$dtbo_sha" = "$CURRENT_OS2_0_10_DTBO_SHA256" ]]; then dtbo_match=1; fi
+
+          {
+            echo "TARGET_VERSION=$TARGET_VERSION"
+            echo "OS2_0_16_VENDOR_BOOT_SHA256=$vendor_boot_sha"
+            echo "CURRENT_OS2_0_10_VENDOR_BOOT_SHA256=$CURRENT_OS2_0_10_VENDOR_BOOT_SHA256"
+            echo "VENDOR_BOOT_BYTE_MATCH=$vendor_match"
+            echo "OS2_0_16_DTBO_SHA256=$dtbo_sha"
+            echo "CURRENT_OS2_0_10_DTBO_SHA256=$CURRENT_OS2_0_10_DTBO_SHA256"
+            echo "DTBO_BYTE_MATCH=$dtbo_match"
+            echo "OS2_0_16_VBMETA_SHA256=$vbmeta_sha"
+            echo "OS2_0_16_VBMETA_SYSTEM_SHA256=$vbmeta_system_sha"
+            if [[ "$vendor_match" = 0 || "$dtbo_match" = 0 ]]; then
+              echo "COMPANION_BOOT_CHAIN_DRIFT=1"
+            else
+              echo "COMPANION_BOOT_CHAIN_DRIFT=0"
+            fi
+          } | tee companion-partition-compare.txt
+
+          file official/vendor_boot.img official/dtbo.img | tee companion-file-types.txt
+          strings -a official/vendor_boot.img | grep -E '5\.4\.289|vermagic=|g5987d69e25da|g4c23b1a30923' | sort -u | head -n 200 > vendor-boot-kernel-markers.txt || true
+          cat vendor-boot-kernel-markers.txt
+
+      - name: Record diagnostic conclusion
+        run: |
+          set -euo pipefail
+          grep -Fqx 'OS2_0_16_BOOT_LINEAGE_GATE=PASS' os2-0-16-lineage-gate.txt
+
+          drift="$(awk -F= '$1=="COMPANION_BOOT_CHAIN_DRIFT" {print $2}' companion-partition-compare.txt)"
+          {
+            echo "# Candidate 0008 companion-state diagnostic"
+            echo "candidate_boot_sha256=585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063"
+            echo "candidate_kernel_sha256=$KNOWN_G598_IMAGE_SHA256"
+            echo "candidate_device_result=Start_EBS_then_reset_no_new_linux_persistent_record"
+            echo "historical_stock_boot_is_official_os2_0_16=1"
+            echo "companion_boot_chain_drift=$drift"
+            echo "next_rule=do_not_modify_kernel_from_candidate_0008_failure_until_companion_state_is_accounted_for"
+            echo "LISA_OS2_0_16_COMPANION_DIAGNOSTIC=PASS"
+          } | tee diagnostic-summary.txt
+
+      - name: Upload OS2.0.16 companion diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-os2-0-16-companion-diagnostic
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: warn
+          path: |
+            ota-source-url.txt
+            official-partition-sha256.txt
+            os2-0-16-boot-layout.txt
+            os2-0-16-lineage-gate.txt
+            companion-partition-compare.txt
+            companion-file-types.txt
+            vendor-boot-kernel-markers.txt
+            diagnostic-summary.txt
