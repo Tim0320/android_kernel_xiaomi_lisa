@@ -23,7 +23,7 @@ jobs:
 
     env:
       KERNEL_ARTIFACT_ID: "10735868177"
-      KERNEL_IMAGE_SHA256: 617ca87684134655038e4c60c32d53fc7cad09f8f56fc31a2552e37aa25a3388
+      KERNEL_IMAGE_SHA256: 617c015a74e86b9a98479b6f4c657335484aa6351723cd41615e9f717226afb2
       COMPAT_ARTIFACT_ID: "10699525039"
       LAYOUT_ARTIFACT_ID: "10675328820"
       STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
@@ -342,55 +342,52 @@ jobs:
               "# Lisa reconstructed stock-style boot.img",
               f"stock_boot_bytes={len(stock)}",
               f"stock_boot_sha256={sha(stock)}",
-              f"boot_header_version={header_version}",
-              f"boot_header_size={header_size}",
-              f"boot_os_version_raw=0x{os_version:08x}",
-              f"stock_kernel_bytes={stock_kernel_size}",
-              f"rebuilt_kernel_bytes={len(kernel)}",
-              f"rebuilt_kernel_sha256={sha(kernel)}",
-              f"ramdisk_bytes={ramdisk_size}",
-              f"ramdisk_sha256={sha(ramdisk)}",
-              f"stock_ramdisk_offset={stock_ramdisk_off}",
-              f"rebuilt_ramdisk_offset={rebuilt_ramdisk_off}",
+              f"stock_kernel_size={stock_kernel_size}",
+              f"stock_ramdisk_size={ramdisk_size}",
+              f"stock_header_size={header_size}",
+              f"stock_header_version={header_version}",
+              f"stock_os_version_raw={os_version}",
               f"stock_logical_end={stock_logical_end}",
-              f"rebuilt_logical_end={rebuilt_logical_end}",
-              f"stock_trailing_nonzero_bytes={stock_tail_nonzero}",
-              f"stock_avb_footer_present={int(stock_avb_footer)}",
-              "avb_resign_required_for_verified_boot=1",
-              f"boot_img_bytes={len(out)}",
-              f"boot_img_sha256={sha(out)}",
+              f"stock_tail_bytes={len(stock_tail)}",
+              f"stock_tail_nonzero_bytes={stock_tail_nonzero}",
+              f"stock_avb_footer={int(stock_avb_footer)}",
+              f"new_kernel_size={len(kernel)}",
+              f"new_kernel_sha256={sha(kernel)}",
+              f"new_ramdisk_offset={rebuilt_ramdisk_off}",
+              f"new_logical_end={rebuilt_logical_end}",
+              f"new_boot_bytes={len(out)}",
+              f"new_boot_sha256={sha(out)}",
           ]
-          for name, ok in checks.items():
-              lines.append(f"{name}={int(ok)}")
-          lines.append(f"BOOT_STATIC_VALIDATION={'PASS' if not failed else 'FAIL'}")
-
+          lines.extend(f"check_{k}={int(v)}" for k, v in checks.items())
           report_path.write_text("\n".join(lines) + "\n")
-          print("\n".join(lines))
+          print(report_path.read_text(), end="")
 
           if failed:
-              raise SystemExit("static boot validation failed: " + ", ".join(failed))
+              raise SystemExit("boot static validation failed: " + ", ".join(failed))
           PY
 
-          file boot.img || true
           sha256sum boot.img | tee boot.img.sha256
-          cat boot-static-validation.txt
+          file boot.img
 
       - name: Final boot.img static gate
         run: |
           set -euo pipefail
-          test -s boot.img
+
+          grep -Fqx 'check_android_magic=1' boot-static-validation.txt
+          grep -Fqx 'check_header_version_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_header_metadata_except_kernel_size_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_kernel_size_header_exact=1' boot-static-validation.txt
+          grep -Fqx 'check_kernel_payload_hash_exact=1' boot-static-validation.txt
+          grep -Fqx 'check_ramdisk_size_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_ramdisk_payload_hash_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_partition_size_preserved=1' boot-static-validation.txt
+          grep -Fqx 'check_arm64_image_magic=1' boot-static-validation.txt
+          grep -Fqx 'check_target_release_present=1' boot-static-validation.txt
+          grep -Fqx 'check_stale_stock_tail_not_copied=1' boot-static-validation.txt
+          grep -Fqx 'check_stale_avb_footer_absent=1' boot-static-validation.txt
           test "$(stat -c '%s' boot.img)" = "$STOCK_BOOT_BYTES"
-          grep -q '^BOOT_STATIC_VALIDATION=PASS$' boot-static-validation.txt
-          grep -q '^android_magic=1$' boot-static-validation.txt
-          grep -q '^header_version_preserved=1$' boot-static-validation.txt
-          grep -q '^kernel_payload_hash_exact=1$' boot-static-validation.txt
-          grep -q '^ramdisk_payload_hash_preserved=1$' boot-static-validation.txt
-          grep -q '^partition_size_preserved=1$' boot-static-validation.txt
-          grep -q '^arm64_image_magic=1$' boot-static-validation.txt
-          grep -q '^target_release_present=1$' boot-static-validation.txt
-          grep -q '^stale_stock_tail_not_copied=1$' boot-static-validation.txt
-          grep -q '^stale_avb_footer_absent=1$' boot-static-validation.txt
-          echo "LISA_BOOT_IMG_STATIC_GATE=PASS"
+          test "$(sha256sum rebuilt-Image | awk '{print $1}')" = "$KERNEL_IMAGE_SHA256"
+          echo 'LISA_RECONSTRUCTED_BOOT_STATIC_GATE=PASS'
 
       - name: Upload reconstructed boot.img and evidence
         if: always()
