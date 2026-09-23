@@ -177,6 +177,9 @@ jobs:
           excluded_files = {
               "kernel/sched/psi.c",
           }
+          excluded_prefixes = (
+              "techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/dump/",
+          )
           copied = []
           for root_text in roots:
               root = src / root_text
@@ -186,7 +189,10 @@ jobs:
                   if not p.is_file() or p.suffix not in {".c", ".h"}:
                       continue
                   rel = p.relative_to(src)
-                  if rel.as_posix() in excluded_files:
+                  rel_text = rel.as_posix()
+                  if rel_text in excluded_files:
+                      continue
+                  if any(rel_text.startswith(prefix) for prefix in excluded_prefixes):
                       continue
                   target = dst / rel
                   target.parent.mkdir(parents=True, exist_ok=True)
@@ -247,6 +253,25 @@ jobs:
             echo 'legacy redwood PSI implementation must not override reconstructed proc_ops PSI generation' >&2
             exit 1
           fi
+          if grep -q '^techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/dump/' redwood-overlay-manifest.txt; then
+            echo 'redwood IPA register-dump generation must not override reconstructed IPA dump sources/headers' >&2
+            exit 1
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("techpack/dataipa/drivers/platform/msm/ipa/ipa_v3/dump/ipa4.5/ipa_hw_common_ex.h")
+          text = path.read_text()
+          marker = "#define IPA_REG_SAVE_CFG_ENTRY_PIPE_ENDP"
+          start = text.find(marker)
+          if start < 0:
+              raise SystemExit("reconstructed IPA pipe-endpoint macro not found")
+          end = text.find("\n\n", start)
+          block = text[start:] if end < 0 else text[start:end]
+          if "({" in block:
+              raise SystemExit("IPA pipe-endpoint macro regressed to file-scope statement-expression generation")
+          print("IPA_REG_DUMP_GENERATION=reconstructed")
+          PY
 
       - name: Overlay YZzZr USB and TSENS private implementation
         run: |
