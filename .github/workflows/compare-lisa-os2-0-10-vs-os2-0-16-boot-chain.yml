@@ -1,0 +1,484 @@
+name: Compare Lisa OS2.0.10 vs OS2.0.16 boot chain internals
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/compare-lisa-os2-0-10-vs-os2-0-16-boot-chain.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-os2-0-10-vs-os2-0-16-boot-chain
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+
+    env:
+      OTA_10: https://bigota.d.miui.com/OS2.0.10.0.UKOCNXM/lisa-ota_full-OS2.0.10.0.UKOCNXM-user-14.0-698602d09c.zip
+      OTA_16: https://bigota.d.miui.com/OS2.0.16.0.UKOCNXM/lisa-ota_full-OS2.0.16.0.UKOCNXM-user-14.0-6326c122fd.zip
+      EXPECTED_10_VENDOR_BOOT: 6d2c626cc325058ba4c6f16a8f4043978404dfb5ce2f420d770f53d1f5d089f2
+      EXPECTED_10_DTBO: 423828174f86a7aab8823fc1cf5347e9cc97f0f41c246c489bdf5793d79a922e
+      EXPECTED_16_VENDOR_BOOT: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+      EXPECTED_16_DTBO: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
+      RELEASE_10: 5.4.289-qgki-g4c23b1a30923
+      RELEASE_16: 5.4.289-qgki-g5987d69e25da
+
+    steps:
+      - name: Checkout reconstruction metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - name: Install inspection dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            file binutils kmod cpio lz4 gzip xz-utils zstd \
+            device-tree-compiler git python3 pkg-config \
+            libbrotli-dev liblzma-dev libzstd-dev
+
+      - name: Build payload dumper and fetch AOSP unpack_bootimg
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/xishang0128/payload-dumper-go.git /tmp/payload-dumper-go
+          cd /tmp/payload-dumper-go
+          git checkout --detach 4cc6ef94039470d659e4199c67f76d8962280023
+          go build -trimpath -o "$GITHUB_WORKSPACE/payload-dumper" ./cmd/payload-dumper
+
+          git clone --depth=1 https://android.googlesource.com/platform/system/tools/mkbootimg /tmp/mkbootimg
+          git -C /tmp/mkbootimg rev-parse HEAD | tee "$GITHUB_WORKSPACE/aosp-mkbootimg-revision.txt"
+          python3 /tmp/mkbootimg/unpack_bootimg.py --help | sed -n '1,120p'
+
+      - name: Extract both official companion boot chains
+        run: |
+          set -euo pipefail
+          for v in 10 16; do
+            mkdir -p "official/$v"
+            var="OTA_$v"
+            url="${!var}"
+            printf '%s\n' "$url" > "official/$v/ota-url.txt"
+            ./payload-dumper extract "$url" \
+              -p vendor_boot,dtbo \
+              -o "official/$v" \
+              --http-workers 4 \
+              --part-size 8M
+            test -s "official/$v/vendor_boot.img"
+            test -s "official/$v/dtbo.img"
+            sha256sum "official/$v/vendor_boot.img" "official/$v/dtbo.img" | tee "official/$v/sha256.txt"
+          done
+
+          test "$(sha256sum official/10/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_10_VENDOR_BOOT"
+          test "$(sha256sum official/10/dtbo.img | awk '{print $1}')" = "$EXPECTED_10_DTBO"
+          test "$(sha256sum official/16/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_16_VENDOR_BOOT"
+          test "$(sha256sum official/16/dtbo.img | awk '{print $1}')" = "$EXPECTED_16_DTBO"
+          echo "OFFICIAL_COMPANION_HASH_GATE=PASS" | tee companion-hash-gate.txt
+
+      - name: Unpack vendor_boot images
+        run: |
+          set -euo pipefail
+          for v in 10 16; do
+            mkdir -p "unpacked/$v"
+            python3 /tmp/mkbootimg/unpack_bootimg.py \
+              --boot_img "official/$v/vendor_boot.img" \
+              --out "unpacked/$v" \
+              > "unpacked/$v/unpack-info.txt"
+            find "unpacked/$v" -maxdepth 1 -type f -printf '%f\n' | sort | tee "unpacked/$v/files.txt"
+            sed -n '1,200p' "unpacked/$v/unpack-info.txt"
+          done
+
+      - name: Extract vendor ramdisk fragments
+        run: |
+          set -euo pipefail
+
+          extract_one() {
+            src="$1"
+            dst="$2"
+            mkdir -p "$dst"
+            magic="$(xxd -p -l 6 "$src" | tr -d '\n')"
+            tmp="$dst/ramdisk.cpio"
+
+            if [[ "$magic" == 02214c18* || "$magic" == 04224d18* ]]; then
+              lz4 -dc "$src" > "$tmp"
+            elif [[ "$magic" == 1f8b08* ]]; then
+              gzip -dc "$src" > "$tmp"
+            elif [[ "$magic" == fd377a585a00* ]]; then
+              xz -dc "$src" > "$tmp"
+            elif [[ "$magic" == 28b52ffd* ]]; then
+              zstd -dc "$src" > "$tmp"
+            elif [[ "$magic" == 303730373031* || "$magic" == 303730373032* ]]; then
+              cp "$src" "$tmp"
+            else
+              echo "Unknown ramdisk compression for $src magic=$magic" >&2
+              file "$src" >&2 || true
+              return 20
+            fi
+
+            (
+              cd "$dst"
+              cpio -idm --quiet --no-absolute-filenames < ramdisk.cpio
+            )
+          }
+
+          for v in 10 16; do
+            mkdir -p "ramdisks/$v"
+            n=0
+            while IFS= read -r f; do
+              name="$(basename "$f")"
+              extract_one "$f" "ramdisks/$v/${n}_$name"
+              n=$((n + 1))
+            done < <(find "unpacked/$v" -maxdepth 1 -type f -name 'vendor_ramdisk*' | sort)
+            echo "vendor_ramdisk_fragments=$n" | tee "ramdisks/$v/fragment-count.txt"
+            test "$n" -gt 0
+          done
+
+      - name: Inventory module ABI and hashes
+        run: |
+          set -euo pipefail
+          cat > /tmp/module_inventory.py <<'PY'
+          import hashlib
+          import struct
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          root = Path(sys.argv[1])
+          out = Path(sys.argv[2])
+
+          def module_layout_crc(path: Path):
+              tmp = Path("/tmp") / ("versions-" + hashlib.sha256(str(path).encode()).hexdigest())
+              try:
+                  subprocess.run(
+                      ["objcopy", "--dump-section", f"__versions={tmp}", str(path)],
+                      check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                  )
+                  data = tmp.read_bytes()
+              except Exception:
+                  return ""
+              finally:
+                  try:
+                      tmp.unlink()
+                  except FileNotFoundError:
+                      pass
+              for off in range(0, len(data) - 63, 64):
+                  crc = struct.unpack_from("<Q", data, off)[0]
+                  name = data[off + 8:off + 64].split(b"\0", 1)[0]
+                  if name == b"module_layout":
+                      return f"0x{crc & 0xffffffff:08x}"
+              return ""
+
+          rows = []
+          for p in sorted(root.rglob("*.ko")):
+              rel = p.relative_to(root).as_posix()
+              sha = hashlib.sha256(p.read_bytes()).hexdigest()
+              try:
+                  vermagic = subprocess.check_output(
+                      ["modinfo", "-F", "vermagic", str(p)],
+                      text=True, stderr=subprocess.DEVNULL
+                  ).strip().replace("\t", " ")
+              except Exception:
+                  vermagic = ""
+              rows.append((rel, p.name, sha, vermagic, module_layout_crc(p)))
+
+          out.write_text(
+              "path\tbasename\tsha256\tvermagic\tmodule_layout_crc\n" +
+              "".join("\t".join(r) + "\n" for r in rows)
+          )
+          print(f"module_count={len(rows)}")
+          PY
+
+          for v in 10 16; do
+            python3 /tmp/module_inventory.py "ramdisks/$v" "modules-$v.tsv" | tee "modules-$v-summary.txt"
+            awk -F '\t' 'NR>1 {print $4}' "modules-$v.tsv" | sort | uniq -c | sort -nr > "modules-$v-vermagic-counts.txt"
+            {
+              echo "# proxy-consumer.ko"
+              grep -F $'\tproxy-consumer.ko\t' "modules-$v.tsv" || true
+              echo "# msm_drm.ko"
+              grep -F $'\tmsm_drm.ko\t' "modules-$v.tsv" || true
+            } | tee "modules-$v-key-oracles.txt"
+          done
+
+      - name: Compare module sets
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import csv
+          from pathlib import Path
+
+          def load(path):
+              rows = list(csv.DictReader(Path(path).open(), delimiter="\t"))
+              bybase = {}
+              for r in rows:
+                  bybase.setdefault(r["basename"], []).append(r)
+              return rows, bybase
+
+          r10, b10 = load("modules-10.tsv")
+          r16, b16 = load("modules-16.tsv")
+
+          common = sorted(set(b10) & set(b16))
+          only10 = sorted(set(b10) - set(b16))
+          only16 = sorted(set(b16) - set(b10))
+          changed_hash = []
+          changed_vermagic = []
+          changed_crc = []
+
+          for name in common:
+              a = b10[name][0]
+              b = b16[name][0]
+              if a["sha256"] != b["sha256"]:
+                  changed_hash.append(name)
+              if a["vermagic"] != b["vermagic"]:
+                  changed_vermagic.append(name)
+              if a["module_layout_crc"] != b["module_layout_crc"]:
+                  changed_crc.append(name)
+
+          Path("module-set-compare.txt").write_text("\n".join([
+              f"os2_0_10_module_count={len(r10)}",
+              f"os2_0_16_module_count={len(r16)}",
+              f"common_module_basenames={len(common)}",
+              f"only_os2_0_10={len(only10)}",
+              f"only_os2_0_16={len(only16)}",
+              f"common_changed_sha256={len(changed_hash)}",
+              f"common_changed_vermagic={len(changed_vermagic)}",
+              f"common_changed_module_layout_crc={len(changed_crc)}",
+          ]) + "\n")
+
+          Path("modules-only-os2-0-10.txt").write_text("\n".join(only10) + "\n")
+          Path("modules-only-os2-0-16.txt").write_text("\n".join(only16) + "\n")
+          Path("modules-changed-vermagic.txt").write_text("\n".join(changed_vermagic) + "\n")
+          Path("modules-changed-module-layout-crc.txt").write_text("\n".join(changed_crc) + "\n")
+
+          with Path("module-key-compare.tsv").open("w") as f:
+              f.write("basename\tos2_0_10_vermagic\tos2_0_10_crc\tos2_0_16_vermagic\tos2_0_16_crc\n")
+              for name in ("proxy-consumer.ko", "msm_drm.ko"):
+                  a = b10.get(name, [{}])[0]
+                  b = b16.get(name, [{}])[0]
+                  f.write("\t".join([
+                      name,
+                      a.get("vermagic", ""),
+                      a.get("module_layout_crc", ""),
+                      b.get("vermagic", ""),
+                      b.get("module_layout_crc", ""),
+                  ]) + "\n")
+          PY
+
+          cat module-set-compare.txt
+          cat module-key-compare.tsv
+
+      - name: Compare vendor_boot embedded DTB
+        run: |
+          set -euo pipefail
+          {
+            echo -e "version\tdtb_sha256\tdtb_bytes\tcompatible\tmodel"
+            for v in 10 16; do
+              dtb="$(find "unpacked/$v" -maxdepth 1 -type f -name 'dtb' | head -n 1)"
+              if [[ -n "$dtb" && -s "$dtb" ]]; then
+                sha="$(sha256sum "$dtb" | awk '{print $1}')"
+                bytes="$(stat -c '%s' "$dtb")"
+                compatible="$(fdtget -t s "$dtb" / compatible 2>/dev/null | tr '\t' ',' || true)"
+                model="$(fdtget -t s "$dtb" / model 2>/dev/null | tr '\t' ',' || true)"
+                echo -e "$v\t$sha\t$bytes\t$compatible\t$model"
+              else
+                echo -e "$v\tMISSING\t0\t\t"
+              fi
+            done
+          } | tee vendor-boot-dtb-compare.tsv
+
+      - name: Parse and compare Android DTBO entries
+        run: |
+          set -euo pipefail
+          cat > /tmp/parse_dtbo.py <<'PY'
+          import hashlib
+          import struct
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          src = Path(sys.argv[1])
+          outdir = Path(sys.argv[2])
+          report = Path(sys.argv[3])
+          outdir.mkdir(parents=True, exist_ok=True)
+          data = src.read_bytes()
+
+          if len(data) < 32:
+              raise SystemExit("dtbo image too small")
+
+          fields = struct.unpack_from(">8I", data, 0)
+          magic, total_size, header_size, entry_size, entry_count, entries_offset, page_size, version = fields
+          if magic != 0xD7B7AB1E:
+              fields = struct.unpack_from("<8I", data, 0)
+              magic, total_size, header_size, entry_size, entry_count, entries_offset, page_size, version = fields
+              endian = "<"
+          else:
+              endian = ">"
+
+          if magic != 0xD7B7AB1E:
+              raise SystemExit(f"bad DTBO magic: 0x{magic:08x}")
+
+          rows = []
+          for i in range(entry_count):
+              off = entries_offset + i * entry_size
+              vals = struct.unpack_from(endian + "8I", data, off)
+              dt_size, dt_offset, ident, rev, c0, c1, c2, c3 = vals
+              blob = data[dt_offset:dt_offset + dt_size]
+              if len(blob) != dt_size:
+                  raise SystemExit(f"entry {i} truncated")
+              path = outdir / f"{i:03d}.dtb"
+              path.write_bytes(blob)
+              sha = hashlib.sha256(blob).hexdigest()
+
+              def prop(name):
+                  try:
+                      return subprocess.check_output(
+                          ["fdtget", "-t", "s", str(path), "/", name],
+                          text=True, stderr=subprocess.DEVNULL
+                      ).strip().replace("\t", ",")
+                  except Exception:
+                      return ""
+
+              rows.append([
+                  str(i), str(dt_size), str(dt_offset),
+                  f"0x{ident:08x}", f"0x{rev:08x}",
+                  f"0x{c0:08x}", f"0x{c1:08x}", f"0x{c2:08x}", f"0x{c3:08x}",
+                  sha, prop("compatible"), prop("model")
+              ])
+
+          report.write_text(
+              "index\tsize\toffset\tid\trev\tcustom0\tcustom1\tcustom2\tcustom3\tsha256\tcompatible\tmodel\n" +
+              "".join("\t".join(r) + "\n" for r in rows)
+          )
+          print(f"dtbo_total_size={total_size}")
+          print(f"dtbo_header_size={header_size}")
+          print(f"dtbo_entry_size={entry_size}")
+          print(f"dtbo_entry_count={entry_count}")
+          print(f"dtbo_page_size={page_size}")
+          print(f"dtbo_version={version}")
+          PY
+
+          for v in 10 16; do
+            python3 /tmp/parse_dtbo.py "official/$v/dtbo.img" "dtbo-$v" "dtbo-$v.tsv" | tee "dtbo-$v-summary.txt"
+          done
+
+          python3 - <<'PY'
+          import csv
+          from pathlib import Path
+
+          def load(path):
+              return list(csv.DictReader(Path(path).open(), delimiter="\t"))
+
+          a = load("dtbo-10.tsv")
+          b = load("dtbo-16.tsv")
+          n = min(len(a), len(b))
+          same_hash = 0
+          same_meta = 0
+          rows = []
+          for i in range(n):
+              x, y = a[i], b[i]
+              h = int(x["sha256"] == y["sha256"])
+              m = int(all(x[k] == y[k] for k in ("id","rev","custom0","custom1","custom2","custom3")))
+              same_hash += h
+              same_meta += m
+              rows.append((str(i), str(h), str(m), x["sha256"], y["sha256"], x["compatible"], y["compatible"]))
+
+          Path("dtbo-compare-summary.txt").write_text("\n".join([
+              f"os2_0_10_entry_count={len(a)}",
+              f"os2_0_16_entry_count={len(b)}",
+              f"paired_entries={n}",
+              f"same_entry_sha256={same_hash}",
+              f"same_entry_metadata={same_meta}",
+          ]) + "\n")
+          Path("dtbo-pair-compare.tsv").write_text(
+              "index\tsame_sha256\tsame_metadata\tos2_0_10_sha256\tos2_0_16_sha256\tos2_0_10_compatible\tos2_0_16_compatible\n" +
+              "".join("\t".join(r) + "\n" for r in rows)
+          )
+          PY
+
+          cat dtbo-compare-summary.txt
+
+      - name: Final boot-chain drift classification
+        run: |
+          set -euo pipefail
+          modules_10="$(awk -F= '$1=="os2_0_10_module_count" {print $2}' module-set-compare.txt)"
+          modules_16="$(awk -F= '$1=="os2_0_16_module_count" {print $2}' module-set-compare.txt)"
+          changed_vermagic="$(awk -F= '$1=="common_changed_vermagic" {print $2}' module-set-compare.txt)"
+          changed_crc="$(awk -F= '$1=="common_changed_module_layout_crc" {print $2}' module-set-compare.txt)"
+          dtbo_same="$(awk -F= '$1=="same_entry_sha256" {print $2}' dtbo-compare-summary.txt)"
+          dtbo_pairs="$(awk -F= '$1=="paired_entries" {print $2}' dtbo-compare-summary.txt)"
+
+          {
+            echo "# Lisa OS2.0.10 versus OS2.0.16 boot-chain internals"
+            echo "os2_0_10_vendor_boot_sha256=$EXPECTED_10_VENDOR_BOOT"
+            echo "os2_0_16_vendor_boot_sha256=$EXPECTED_16_VENDOR_BOOT"
+            echo "os2_0_10_dtbo_sha256=$EXPECTED_10_DTBO"
+            echo "os2_0_16_dtbo_sha256=$EXPECTED_16_DTBO"
+            echo "os2_0_10_expected_kernel_release=$RELEASE_10"
+            echo "os2_0_16_expected_kernel_release=$RELEASE_16"
+            echo "os2_0_10_module_count=$modules_10"
+            echo "os2_0_16_module_count=$modules_16"
+            echo "common_modules_changed_vermagic=$changed_vermagic"
+            echo "common_modules_changed_module_layout_crc=$changed_crc"
+            echo "dtbo_paired_entries=$dtbo_pairs"
+            echo "dtbo_same_entry_sha256=$dtbo_same"
+            echo "candidate_0008_kernel_mutation_allowed=0"
+            echo "next_decision=use_static_module_and_dtbo_delta_to_choose_a_minimal_companion_partition_A_B_test"
+            echo "LISA_COMPANION_INTERNAL_COMPARE=PASS"
+          } | tee final-companion-compare.txt
+
+          grep -Fqx 'OFFICIAL_COMPANION_HASH_GATE=PASS' companion-hash-gate.txt
+          grep -Fqx 'LISA_COMPANION_INTERNAL_COMPARE=PASS' final-companion-compare.txt
+
+      - name: Upload detailed boot-chain comparison
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-os2-0-10-vs-os2-0-16-boot-chain-internals
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: warn
+          path: |
+            aosp-mkbootimg-revision.txt
+            companion-hash-gate.txt
+            official/10/sha256.txt
+            official/16/sha256.txt
+            unpacked/10/unpack-info.txt
+            unpacked/16/unpack-info.txt
+            unpacked/10/files.txt
+            unpacked/16/files.txt
+            ramdisks/10/fragment-count.txt
+            ramdisks/16/fragment-count.txt
+            modules-10.tsv
+            modules-16.tsv
+            modules-10-summary.txt
+            modules-16-summary.txt
+            modules-10-vermagic-counts.txt
+            modules-16-vermagic-counts.txt
+            modules-10-key-oracles.txt
+            modules-16-key-oracles.txt
+            module-set-compare.txt
+            module-key-compare.tsv
+            modules-only-os2-0-10.txt
+            modules-only-os2-0-16.txt
+            modules-changed-vermagic.txt
+            modules-changed-module-layout-crc.txt
+            vendor-boot-dtb-compare.tsv
+            dtbo-10-summary.txt
+            dtbo-16-summary.txt
+            dtbo-10.tsv
+            dtbo-16.tsv
+            dtbo-compare-summary.txt
+            dtbo-pair-compare.tsv
+            final-companion-compare.txt
