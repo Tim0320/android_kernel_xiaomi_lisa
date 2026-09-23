@@ -22,14 +22,14 @@ jobs:
     timeout-minutes: 35
 
     env:
-      KERNEL_ARTIFACT_ID: "10710943414"
-      KERNEL_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      KERNEL_ARTIFACT_ID: "10735868177"
+      KERNEL_IMAGE_SHA256: 2162041efe1e4ac3e86bd934d4ccd9a4e00c5cd80e23c8085dfd0e0995430166
       COMPAT_ARTIFACT_ID: "10699525039"
       LAYOUT_ARTIFACT_ID: "10675328820"
       STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
       STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
       STOCK_BOOT_BYTES: "201326592"
-      TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
+      TARGET_RELEASE: 5.4.289-qgki-g4c23b1a30923
 
     steps:
       - name: Checkout stock images with Git LFS
@@ -62,7 +62,7 @@ jobs:
           test "$actual_size" = "$STOCK_BOOT_BYTES"
           file "$STOCK_BOOT"
 
-      - name: Download validated kernel and runtime-layout evidence
+      - name: Download validated kernel and compatibility evidence
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -97,12 +97,32 @@ jobs:
           if [[ -z "$image" ]]; then
             image="$(find kernel-evidence -type f -name Image -print -quit)"
           fi
+          report="$(find kernel-evidence -type f -name os2-0-10-composite-report.txt -print -quit)"
+          full_abi="$(find kernel-evidence -type f -name composite-full-abi.txt -print -quit)"
+          genksyms_failures="$(find kernel-evidence -type f -name composite-genksyms-failures.txt -print -quit)"
+
           test -n "$image"
           test -s "$image"
+          test -n "$report"
+          test -s "$report"
+          test -n "$full_abi"
+          test -s "$full_abi"
+          test -n "$genksyms_failures"
+
           actual_image_sha="$(sha256sum "$image" | awk '{print $1}')"
           echo "LATEST_VALIDATED_IMAGE_SHA256=$actual_image_sha"
           test "$actual_image_sha" = "$KERNEL_IMAGE_SHA256"
+          grep -Fqx "target_release=$TARGET_RELEASE" "$report"
+          grep -Fqx "image_sha256=$KERNEL_IMAGE_SHA256" "$report"
+          grep -Fqx 'OS2_0_10_COMPOSITE_BUILD=PASS' "$report"
+          grep -Fqx 'mismatches=0' "$full_abi"
+          grep -Fqx 'stock_only=0' "$full_abi"
+          test ! -s "$genksyms_failures"
+
           cp "$image" rebuilt-Image
+          cp "$report" os2-0-10-composite-report.txt
+          cp "$full_abi" composite-full-abi.txt
+          cp "$genksyms_failures" composite-genksyms-failures.txt
 
           crc="$(find compat-evidence -type f -name qgki-six-crc.txt -print -quit)"
           abi="$(find compat-evidence -type f -name qgki-msm-drm-abi.txt -print -quit)"
@@ -204,6 +224,11 @@ jobs:
           if max(offsets) > 2752:
               raise SystemExit("task_struct direct access exceeds common prefix")
 
+          full = Path("composite-full-abi.txt").read_text()
+          for item in ("mismatches=0", "stock_only=0"):
+              if item not in full:
+                  raise SystemExit(f"composite full ABI gate missing: {item}")
+
           print("UPSTREAM_COMPATIBILITY_GATES=PASS")
           PY
 
@@ -211,7 +236,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          python3 - "$STOCK_BOOT" rebuilt-Image boot.img boot-static-validation.txt <<'PY'
+          python3 - "$STOCK_BOOT" rebuilt-Image boot.img boot-static-validation.txt "$TARGET_RELEASE" <<'PY'
           import hashlib
           import struct
           import sys
@@ -221,6 +246,7 @@ jobs:
           kernel_path = Path(sys.argv[2])
           out_path = Path(sys.argv[3])
           report_path = Path(sys.argv[4])
+          target_release = sys.argv[5].encode()
 
           stock = stock_path.read_bytes()
           kernel = kernel_path.read_bytes()
@@ -237,7 +263,7 @@ jobs:
               raise SystemExit("rebuilt Image is unexpectedly small")
           if struct.unpack_from("<I", kernel, 0x38)[0] != 0x644D5241:
               raise SystemExit("rebuilt kernel payload is not ARM64 Image")
-          if b"5.4.289-qgki-g5987d69e25da" not in kernel:
+          if target_release not in kernel:
               raise SystemExit("rebuilt Image does not contain target release")
 
           stock_kernel_size = struct.unpack_from("<I", stock, 8)[0]
@@ -285,10 +311,6 @@ jobs:
                   f"stock partition image {len(stock)}"
               )
 
-          # Do not copy stock AVB/hash tail: it authenticates the old kernel and
-          # would be stale after replacement. Pad to the original partition size
-          # so the image retains the stock flash geometry. Re-signing, if needed,
-          # is a separate deployment step rather than a static reconstruction gate.
           rebuilt.extend(b"\0" * (len(stock) - len(rebuilt)))
           out = bytes(rebuilt)
           out_path.write_bytes(out)
@@ -310,7 +332,7 @@ jobs:
               "ramdisk_payload_hash_preserved": sha(check_ramdisk) == sha(ramdisk),
               "partition_size_preserved": len(out) == len(stock),
               "arm64_image_magic": struct.unpack_from("<I", check_kernel, 0x38)[0] == 0x644D5241,
-              "target_release_present": b"5.4.289-qgki-g5987d69e25da" in check_kernel,
+              "target_release_present": target_release in check_kernel,
               "stale_stock_tail_not_copied": not any(out[rebuilt_logical_end:]),
               "stale_avb_footer_absent": not (len(out) >= 64 and out[-64:-60] == b"AVBf"),
           }
@@ -384,6 +406,9 @@ jobs:
             boot-static-validation.txt
             rebuilt-Image
             rebuilt-Image.sha256
+            os2-0-10-composite-report.txt
+            composite-full-abi.txt
+            composite-genksyms-failures.txt
             qgki-six-crc.txt
             qgki-msm-drm-abi.txt
             qgki-runtime-layout-assert.c
