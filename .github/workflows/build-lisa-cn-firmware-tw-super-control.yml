@@ -61,7 +61,6 @@ jobs:
           ./payload-dumper list "$CN_OTA_URL" | tee cn-partitions.txt
 
           python3 - <<'PY'
-          import re
           from pathlib import Path
 
           requested = [
@@ -70,7 +69,12 @@ jobs:
               'tz','uefisecapp','vendor_boot','xbl','xbl_config'
           ]
           text = Path('cn-partitions.txt').read_text(errors='replace')
-          present = [p for p in requested if re.search(rf'(?m)\\b{re.escape(p)}\\b', text)]
+          listed = {
+              line.split()[0]
+              for line in text.splitlines()
+              if line.strip() and not line.startswith('Total ') and not line.startswith('Elapsed time:')
+          }
+          present = [p for p in requested if p in listed]
           missing = [p for p in requested if p not in present]
           Path('selected-cn-partitions.txt').write_text('\n'.join(present) + '\n')
           Path('cn-partition-selection.txt').write_text(
