@@ -234,17 +234,19 @@ jobs:
           print(f"REDWOOD_PRIVATE_FILES={len(copied)}")
           PY
 
-          # Redwood KGSL tracepoints are instantiated in dedicated .c files.
-          # Keep the reconstructed build graph, but add the two definition
-          # objects required by the Redwood GPU source generation.
-          awk '
-            { print }
-            /^[[:space:]]*kgsl_timeline\.o[[:space:]]*\\$/ { print "\tkgsl_trace.o \\" }
-            /^[[:space:]]*adreno_sysfs\.o[[:space:]]*\\$/ { print "\tadreno_trace.o \\" }
-          ' drivers/gpu/msm/Makefile > drivers/gpu/msm/Makefile.new
-          mv drivers/gpu/msm/Makefile.new drivers/gpu/msm/Makefile
+          # All KGSL/Adreno .c/.h files above come from Redwood.  Keep the
+          # object membership from the same source generation too; otherwise
+          # late vmlinux link failures appear for snapshot/A3xx/A5xx/trace
+          # definitions that the reconstructed Makefile never selects.
+          cp donor-redwood/drivers/gpu/msm/Makefile drivers/gpu/msm/Makefile
           grep -q 'kgsl_trace.o' drivers/gpu/msm/Makefile
+          grep -q 'kgsl_snapshot.o' drivers/gpu/msm/Makefile
           grep -q 'adreno_trace.o' drivers/gpu/msm/Makefile
+          grep -q 'adreno_snapshot.o' drivers/gpu/msm/Makefile
+          grep -q 'adreno_a3xx.o' drivers/gpu/msm/Makefile
+          grep -q 'adreno_a5xx.o' drivers/gpu/msm/Makefile
+          grep -q 'adreno_a6xx_snapshot.o' drivers/gpu/msm/Makefile
+          grep -q 'adreno_a6xx_gmu_snapshot.o' drivers/gpu/msm/Makefile
           grep -q '^#define CREATE_TRACE_POINTS' drivers/gpu/msm/kgsl_trace.c
           grep -q '^#define CREATE_TRACE_POINTS' drivers/gpu/msm/adreno_trace.c
 
