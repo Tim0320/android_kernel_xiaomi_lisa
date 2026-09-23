@@ -1,0 +1,185 @@
+name: Build Lisa Candidate 0009 OS2.0.16 companion control
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/build-lisa-candidate-0009-os2-0-16-companion-control.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0009-os2-0-16-companion-control
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+
+    env:
+      CANDIDATE_0008_ARTIFACT_ID: 10765228960
+      CANDIDATE_0008_BOOT_SHA256: 585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063
+      KNOWN_G598_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      OS2_0_16_OTA_URL: https://bigota.d.miui.com/OS2.0.16.0.UKOCNXM/lisa-ota_full-OS2.0.16.0.UKOCNXM-user-14.0-6326c122fd.zip
+      OS2_0_10_OTA_URL: https://bigota.d.miui.com/OS2.0.10.0.UKOCNXM/lisa-ota_full-OS2.0.10.0.UKOCNXM-user-14.0-698602d09c.zip
+      EXPECTED_OS2_0_16_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+      EXPECTED_OS2_0_16_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
+      EXPECTED_OS2_0_10_VENDOR_BOOT_SHA256: 6d2c626cc325058ba4c6f16a8f4043978404dfb5ce2f420d770f53d1f5d089f2
+      EXPECTED_OS2_0_10_DTBO_SHA256: 423828174f86a7aab8823fc1cf5347e9cc97f0f41c246c489bdf5793d79a922e
+
+    steps:
+      - name: Checkout reconstruction metadata
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.x'
+          cache: false
+
+      - name: Install extraction tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip file git pkg-config libbrotli-dev liblzma-dev libzstd-dev
+
+      - name: Build pinned payload dumper
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/xishang0128/payload-dumper-go.git /tmp/payload-dumper-go
+          cd /tmp/payload-dumper-go
+          git checkout --detach 4cc6ef94039470d659e4199c67f76d8962280023
+          go build -trimpath -o "$GITHUB_WORKSPACE/payload-dumper" ./cmd/payload-dumper
+
+      - name: Download exact Candidate 0008 boot
+        run: |
+          set -euo pipefail
+          mkdir -p candidate0008
+          curl -fL \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANDIDATE_0008_ARTIFACT_ID}/zip" \
+            -o candidate0008.zip
+          unzip -q candidate0008.zip -d candidate0008
+          boot_path="$(find candidate0008 -type f -name boot.img -print -quit)"
+          test -n "$boot_path"
+          cp "$boot_path" candidate0008-boot.img
+          test "$(sha256sum candidate0008-boot.img | awk '{print $1}')" = "$CANDIDATE_0008_BOOT_SHA256"
+          echo "CANDIDATE_0008_BOOT_EXACT=1" | tee candidate0008-gate.txt
+
+      - name: Extract OS2.0.16 companion partitions
+        run: |
+          set -euo pipefail
+          mkdir -p os2-0-16
+          ./payload-dumper extract "$OS2_0_16_OTA_URL" \
+            -p vendor_boot,dtbo,vbmeta,vbmeta_system \
+            -o os2-0-16 \
+            --http-workers 4 \
+            --part-size 8M
+          test "$(sha256sum os2-0-16/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_OS2_0_16_VENDOR_BOOT_SHA256"
+          test "$(sha256sum os2-0-16/dtbo.img | awk '{print $1}')" = "$EXPECTED_OS2_0_16_DTBO_SHA256"
+          sha256sum os2-0-16/*.img | sort | tee os2-0-16-sha256.txt
+
+      - name: Extract OS2.0.10 rollback companions
+        run: |
+          set -euo pipefail
+          mkdir -p os2-0-10
+          ./payload-dumper extract "$OS2_0_10_OTA_URL" \
+            -p vendor_boot,dtbo \
+            -o os2-0-10 \
+            --http-workers 4 \
+            --part-size 8M
+          test "$(sha256sum os2-0-10/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_VENDOR_BOOT_SHA256"
+          test "$(sha256sum os2-0-10/dtbo.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_DTBO_SHA256"
+          sha256sum os2-0-10/*.img | sort | tee os2-0-10-sha256.txt
+
+      - name: Assemble controlled A/B package
+        run: |
+          set -euo pipefail
+          mkdir -p candidate-0009 rollback-os2-0-10 reference-only-os2-0-16
+          cp candidate0008-boot.img candidate-0009/boot.img
+          cp os2-0-16/vendor_boot.img candidate-0009/vendor_boot.img
+          cp os2-0-16/dtbo.img candidate-0009/dtbo.img
+          cp os2-0-10/vendor_boot.img rollback-os2-0-10/vendor_boot.img
+          cp os2-0-10/dtbo.img rollback-os2-0-10/dtbo.img
+          cp os2-0-16/vbmeta.img reference-only-os2-0-16/vbmeta.img
+          cp os2-0-16/vbmeta_system.img reference-only-os2-0-16/vbmeta_system.img
+
+          cat > FLASH_PLAN.txt <<'EOF'
+          Lisa Candidate 0009 controlled companion-state A/B
+
+          Purpose:
+          - Keep the exact Candidate 0008 boot.img / known-g598 Image unchanged.
+          - Change only the companion partitions loaded during early boot to their matching official OS2.0.16 values.
+          - Do NOT flash the reference-only vbmeta/vbmeta_system images for this test.
+
+          Candidate set to test together on active slot _a:
+          - candidate-0009/boot.img
+          - candidate-0009/vendor_boot.img
+          - candidate-0009/dtbo.img
+
+          Windows fastboot commands:
+          fastboot flash boot_a candidate-0009\boot.img
+          fastboot flash vendor_boot_a candidate-0009\vendor_boot.img
+          fastboot flash dtbo_a candidate-0009\dtbo.img
+          fastboot reboot
+
+          Rollback companion partitions to current OS2.0.10:
+          fastboot flash vendor_boot_a rollback-os2-0-10\vendor_boot.img
+          fastboot flash dtbo_a rollback-os2-0-10\dtbo.img
+
+          The vbmeta images under reference-only-os2-0-16 are evidence only and are intentionally excluded from the test flash set.
+          EOF
+
+          {
+            echo "candidate_name=Lisa Candidate 0009 OS2.0.16 companion control"
+            echo "candidate_0008_boot_sha256=$CANDIDATE_0008_BOOT_SHA256"
+            echo "known_g598_image_sha256=$KNOWN_G598_IMAGE_SHA256"
+            echo "candidate_vendor_boot_sha256=$EXPECTED_OS2_0_16_VENDOR_BOOT_SHA256"
+            echo "candidate_dtbo_sha256=$EXPECTED_OS2_0_16_DTBO_SHA256"
+            echo "rollback_vendor_boot_sha256=$EXPECTED_OS2_0_10_VENDOR_BOOT_SHA256"
+            echo "rollback_dtbo_sha256=$EXPECTED_OS2_0_10_DTBO_SHA256"
+            echo "vbmeta_flash_required=0"
+            echo "test_scope=boot+vendor_boot+dtbo only"
+            echo "LISA_CANDIDATE_0009_PACKAGE_GATE=PASS"
+          } | tee candidate-0009-manifest.txt
+
+          sha256sum candidate-0009/* rollback-os2-0-10/* reference-only-os2-0-16/* | sort | tee PACKAGE_SHA256SUMS.txt
+
+      - name: Final Candidate 0009 gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'CANDIDATE_0008_BOOT_EXACT=1' candidate0008-gate.txt
+          grep -Fqx 'LISA_CANDIDATE_0009_PACKAGE_GATE=PASS' candidate-0009-manifest.txt
+          test "$(sha256sum candidate-0009/boot.img | awk '{print $1}')" = "$CANDIDATE_0008_BOOT_SHA256"
+          test "$(sha256sum candidate-0009/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_OS2_0_16_VENDOR_BOOT_SHA256"
+          test "$(sha256sum candidate-0009/dtbo.img | awk '{print $1}')" = "$EXPECTED_OS2_0_16_DTBO_SHA256"
+          test "$(sha256sum rollback-os2-0-10/vendor_boot.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_VENDOR_BOOT_SHA256"
+          test "$(sha256sum rollback-os2-0-10/dtbo.img | awk '{print $1}')" = "$EXPECTED_OS2_0_10_DTBO_SHA256"
+          echo "LISA_CANDIDATE_0009_FINAL_GATE=PASS"
+
+      - name: Upload Candidate 0009 controlled A/B package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0009-os2-0-16-companion-control
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            candidate-0009/
+            rollback-os2-0-10/
+            reference-only-os2-0-16/
+            FLASH_PLAN.txt
+            candidate-0009-manifest.txt
+            PACKAGE_SHA256SUMS.txt
+            os2-0-16-sha256.txt
+            os2-0-10-sha256.txt
