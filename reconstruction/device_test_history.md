@@ -704,3 +704,100 @@ COMPANION_BOOT_CHAIN_DRIFT=1
 ### Decision
 
 Do not mutate the kernel from Candidate 0008 failure. The first current blocker is the unresolved **OS2.0.16 versus OS2.0.10 companion boot-chain state** around the same known-g598 kernel Image. The next safe diagnostic is to compare the two versions' `vendor_boot` ramdisks/modules, embedded DTB, and `dtbo` entries before requesting another device flash.
+
+
+## Iteration 0011 — 2026-09-24 02:07 +08:00
+
+- Candidate boot: Candidate 0008 known-g598 historical OS2.0.16 baseline control
+- Boot SHA256: `585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063`
+- Boot size: `201326592` bytes
+- Kernel release: `5.4.289-qgki-g5987d69e25da`
+- Device userspace/system baseline: Taiwan HyperOS OS2.0.5.0
+- Companion test state: CN OS2.0.16 `vendor_boot_a` + `dtbo_a`
+- Device: Xiaomi 11 Lite 5G NE (`lisa`)
+- Recovery slot after failure: `_a`
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Collector: `collect_lisa_twrp_logs.ps1 v1.2.0`
+- Evidence ZIP SHA256: `ef753cb5b90504578e61c69567857f0d4b061588a75e92e4a335843ceb79f255`
+
+### Major change from Iteration 0010
+
+This test finally produced a **new Linux-side mtdoops record**. The `oops` partition changed from the earlier stale hash:
+
+```text
+old:
+a78f91d0262e9b37823ee5060fdf5b4a3dd0b34614769149fc428a2a81ac6de2
+
+iter0011:
+72623187f410bf907650d95dae75cd86ba43419ea74a33f0bf063db4cf5aa2a6
+```
+
+The mtdoops ring has eight 2 MiB slots. The newest counter is `1298`, and that slot is a current `5.4.289-qgki-g5987d69e25da` boot. Older slots remain g4c23 and must not be confused with this run.
+
+### Current boot reached Linux first-stage init
+
+The newest record shows:
+
+```text
+mtdoops: ready 1, 1298
+init: init first stage started!
+```
+
+This is materially later than the previous Candidate 0008 test, which only had fresh UEFI `Start EBS` evidence.
+
+The CN OS2.0.16 `vendor_boot` module load path is also reached. `msm_drm.ko` loads and the display stack probes. `proxy-consumer.ko` still reports a module_layout mismatch, but it is not the first fatal blocker in this boot.
+
+### First actual blocker
+
+The bootloader log says the device is booting slot A:
+
+```text
+Active Slot _a is bootable
+Booting from slot (_a)
+```
+
+However the failed Linux boot command line does **not** contain `androidboot.slot_suffix`.
+
+The first-stage init creates the A logical partitions successfully:
+
+```text
+Created logical partition mi_ext_a
+Created logical partition odm_a
+Created logical partition product_a
+Created logical partition system_a
+Created logical partition system_ext_a
+Created logical partition vendor_a
+```
+
+but then attempts to mount `system_b`:
+
+```text
+DM_DEV_STATUS failed for system_b: No such device or address
+Failed to mount /system: No such device or address
+Failed to mount required partitions early ...
+InitFatalReboot: signal 6
+Reboot ending, jumping to kernel
+```
+
+Therefore the first current blocker is **slot-suffix propagation**, not UEFI handoff and not a kernel panic.
+
+### CN vendor_boot fstab verification
+
+The official CN OS2.0.16 `vendor_boot` first-stage fstab was unpacked and inspected. It uses normal Android `slotselect` entries and does not hard-code `system_b`.
+
+Therefore the minimal next diagnostic is not to patch the fstab or kernel. Instead, preserve the exact CN OS2.0.16 vendor ramdisk, modules, DTB, and DTBO, and modify only the vendor_boot header cmdline to append:
+
+```text
+androidboot.slot_suffix=_a
+```
+
+This is intended to make first-stage `slotselect` consume the same slot that UEFI is actually booting.
+
+### Decision
+
+- Kernel mutation: **not justified**
+- CN OS2.0.16 companion-state direction: **validated enough to continue**
+- Taiwan OS2.0.5 userspace may remain in place for this diagnostic
+- First blocker: **missing/incorrect first-stage slot suffix; init selects system_b while UEFI boots slot_a**
+- Next candidate: keep Candidate 0008 boot + exact CN OS2.0.16 DTBO; patch only CN OS2.0.16 vendor_boot cmdline with `androidboot.slot_suffix=_a`
