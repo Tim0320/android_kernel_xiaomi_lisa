@@ -865,3 +865,118 @@ The device currently uses Taiwan OS2.0.5.0 userspace with the CN OS2.0.16 compan
 The next non-speculative test is therefore to flash Candidate 0010's patched `vendor_boot_a`, explicitly set active slot A, and boot. If the device still fails, collect a new TWRP evidence bundle before any further kernel or fstab mutation.
 
 No further GitHub-side mutation is justified until this device result is available.
+
+
+## Iteration 0012 — 2026-09-24 02:21 +08:00
+
+- Tested boot SHA256: `585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063`
+- Intended diagnostic state: Candidate 0010 patched CN OS2.0.16 `vendor_boot_a`, CN OS2.0.16 `dtbo_a`, Taiwan OS2.0.5.0 userspace
+- Outcome: `black-screen-reboot`
+- Evidence ZIP SHA256: `0d4126a0a35da4ae51ef8c3a142f691bf78e2cdce8f829cd40148745d8d66041`
+- Recovery slot: `_a`
+
+### Critical correction to Iteration 0011 interpretation
+
+The previous Iteration 0011 analysis incorrectly attributed the mtdoops `system_b` first-stage failure to Candidate 0008.
+
+That attribution is invalid.
+
+The mtdoops record carrying the `system_b` failure has:
+
+```text
+## Index: 1298
+### Build: #1 SMP PREEMPT Tue Sep 16 14:22:14 UTC 2025
+kernel release evidence: 5.4.289-qgki-g5987d69e25da
+```
+
+The exact reconstructed known-g598 Image used by Candidate 0008 has the distinct build banner:
+
+```text
+Linux version 5.4.289-qgki-g5987d69e25da
+(builder@pangu-build-component-vendor)
+#1 SMP PREEMPT Tue Sep 22 17:43:28 UTC 2026
+```
+
+Therefore the `system_b` record cannot be Candidate 0008. It is an older stock-lineage record left in the mtdoops ring after the 9008 restore / stock boots.
+
+The reconstructed 2026 banner does still exist in `minidump` and `rawdump`, but both partitions are byte-for-byte unchanged historical payloads and were already proven stale in earlier iterations. They must not be treated as current Iteration 0011/0012 evidence.
+
+### Iteration 0012 persistent-partition comparison
+
+```text
+oops iter0011:
+72623187f410bf907650d95dae75cd86ba43419ea74a33f0bf063db4cf5aa2a6
+
+oops iter0012:
+72623187f410bf907650d95dae75cd86ba43419ea74a33f0bf063db4cf5aa2a6
+
+OOPS_BYTE_IDENTICAL=1
+
+logdump:
+08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a
+
+minidump:
+40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d
+
+mdcompress:
+072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea
+
+rawdump:
+605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c
+```
+
+No new reconstructed-kernel mtdoops/minidump/rawdump record was committed by Iteration 0012.
+
+### Fresh UEFI evidence
+
+`logfs` did change:
+
+```text
+iter0011 logfs:
+516b627e130da4f24eec2451079dc17718310628adc9b319c134f243d3fb338d
+
+iter0012 logfs:
+e1d9f54dfb58612e36a7f06ce8da6a0cb4b6c339e2cede360f75364d894774cf
+```
+
+Fresh mission boots repeatedly show:
+
+```text
+Active Slot _a is bootable
+Booting from slot (_a)
+Load Image boot_a
+avb_slot_verify: boot_a hash mismatch
+Load Image dtbo_a
+avb_slot_verify: dtbo_a hash mismatch
+Load Image vendor_boot_a
+avb_slot_verify: vendor_boot_a hash mismatch
+VB2: Authenticate complete! boot state is: orange
+fatal error is not set
+Shutting Down UEFI Boot Services
+Start EBS
+```
+
+The unlocked bootloader therefore accepts the modified boot-chain images and reaches ExitBootServices, but the current reconstructed kernel still does not leave a new persistent Linux record.
+
+### Candidate 0010 disposition
+
+Candidate 0010 was based on the now-invalid assumption that Candidate 0008 itself reached first-stage init and selected `system_b`.
+
+That premise is false. Candidate 0010 is therefore **deprecated as a diagnostic branch**. Its static CI gates remain technically valid (only 27 vendor_boot cmdline bytes changed), but the test does not target a proven current blocker and must not drive further slot-suffix changes.
+
+AOSP `fs_mgr_get_boot_config()` also prioritizes device-tree boot configuration before bootconfig/kernel cmdline, reinforcing that a cmdline-only slot override was not a sound root-cause fix.
+
+### Correct current blocker
+
+The current blocker returns to:
+
+**modified boot/vendor_boot/dtbo are accepted by UEFI and reach Start EBS, but the exact reconstructed Candidate 0008 kernel does not create a fresh current-version persistent Linux record on the present post-9008 Taiwan firmware state.**
+
+The next non-speculative action is to compare the complete early boot firmware state between:
+
+- Taiwan `OS2.0.5.0.UKOTWXM` (current 9008 base)
+- China `OS2.0.16.0.UKOCNXM` (historical g598 baseline)
+
+The comparison must include the official stock boot image/banner and low-level firmware partitions such as `abl`, `xbl`, `xbl_config`, `devcfg`, `aop`, `hyp`, `tz`, `keymaster`, `qupfw`, `imagefv`, `featenabler`, `shrm`, plus `boot`, `vendor_boot`, `dtbo`, and vbmeta images.
+
+Do not make another kernel or slot-selection mutation until that comparison is complete.
