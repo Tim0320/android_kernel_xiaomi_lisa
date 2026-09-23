@@ -41,13 +41,12 @@ jobs:
           go-version: '1.24.x'
           cache: false
 
-      - name: Install inspection tools and payload-dumper native headers
+      - name: Install payload and inspection dependencies
         run: |
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y \
-            file binutils git python3 python3-pyelftools pkg-config \
-            cpio lz4 zstd xz-utils gzip \
+            file binutils git python3 pkg-config \
             libbrotli-dev liblzma-dev libzstd-dev
 
       - name: Build pinned URL-aware payload dumper
@@ -57,9 +56,9 @@ jobs:
           cd /tmp/payload-dumper-go
           git checkout --detach 4cc6ef94039470d659e4199c67f76d8962280023
           go build -trimpath -o "$GITHUB_WORKSPACE/payload-dumper" ./cmd/payload-dumper
-          "$GITHUB_WORKSPACE/payload-dumper" --help | sed -n '1,120p'
+          "$GITHUB_WORKSPACE/payload-dumper" --help | sed -n '1,80p'
 
-      - name: Extract boot-chain partitions from exact official recovery OTA
+      - name: Extract exact OS2.0.10 boot-chain partitions
         run: |
           set -euo pipefail
           rm -rf official
@@ -79,44 +78,33 @@ jobs:
           ls -lh official
           sha256sum official/*.img | sort | tee official-partition-sha256.txt
 
-      - name: Compare live partition hashes without hiding firmware drift
+      - name: Gate official package against live OS2.0.10 partitions
         run: |
           set -euo pipefail
-
           vendor_boot_sha="$(sha256sum official/vendor_boot.img | awk '{print $1}')"
           dtbo_sha="$(sha256sum official/dtbo.img | awk '{print $1}')"
-          vendor_boot_match=0
-          dtbo_match=0
-
-          if [ "$vendor_boot_sha" = "$EXPECTED_VENDOR_BOOT_SHA256" ]; then
-            vendor_boot_match=1
-          fi
-          if [ "$dtbo_sha" = "$EXPECTED_DTBO_SHA256" ]; then
-            dtbo_match=1
-          fi
 
           {
             echo "OFFICIAL_VENDOR_BOOT_SHA256=$vendor_boot_sha"
             echo "LIVE_VENDOR_BOOT_SHA256=$EXPECTED_VENDOR_BOOT_SHA256"
-            echo "LIVE_VENDOR_BOOT_BYTE_MATCH=$vendor_boot_match"
             echo "OFFICIAL_DTBO_SHA256=$dtbo_sha"
             echo "LIVE_DTBO_A_SHA256=$EXPECTED_DTBO_SHA256"
-            echo "LIVE_DTBO_BYTE_MATCH=$dtbo_match"
           } | tee live-partition-compare.txt
 
-          if [ "$vendor_boot_match" -eq 1 ] && [ "$dtbo_match" -eq 1 ]; then
+          test "$vendor_boot_sha" = "$EXPECTED_VENDOR_BOOT_SHA256"
+          test "$dtbo_sha" = "$EXPECTED_DTBO_SHA256"
+          {
+            echo "LIVE_VENDOR_BOOT_BYTE_MATCH=1"
+            echo "LIVE_DTBO_BYTE_MATCH=1"
             echo "LIVE_FIRMWARE_PARTITION_BYTES=EXACT"
-          else
-            echo "LIVE_FIRMWARE_PARTITION_BYTES=DIFFERENT"
-            echo "Byte drift is retained as evidence; kernel/ABI cohort validation continues."
-          fi
+          } | tee -a live-partition-compare.txt
 
-      - name: Extract and identify official stock kernel
+      - name: Validate and extract exact official stock boot Image
         run: |
           set -euo pipefail
-
           python3 - <<'PY'
           import hashlib
+          import re
           import struct
           from pathlib import Path
 
@@ -124,207 +112,128 @@ jobs:
           if boot[:8] != b"ANDROID!":
               raise SystemExit("official boot.img has invalid Android boot magic")
 
-          kernel_size = struct.unpack_from("<I", boot, 8)[0]
-          ramdisk_size = struct.unpack_from("<I", boot, 12)[0]
-          os_version = struct.unpack_from("<I", boot, 16)[0]
-          header_size = struct.unpack_from("<I", boot, 20)[0]
-          header_version = struct.unpack_from("<I", boot, 40)[0]
-
-          if header_version != 3:
-              raise SystemExit(f"expected boot header v3, got {header_version}")
-          if not (0 < header_size <= 4096):
-              raise SystemExit(f"invalid header size {header_size}")
-
-          page = 4096
-          kernel = boot[page:page + kernel_size]
-          if len(kernel) != kernel_size:
-              raise SystemExit("kernel payload truncated")
-          if len(kernel) < 0x40 or struct.unpack_from("<I", kernel, 0x38)[0] != 0x644D5241:
-              raise SystemExit("kernel payload is not an ARM64 Image")
-
-          release = b"5.4.289-qgki-g4c23b1a30923"
-          if release not in kernel:
-              raise SystemExit("official OS2.0.10 boot does not contain expected g4c23 QGKI release")
-
-          Path("official-stock-Image").write_bytes(kernel)
-          Path("official-boot-layout.txt").write_text(
-              "\n".join([
-                  f"boot_header_version={header_version}",
-                  f"boot_header_size={header_size}",
-                  f"boot_os_version_raw=0x{os_version:08x}",
-                  f"kernel_bytes={kernel_size}",
-                  f"ramdisk_bytes={ramdisk_size}",
-                  f"kernel_sha256={hashlib.sha256(kernel).hexdigest()}",
-                  "arm64_image_magic=PASS",
-                  "target_release=5.4.289-qgki-g4c23b1a30923",
-                  "target_release_present=PASS",
-              ]) + "\n"
-          )
-          PY
-
-          file official-stock-Image
-          cat official-boot-layout.txt
-          strings -a official-stock-Image | grep -m1 '^Linux version ' | tee official-kernel-version.txt
-          grep -F "$TARGET_RELEASE" official-kernel-version.txt
-
-      - name: Inspect official vendor_boot kernel ABI cohort
-        run: |
-          set -euo pipefail
-          rm -rf vendor-ramdisks vendor-root
-          mkdir -p vendor-ramdisks vendor-root
-
-          python3 - official/vendor_boot.img vendor-ramdisks/vendor-boot-layout.txt vendor-ramdisks <<'PY'
-          import struct
-          import sys
-          from pathlib import Path
-
-          img_path = Path(sys.argv[1])
-          layout_path = Path(sys.argv[2])
-          out_dir = Path(sys.argv[3])
-          data = img_path.read_bytes()
-
-          if data[:8] != b"VNDRBOOT":
-              raise SystemExit(f"bad vendor_boot magic: {data[:8]!r}")
-
           def u32(off):
-              return struct.unpack_from("<I", data, off)[0]
+              return struct.unpack_from("<I", boot, off)[0]
 
           def align(v, a):
               return (v + a - 1) // a * a
 
-          version = u32(8)
-          page_size = u32(12)
-          vendor_ramdisk_size = u32(24)
-          header_size = u32(2096)
-          dtb_size = u32(2100)
-          ramdisk_off = align(header_size, page_size)
-          dtb_off = align(ramdisk_off + vendor_ramdisk_size, page_size)
+          kernel_size = u32(8)
+          ramdisk_size = u32(12)
+          os_version = u32(16)
+          header_size = u32(20)
+          header_version = u32(40)
 
+          if header_version != 3:
+              raise SystemExit(f"expected Android boot header v3, got {header_version}")
+          if not (0 < header_size <= 4096):
+              raise SystemExit(f"invalid Android boot header size {header_size}")
+
+          page = 4096
+          kernel_off = page
+          kernel_end = kernel_off + kernel_size
+          ramdisk_off = align(kernel_end, page)
+          ramdisk_end = ramdisk_off + ramdisk_size
+          if kernel_size <= 0 or kernel_end > len(boot):
+              raise SystemExit("kernel payload is truncated")
+          if ramdisk_end > len(boot):
+              raise SystemExit("ramdisk payload is truncated")
+
+          kernel = boot[kernel_off:kernel_end]
+          if len(kernel) < 64:
+              raise SystemExit("kernel Image is too small")
+          image_magic = struct.unpack_from("<I", kernel, 0x38)[0]
+          if image_magic != 0x644D5241:
+              raise SystemExit(f"kernel payload is not ARM64 Image: 0x{image_magic:08x}")
+
+          target_release = b"5.4.289-qgki-g4c23b1a30923"
+          if target_release not in kernel:
+              raise SystemExit("official OS2.0.10 boot does not contain expected g4c23 QGKI release")
+
+          version = re.search(rb"Linux version ([^\x00\n]{1,500})", kernel)
+          if not version:
+              raise SystemExit("Linux version string not found in official stock Image")
+
+          image_header = {
+              "code0": struct.unpack_from("<I", kernel, 0)[0],
+              "code1": struct.unpack_from("<I", kernel, 4)[0],
+              "text_offset": struct.unpack_from("<Q", kernel, 8)[0],
+              "image_size": struct.unpack_from("<Q", kernel, 16)[0],
+              "flags": struct.unpack_from("<Q", kernel, 24)[0],
+              "res2": struct.unpack_from("<Q", kernel, 32)[0],
+              "res3": struct.unpack_from("<Q", kernel, 40)[0],
+              "res4": struct.unpack_from("<Q", kernel, 48)[0],
+              "magic": image_magic,
+              "res5": struct.unpack_from("<I", kernel, 60)[0],
+          }
+
+          Path("official-stock-Image").write_bytes(kernel)
+          Path("official-kernel-version.txt").write_text(
+              version.group(0).decode("utf-8", "replace") + "\n"
+          )
           lines = [
-              f"header_version={version}",
-              f"page_size={page_size}",
-              f"header_size={header_size}",
-              f"vendor_ramdisk_size={vendor_ramdisk_size}",
-              f"vendor_ramdisk_offset={ramdisk_off}",
-              f"dtb_size={dtb_size}",
-              f"dtb_offset={dtb_off}",
+              f"boot_bytes={len(boot)}",
+              f"boot_sha256={hashlib.sha256(boot).hexdigest()}",
+              f"boot_header_version={header_version}",
+              f"boot_header_size={header_size}",
+              f"boot_os_version_raw=0x{os_version:08x}",
+              f"kernel_offset={kernel_off}",
+              f"kernel_bytes={kernel_size}",
+              f"kernel_sha256={hashlib.sha256(kernel).hexdigest()}",
+              f"ramdisk_offset={ramdisk_off}",
+              f"ramdisk_bytes={ramdisk_size}",
+              f"ramdisk_end={ramdisk_end}",
           ]
-
-          fragments = []
-          if version >= 4 and header_size >= 2128:
-              table_size = u32(2112)
-              entry_num = u32(2116)
-              entry_size = u32(2120)
-              bootconfig_size = u32(2124)
-              table_off = align(dtb_off + dtb_size, page_size)
-              lines += [
-                  f"vendor_ramdisk_table_size={table_size}",
-                  f"vendor_ramdisk_table_entry_num={entry_num}",
-                  f"vendor_ramdisk_table_entry_size={entry_size}",
-                  f"vendor_ramdisk_table_offset={table_off}",
-                  f"bootconfig_size={bootconfig_size}",
-              ]
-              if entry_num and entry_size >= 108:
-                  for idx in range(entry_num):
-                      off = table_off + idx * entry_size
-                      if off + entry_size > len(data):
-                          raise SystemExit("vendor ramdisk table exceeds image")
-                      frag_size = u32(off)
-                      frag_off = u32(off + 4)
-                      frag_type = u32(off + 8)
-                      raw_name = data[off + 12:off + 44]
-                      name = raw_name.split(b"\0", 1)[0].decode("utf-8", "replace") or f"fragment{idx}"
-                      fragments.append((idx, name, frag_type, frag_off, frag_size))
-                      lines.append(
-                          f"fragment[{idx}] name={name} type={frag_type} offset={frag_off} size={frag_size}"
-                      )
-
-          if not fragments:
-              fragments = [(0, "vendor_ramdisk", 0, 0, vendor_ramdisk_size)]
-
-          for idx, name, frag_type, frag_rel, frag_size in fragments:
-              start = ramdisk_off + frag_rel
-              end = start + frag_size
-              if end > ramdisk_off + vendor_ramdisk_size or end > len(data):
-                  raise SystemExit(f"fragment {idx} exceeds vendor ramdisk section")
-              safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in name)
-              (out_dir / f"{idx:02d}-{safe}.bin").write_bytes(data[start:end])
-
-          layout_path.write_text("\n".join(lines) + "\n")
+          for key, value in image_header.items():
+              lines.append(f"arm64_{key}=0x{value:x}")
+          lines += [
+              "arm64_image_magic=PASS",
+              "target_release=5.4.289-qgki-g4c23b1a30923",
+              "target_release_present=PASS",
+          ]
+          Path("official-boot-layout.txt").write_text("\n".join(lines) + "\n")
           PY
 
-          idx=0
-          for frag in vendor-ramdisks/*.bin; do
-            out="vendor-root/fragment-$idx"
-            work="vendor-ramdisks/fragment-$idx.cpio"
-            mkdir -p "$out"
-            magic="$(xxd -p -l 8 "$frag")"
-            case "$magic" in
-              1f8b*) gzip -dc "$frag" > "$work" ;;
-              04224d18*|02214c18*) lz4 -dc "$frag" > "$work" ;;
-              fd377a585a00*) xz -dc "$frag" > "$work" ;;
-              28b52ffd*) zstd -dc "$frag" > "$work" ;;
-              303730373031*|303730373032*) cp "$frag" "$work" ;;
-              *) echo "Unknown ramdisk compression for $frag" >&2; file "$frag" >&2 || true; exit 1 ;;
-            esac
-            work_abs="$(realpath "$work")"
-            (cd "$out" && cpio --quiet -idm --no-absolute-filenames < "$work_abs")
-            idx=$((idx + 1))
-          done
+          file official/boot.img official-stock-Image
+          cat official-boot-layout.txt
+          cat official-kernel-version.txt
+          grep -F "$TARGET_RELEASE" official-kernel-version.txt
 
-          find vendor-root -type f -name '*.ko' -print | sort > official-vendor-modules.txt
-          test -s official-vendor-modules.txt
-          echo "OFFICIAL_VENDOR_BOOT_MODULES=$(wc -l < official-vendor-modules.txt)"
-
-          msm_drm="$(find vendor-root -type f -name 'msm_drm.ko' -print -quit)"
-          test -n "$msm_drm"
-          msm_drm_vermagic="$(strings -a "$msm_drm" | grep -m1 '^vermagic=' || true)"
-          echo "$msm_drm_vermagic" | tee official-vendor-module-vermagic.txt
-          echo "$msm_drm_vermagic" | grep -F "$TARGET_COMMIT_TAG"
-          echo "OFFICIAL_VENDOR_BOOT_COHORT=PASS"
-
-      - name: Record OS2.0.10 kernel cohort gate
+      - name: Record exact OS2.0.10 stock baseline gate
         run: |
           set -euo pipefail
-
           boot_sha="$(sha256sum official/boot.img | awk '{print $1}')"
+          boot_bytes="$(stat -c '%s' official/boot.img)"
           image_sha="$(sha256sum official-stock-Image | awk '{print $1}')"
           vendor_boot_sha="$(sha256sum official/vendor_boot.img | awk '{print $1}')"
           dtbo_sha="$(sha256sum official/dtbo.img | awk '{print $1}')"
-          vendor_boot_match=0
-          dtbo_match=0
 
-          [ "$vendor_boot_sha" = "$EXPECTED_VENDOR_BOOT_SHA256" ] && vendor_boot_match=1
-          [ "$dtbo_sha" = "$EXPECTED_DTBO_SHA256" ] && dtbo_match=1
-
-          baseline_class="official_os2_0_10_same_kernel_cohort"
-          if [ "$vendor_boot_match" -eq 1 ] && [ "$dtbo_match" -eq 1 ]; then
-            baseline_class="official_os2_0_10_exact_live_partition_match"
-          fi
-
+          test "$vendor_boot_sha" = "$EXPECTED_VENDOR_BOOT_SHA256"
+          test "$dtbo_sha" = "$EXPECTED_DTBO_SHA256"
           grep -F "$TARGET_RELEASE" official-kernel-version.txt
-          grep -F "$TARGET_COMMIT_TAG" official-vendor-module-vermagic.txt
+          grep -Fqx 'arm64_image_magic=PASS' official-boot-layout.txt
+          grep -Fqx 'target_release_present=PASS' official-boot-layout.txt
 
           {
-            echo "# Lisa OS2.0.10.0.UKOCNXM stock kernel baseline"
+            echo "# Lisa OS2.0.10.0.UKOCNXM exact stock boot baseline"
             echo "target_version=$TARGET_VERSION"
             echo "target_release=$TARGET_RELEASE"
             echo "ota_url=$OTA_URL"
             echo "official_boot_sha256=$boot_sha"
+            echo "official_boot_bytes=$boot_bytes"
             echo "official_image_sha256=$image_sha"
             echo "official_vendor_boot_sha256=$vendor_boot_sha"
             echo "official_dtbo_sha256=$dtbo_sha"
             echo "live_vendor_boot_sha256=$EXPECTED_VENDOR_BOOT_SHA256"
             echo "live_dtbo_sha256=$EXPECTED_DTBO_SHA256"
-            echo "live_vendor_boot_byte_match=$vendor_boot_match"
-            echo "live_dtbo_byte_match=$dtbo_match"
+            echo "live_vendor_boot_byte_match=1"
+            echo "live_dtbo_byte_match=1"
             echo "target_release_present=1"
-            echo "vendor_module_cohort_match=1"
-            echo "baseline_class=$baseline_class"
-            echo "OS2_0_10_KERNEL_COHORT_GATE=PASS"
+            echo "baseline_class=official_os2_0_10_exact_live_partition_match"
+            echo "OS2_0_10_EXACT_STOCK_BOOT_GATE=PASS"
           } | tee baseline-report.txt
 
-      - name: Upload exact OS2.0.10 baseline evidence
+      - name: Upload exact OS2.0.10 stock baseline
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -338,9 +247,6 @@ jobs:
             live-partition-compare.txt
             official-boot-layout.txt
             official-kernel-version.txt
-            vendor-ramdisks/vendor-boot-layout.txt
-            official-vendor-modules.txt
-            official-vendor-module-vermagic.txt
             baseline-report.txt
             official-stock-Image
             official/boot.img
