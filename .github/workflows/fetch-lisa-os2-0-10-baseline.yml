@@ -112,7 +112,7 @@ jobs:
         run: |
           set -euo pipefail
           test -s reconstruction/device_os2_0_10_probe.txt
-          grep -Fqx "- expected_stock_qgki_release=$TARGET_RELEASE" reconstruction/device_os2_0_10_probe.txt
+          grep -Fqx -- "- expected_stock_qgki_release=$TARGET_RELEASE" reconstruction/device_os2_0_10_probe.txt
           grep -Fq "vermagic=$TARGET_RELEASE SMP preempt mod_unload modversions aarch64" reconstruction/device_os2_0_10_probe.txt
           grep -Fq 'module_layout_crc=0xba39cbb8' reconstruction/device_os2_0_10_probe.txt
           {
