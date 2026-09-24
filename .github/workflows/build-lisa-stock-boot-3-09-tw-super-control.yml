@@ -1,0 +1,181 @@
+name: Build Lisa stock boot control for 3.09 bottom and TW super
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-stock-boot-3-09-tw-super-control.yml
+      - reconstruction/stock/stock-Image/boot.img
+      - reconstruction/stock/stock-Image-3.09/vendor_boot.img
+      - reconstruction/stock/stock-Image-3.09/dtbo.img
+      - .gitattributes
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-stock-boot-3-09-tw-super-control
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      BASE: reconstruction/stock/stock-Image-3.09
+      EXPECT_STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      EXPECT_VENDOR_BOOT_SHA256: a94ecc2b8e53666693fd3cfc99ad07b5f24f586e85841728bf1d41333bc4b053
+      EXPECT_DTBO_SHA256: 537655919c72edcba2e1dcbc83edb45fe92484263f3b8d5b29e8c1408282a35c
+      EXPECT_RELEASE: 5.4.289-qgki-g5987d69e25da
+      CANDIDATE_0008_BOOT_SHA256: 585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063
+
+    steps:
+      - name: Checkout exact stock images with Git LFS
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: true
+
+      - name: Authenticate exact stock control inputs
+        run: |
+          set -euo pipefail
+
+          test -s "$STOCK_BOOT"
+          test -s "$BASE/vendor_boot.img"
+          test -s "$BASE/dtbo.img"
+
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$EXPECT_STOCK_BOOT_SHA256"
+          test "$(sha256sum "$BASE/vendor_boot.img" | awk '{print $1}')" = "$EXPECT_VENDOR_BOOT_SHA256"
+          test "$(sha256sum "$BASE/dtbo.img" | awk '{print $1}')" = "$EXPECT_DTBO_SHA256"
+
+          echo 'STOCK_BOOT_EXACT=PASS'
+          echo 'STOCK_IMAGE_3_09_VENDOR_BOOT_EXACT=PASS'
+          echo 'STOCK_IMAGE_3_09_DTBO_EXACT=PASS'
+
+      - name: Verify stock boot kernel lineage and Android boot header
+        run: |
+          set -euo pipefail
+
+          python3 - "$STOCK_BOOT" <<'PY'
+          import hashlib, struct, sys
+          from pathlib import Path
+
+          p=Path(sys.argv[1])
+          b=p.read_bytes()
+
+          if b[:8] != b'ANDROID!':
+              raise SystemExit('bad Android boot magic')
+
+          kernel_size=struct.unpack_from('<I',b,8)[0]
+          ramdisk_size=struct.unpack_from('<I',b,12)[0]
+          header_version=struct.unpack_from('<I',b,40)[0]
+          if header_version != 3:
+              raise SystemExit(f'expected boot header v3, got {header_version}')
+
+          page=4096
+          kernel=b[page:page+kernel_size]
+          if len(kernel) != kernel_size:
+              raise SystemExit('short kernel payload')
+
+          release=b'5.4.289-qgki-g5987d69e25da'
+          if release not in kernel:
+              raise SystemExit('expected stock g598 release not found in kernel')
+
+          print(f'boot_bytes={len(b)}')
+          print(f'kernel_size={kernel_size}')
+          print(f'ramdisk_size={ramdisk_size}')
+          print(f'kernel_sha256={hashlib.sha256(kernel).hexdigest()}')
+          print('STOCK_G598_RELEASE_GATE=PASS')
+          print('ANDROID_BOOT_V3_GATE=PASS')
+          PY
+
+      - name: Build single-variable stock boot control artifact
+        run: |
+          set -euo pipefail
+          rm -rf package
+          mkdir -p package
+
+          cp "$STOCK_BOOT" package/boot.img
+          sha256sum package/boot.img > package/boot.img.sha256
+
+          cat > package/CONTROL_STATE.txt <<EOF
+          Lisa Iteration 0014 stock-boot A/B control
+
+          Purpose:
+          Isolate whether Candidate 0008 boot.img itself is the failing variable.
+
+          KEEP UNCHANGED ON DEVICE:
+          - reconstruction/stock/stock-Image-3.09 firmware state
+          - stock-Image-3.09 vendor_boot_a
+            sha256=$EXPECT_VENDOR_BOOT_SHA256
+          - stock-Image-3.09 dtbo_a
+            sha256=$EXPECT_DTBO_SHA256
+          - current TW ported super
+          - active slot A
+
+          CHANGE ONLY:
+          - boot_a
+
+          Control boot:
+          sha256=$EXPECT_STOCK_BOOT_SHA256
+          release=$EXPECT_RELEASE
+
+          Previous Candidate 0008 boot:
+          sha256=$CANDIDATE_0008_BOOT_SHA256
+
+          This package intentionally does not contain or overwrite super,
+          vendor_boot, dtbo, vbmeta, userdata, or firmware partitions.
+          EOF
+
+          cat > package/FLASH_PLAN.txt <<'EOF'
+          Lisa stock-boot control — change ONLY boot_a
+
+          Preconditions:
+          - Device remains on the exact stock-Image-3.09 bottom/companion state
+            already used for Iteration 0013.
+          - TW ported super remains untouched.
+          - Do NOT flash another vendor_boot or dtbo for this control.
+
+          Fastboot:
+            fastboot set_active a
+            fastboot flash boot_a boot.img
+            fastboot reboot
+
+          Observe:
+          - normal Android boot
+          - black-screen reboot
+          - boot animation / UI progress
+          - any different reboot timing
+
+          If it fails, immediately collect the next TWRP evidence bundle before
+          changing any other partition.
+          EOF
+
+      - name: Final isolation gate
+        run: |
+          set -euo pipefail
+
+          test "$(sha256sum package/boot.img | awk '{print $1}')" = "$EXPECT_STOCK_BOOT_SHA256"
+          test "$EXPECT_STOCK_BOOT_SHA256" != "$CANDIDATE_0008_BOOT_SHA256"
+
+          grep -Fq 'CHANGE ONLY:' package/CONTROL_STATE.txt
+          grep -Fq 'boot_a' package/CONTROL_STATE.txt
+
+          {
+            echo "stock_boot_sha256=$EXPECT_STOCK_BOOT_SHA256"
+            echo "candidate_0008_boot_sha256=$CANDIDATE_0008_BOOT_SHA256"
+            echo "vendor_boot_sha256=$EXPECT_VENDOR_BOOT_SHA256"
+            echo "dtbo_sha256=$EXPECT_DTBO_SHA256"
+            echo "LISA_STOCK_BOOT_3_09_TW_SUPER_CONTROL_GATE=PASS"
+          } | tee package/final-gate.txt
+
+      - name: Upload stock boot control
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-boot-3-09-tw-super-control
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: package/
