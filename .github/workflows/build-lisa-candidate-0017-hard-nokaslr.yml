@@ -198,16 +198,8 @@ jobs:
           from pathlib import Path
           p=Path('arch/arm64/kernel/kaslr.c')
           s=p.read_text()
-          needle='''	module_alloc_base = (u64)_etext - MODULES_VSIZE;
-	__flush_dcache_area(&module_alloc_base, sizeof(module_alloc_base));
-'''
-          repl=needle+'''	/*
-	 * Lisa Candidate 0017 diagnostic control:
-	 * preserve the mandatory module_alloc_base initialization above, then
-	 * bypass runtime KASLR regardless of bootloader/vendor_boot cmdline.
-	 */
-	return 0;
-'''
+          needle="\\tmodule_alloc_base = (u64)_etext - MODULES_VSIZE;\\n\\t__flush_dcache_area(&module_alloc_base, sizeof(module_alloc_base));\\n"
+          repl=needle+"\\t/* Lisa Candidate 0017 diagnostic control: hard-disable runtime KASLR after mandatory module base setup. */\\n\\treturn 0;\\n"
           if s.count(needle) != 1:
               raise SystemExit('kaslr insertion point not unique')
           p.write_text(s.replace(needle,repl,1))
