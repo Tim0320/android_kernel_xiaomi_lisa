@@ -1,0 +1,304 @@
+name: Diagnose Lisa Candidate 0015 ramoops bootstrap
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0015-ramoops-bootstrap.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0015-ramoops-bootstrap
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      SOURCE_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+      HEALTHY_STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+      C0015_ARTIFACT_ID: "10810774162"
+      SYMBOL_ARTIFACT_ID: "10819965333"
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0015_IMAGE_SHA256: c40049716600f16d85e87abad8e7c4613dfbdb7dd8cef198cfb774674eef4ccc
+
+    steps:
+      - name: Checkout exact baselines
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout exact reconstructed source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Authenticate baselines
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$HEALTHY_STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          test -s "$COMPANION_BASE/vendor_boot.img"
+          if head -c 96 "$COMPANION_BASE/vendor_boot.img" | grep -aFq 'version https://git-lfs.github.com/spec/v1'; then
+            echo "vendor_boot.img is still a Git LFS pointer" >&2
+            exit 1
+          fi
+          test "$(git -C kernel rev-parse HEAD)" = "$SOURCE_SHA"
+          grep -Fq 'early_param("ramoops_memreserve", ramoops_memreserve);' kernel/fs/pstore/ram.c
+          grep -Fq 'ramoops_data.mem_address = 0xB0000000;' kernel/fs/pstore/ram.c
+          grep -Fq 'core_initcall(msm_register_ramoops_device);' kernel/fs/pstore/ram.c
+          grep -Fq 'postcore_initcall(ramoops_init);' kernel/fs/pstore/ram.c
+          echo 'OEM_RAMOOPS_SOURCE_PATH=CONFIRMED'
+          echo 'PASS_COMPANION_CHAIN=stock-Image-3.09'
+
+      - name: Install binary analysis tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip python3-pip binutils-aarch64-linux-gnu
+          python3 -m pip install --break-system-packages             git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+
+      - name: Fetch Candidate 0015 and trusted symbol maps
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0015_ARTIFACT_ID}/zip"             -o c0015.zip
+          unzip -q c0015.zip -d c0015
+          test -s c0015/candidate-0015-Image
+          test -s c0015/boot.img
+          test "$(sha256sum c0015/candidate-0015-Image | awk '{print $1}')" = "$C0015_IMAGE_SHA256"
+
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SYMBOL_ARTIFACT_ID}/zip"             -o symbols.zip
+          unzip -q symbols.zip -d symbols
+          test -s symbols/stock.kallsyms
+          test -s symbols/c0015.kallsyms
+          cp symbols/stock.kallsyms stock.kallsyms
+          cp symbols/c0015.kallsyms c0015.kallsyms
+          echo 'C0015_AND_SYMBOL_ARTIFACTS=AUTHENTICATED'
+
+      - name: Extract exact stock Image
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b=Path("reconstruction/stock/stock-Image/boot.img").read_bytes()
+          if b[:8] != b"ANDROID!":
+              raise SystemExit("bad stock boot magic")
+          page=struct.unpack_from("<I",b,36)[0]
+          if page == 0:
+              page=4096
+          ksz=struct.unpack_from("<I",b,8)[0]
+          Path("stock-Image").write_bytes(b[page:page+ksz])
+          print(f"STOCK_PAGE_SIZE={page}")
+          print(f"STOCK_KERNEL_SIZE={ksz}")
+          PY
+          test -s stock-Image
+
+      - name: Prove command-line bearing boot bytes are unchanged
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee boot-byte-identity.txt
+          from pathlib import Path
+          import hashlib, struct
+
+          s=Path("reconstruction/stock/stock-Image/boot.img").read_bytes()
+          c=Path("c0015/boot.img").read_bytes()
+          if len(s)!=len(c):
+              raise SystemExit("boot size mismatch")
+          page=struct.unpack_from("<I",s,36)[0] or 4096
+          ksz=struct.unpack_from("<I",s,8)[0]
+          if s[:page] != c[:page]:
+              raise SystemExit("boot header page differs")
+          if s[page+ksz:] != c[page+ksz:]:
+              raise SystemExit("bytes outside stock kernel region differ")
+          print(f"BOOT_HEADER_PAGE_BYTES={page}")
+          print(f"BOOT_HEADER_PAGE_SHA256={hashlib.sha256(s[:page]).hexdigest()}")
+          print("BOOT_HEADER_PAGE_BYTE_EXACT=1")
+          print("BOOT_BYTES_OUTSIDE_KERNEL_REGION_BYTE_EXACT=1")
+          print("C0015_BOOT_NONKERNEL_IDENTITY_GATE=PASS")
+          PY
+
+      - name: Locate ramoops bootstrap parameters in real boot chain
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee ramoops-parameter-summary.txt
+          from pathlib import Path
+          import re
+
+          files=[
+              ("stock_boot","reconstruction/stock/stock-Image/boot.img"),
+              ("c0015_boot","c0015/boot.img"),
+              ("vendor_boot_3_09","reconstruction/stock/stock-Image-3.09/vendor_boot.img"),
+          ]
+          rx=re.compile(rb"[ -~]{4,}")
+          wanted=re.compile(r"(ramoops|pstore|earlycon|console=|bootconfig)",re.I)
+          param=re.compile(r"ramoops_memreserve=([^\s\x00]+)",re.I)
+
+          found={}
+          for tag,path in files:
+              data=Path(path).read_bytes()
+              strings=[m.group().decode("ascii","ignore") for m in rx.finditer(data)]
+              hits=[s for s in strings if wanted.search(s)]
+              Path(f"{tag}-logging-strings.txt").write_text("\n".join(hits)+"\n")
+              vals=[]
+              for s in strings:
+                  vals += param.findall(s)
+              found[tag]=vals
+              print(f"{tag.upper()}_RAMOOPS_MEMRESERVE_COUNT={len(vals)}")
+              print(f"{tag.upper()}_RAMOOPS_MEMRESERVE_VALUES={','.join(vals) if vals else '<none>'}")
+
+          sb=found["stock_boot"]; cb=found["c0015_boot"]
+          if sb != cb:
+              raise SystemExit(f"stock/c0015 ramoops_memreserve mismatch stock={sb} c0015={cb}")
+          print("BOOT_RAMOOPS_PARAMETER_IDENTITY=PASS")
+          PY
+          echo '--- stock boot relevant strings ---'
+          cat stock_boot-logging-strings.txt || true
+          echo '--- vendor_boot 3.09 relevant strings ---'
+          cat vendor_boot_3_09-logging-strings.txt || true
+
+      - name: Recover ELF containers
+        run: |
+          set -euo pipefail
+          vmlinux-to-elf stock-Image stock.elf > stock-vmlinux-to-elf.log 2>&1
+          vmlinux-to-elf c0015/candidate-0015-Image c0015.elf > c0015-vmlinux-to-elf.log 2>&1
+          test -s stock.elf
+          test -s c0015.elf
+
+      - name: Compare OEM ramoops bootstrap semantics
+        run: |
+          set -euo pipefail
+          mkdir -p ramoops-bootstrap
+          python3 - <<'PY' | tee ramoops-bootstrap-summary.txt
+          from pathlib import Path
+          import re, subprocess, hashlib
+
+          targets=[
+              "ramoops_memreserve",
+              "msm_register_ramoops_device",
+              "ramoops_init",
+          ]
+          line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+          insn_rx1=re.compile(r"^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+){4}\s*([a-z0-9.]+)\s*(.*)$",re.I)
+          insn_rx2=re.compile(r"^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+([a-z0-9.]+)\s*(.*)$",re.I)
+
+          def parse(path):
+              rows=[]
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=line_rx.match(raw)
+                  if m:
+                      rows.append((int(m.group(1),16),m.group(2),m.group(3)))
+              return rows
+
+          def addr(rows,name):
+              xs=[a for a,t,n in rows if n==name and t in "TtWw"]
+              if len(xs)!=1:
+                  raise SystemExit(f"{name}: expected one text symbol, got {xs}")
+              return xs[0]
+
+          def stop(rows,start):
+              xs=sorted({a for a,t,n in rows if t in "TtWw" and a>start})
+              return xs[0] if xs else start+0x4000
+
+          def disasm(elf,start,end):
+              return subprocess.run([
+                  "aarch64-linux-gnu-objdump","-d",
+                  f"--start-address=0x{start:x}",f"--stop-address=0x{end:x}",elf
+              ],check=True,capture_output=True,text=True).stdout
+
+          def canon(s):
+              s=s.split("+",1)[0]
+              s=re.sub(r"\$[0-9a-fA-F]{16,}$","",s)
+              s=re.sub(r"\.llvm\.[0-9A-Fa-f]+$","",s)
+              s=re.sub(r"\.(?:isra|constprop|part|cold)\.\d+$","",s)
+              return s
+
+          def sig(txt,start,end):
+              mn=[]; calls=[]; tails=[]
+              for raw in txt.splitlines():
+                  m=insn_rx1.match(raw) or insn_rx2.match(raw)
+                  if not m: continue
+                  op=m.group(1).lower(); operands=m.group(2).strip()
+                  if op in ("nop","hint"): continue
+                  mn.append(op)
+                  sm=re.search(r"<([^>]+)>",operands)
+                  if op=="bl" and sm:
+                      calls.append(canon(sm.group(1)))
+                  elif op=="b" and sm:
+                      am=re.match(r"([0-9a-fA-F]+)",operands)
+                      if am:
+                          target=int(am.group(1),16)
+                          if not (start <= target < end):
+                              tails.append(canon(sm.group(1)))
+              key="|".join(mn)+"\nCALL:"+",".join(calls)+"\nTAIL:"+",".join(tails)
+              return mn,calls,tails,hashlib.sha256(key.encode()).hexdigest()
+
+          sr=parse("stock.kallsyms"); cr=parse("c0015.kallsyms")
+          diffs=0
+          for fn in targets:
+              sa=addr(sr,fn); ca=addr(cr,fn)
+              se=stop(sr,sa); ce=stop(cr,ca)
+              sd=disasm("stock.elf",sa,se); cd=disasm("c0015.elf",ca,ce)
+              Path(f"ramoops-bootstrap/{fn}-stock.S").write_text(sd)
+              Path(f"ramoops-bootstrap/{fn}-c0015.S").write_text(cd)
+              ss=sig(sd,sa,se); cs=sig(cd,ca,ce)
+              equal=ss[:3]==cs[:3]
+              if not equal: diffs+=1
+              print(f"{fn}_STOCK_ADDR=0x{sa:x}")
+              print(f"{fn}_C0015_ADDR=0x{ca:x}")
+              print(f"{fn}_STOCK_INSNS={len(ss[0])}")
+              print(f"{fn}_C0015_INSNS={len(cs[0])}")
+              print(f"{fn}_STOCK_CALLS={','.join(ss[1])}")
+              print(f"{fn}_C0015_CALLS={','.join(cs[1])}")
+              print(f"{fn}_SEMANTIC={'EQUAL' if equal else 'DIFF'}")
+          print(f"RAMOOPS_BOOTSTRAP_SEMANTIC_DIFF_COUNT={diffs}")
+          print("RAMOOPS_INIT_LEVELS=core:msm_register_ramoops_device,postcore:ramoops_init")
+          print("RAMOOPS_BOOTSTRAP_COMPARE_GATE=PASS")
+          PY
+
+      - name: Final gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'C0015_BOOT_NONKERNEL_IDENTITY_GATE=PASS' boot-byte-identity.txt
+          grep -Fqx 'BOOT_RAMOOPS_PARAMETER_IDENTITY=PASS' ramoops-parameter-summary.txt
+          grep -Fqx 'RAMOOPS_BOOTSTRAP_COMPARE_GATE=PASS' ramoops-bootstrap-summary.txt
+          {
+            echo 'KNOWN_GOOD_REFERENCE=healthy-stock-boot-e6f8c978c2cf'
+            echo 'CANDIDATE_REFERENCE=c0015-image-c40049716600'
+            echo 'PASS_COMPANION_CHAIN=stock-Image-3.09'
+            cat boot-byte-identity.txt
+            cat ramoops-parameter-summary.txt
+            cat ramoops-bootstrap-summary.txt
+            echo 'LISA_C0015_RAMOOPS_BOOTSTRAP=PASS'
+          } | tee final.txt
+
+      - name: Upload ramoops bootstrap diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0015-ramoops-bootstrap
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            final.txt
+            boot-byte-identity.txt
+            ramoops-parameter-summary.txt
+            ramoops-bootstrap-summary.txt
+            stock_boot-logging-strings.txt
+            c0015_boot-logging-strings.txt
+            vendor_boot_3_09-logging-strings.txt
+            ramoops-bootstrap/
+            stock-vmlinux-to-elf.log
+            c0015-vmlinux-to-elf.log
