@@ -75,6 +75,44 @@ jobs:
           cp "$img" candidate-0014-Image
           test "$(sha256sum candidate-0014-Image | awk '{print $1}')" = "$C0014_IMAGE_SHA256"
 
+      - name: Audit ARM64 Image headers
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee image-header-summary.txt
+          from pathlib import Path
+          import struct
+
+          def parse(path):
+              b=Path(path).read_bytes()
+              if len(b) < 64:
+                  raise SystemExit(f"short Image: {path}")
+              return {
+                  "bytes": len(b),
+                  "code0": struct.unpack_from("<I", b, 0)[0],
+                  "code1": struct.unpack_from("<I", b, 4)[0],
+                  "text_offset": struct.unpack_from("<Q", b, 8)[0],
+                  "image_size": struct.unpack_from("<Q", b, 16)[0],
+                  "flags": struct.unpack_from("<Q", b, 24)[0],
+                  "magic": b[56:60],
+              }
+
+          s=parse("stock-Image")
+          c=parse("candidate-0014-Image")
+          for label,x in (("STOCK",s),("C0014",c)):
+              print(f"{label}_FILE_BYTES={x['bytes']}")
+              print(f"{label}_CODE0=0x{x['code0']:08x}")
+              print(f"{label}_CODE1=0x{x['code1']:08x}")
+              print(f"{label}_TEXT_OFFSET=0x{x['text_offset']:x}")
+              print(f"{label}_IMAGE_SIZE=0x{x['image_size']:x}")
+              print(f"{label}_FLAGS=0x{x['flags']:x}")
+              print(f"{label}_MAGIC={x['magic'].hex()}")
+          print(f"TEXT_OFFSET_MATCH={int(s['text_offset']==c['text_offset'])}")
+          print(f"FLAGS_MATCH={int(s['flags']==c['flags'])}")
+          print(f"MAGIC_MATCH={int(s['magic']==c['magic']==b'ARM\\x64')}")
+          print(f"IMAGE_SIZE_FIELD_MATCH={int(s['image_size']==c['image_size'])}")
+          print("ARM64_IMAGE_HEADER_AUDIT=PASS")
+          PY
+
       - name: Recover kallsyms
         run: |
           set -euo pipefail
@@ -83,7 +121,7 @@ jobs:
           test -s stock.kallsyms
           test -s c0014.kallsyms
 
-      - name: Map exact initcall order and persistent-log boundary
+      - name: Map corrected initcall order and early boundaries
         run: |
           set -euo pipefail
           python3 - <<'PY' | tee pre-persistent-summary.txt
@@ -92,22 +130,33 @@ jobs:
 
           line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
           init_rx=re.compile(r"^__initcall_\d+_\d+_(.+?)(early|rootfs|[0-7]s?)$")
+          levels=["early","0","0s","1","1s","2","2s","3","3s","4","4s","5","5s","rootfs","6","6s","7","7s"]
+          rank={v:i for i,v in enumerate(levels)}
+
+          def strip_compiler_suffix(name):
+              # Initcall symbols can be emitted as e.g.
+              # __initcall_*_regulator_fixed_voltage_init4.12170 .
+              # The suffix must be removed before parsing the initcall level.
+              return name.split('.',1)[0]
 
           def parse(path):
               syms={}
               init=[]
+              seen=set()
               for raw in Path(path).read_text(errors="replace").splitlines():
                   m=line_rx.match(raw)
                   if not m: continue
                   addr=int(m.group(1),16); typ=m.group(2); name=m.group(3)
                   syms[name]=(addr,typ)
-                  im=init_rx.match(name)
-                  if im:
-                      fn,level=im.groups()
-                      fn=re.sub(r"\.\d+$","",fn)
-                      init.append((addr,level,fn,name))
+                  clean=strip_compiler_suffix(name)
+                  im=init_rx.match(clean)
+                  if not im: continue
+                  fn,level=im.groups()
+                  key=(level,fn)
+                  if key in seen: continue
+                  seen.add(key)
+                  init.append((addr,level,fn,name))
               init.sort()
-              # Stable per-level order as encoded by linker addresses.
               by_level={}
               for row in init:
                   by_level.setdefault(row[1],[]).append(row)
@@ -120,12 +169,28 @@ jobs:
               d={}
               for r in rows: d.setdefault(r[2],[]).append(r)
               return d
+
+          def before(rows, boundary):
+              if not boundary: return []
+              baddr,blevel,_,_=boundary[0]
+              out=[]
+              for row in rows:
+                  addr,lvl,fn,raw=row
+                  if rank.get(lvl,999)<rank.get(blevel,999) or (lvl==blevel and addr<baddr):
+                      out.append(row)
+              return out
+
           sm=rows_by_fn(stock_i); cm=rows_by_fn(cand_i)
+          stock_set={(lvl,fn) for _,lvl,fn,_ in stock_i}
+          cand_set={(lvl,fn) for _,lvl,fn,_ in cand_i}
+          cand_only=sorted(cand_set-stock_set)
+          stock_only=sorted(stock_set-cand_set)
 
           targets=[
-            "mtdoops_init","ramoops_init","pstore_init","pstore_blk_init",
-            "bootinfo_init","msm_drm_register","rmnet_init","rmnet_ctl_init",
-            "fragmentize_init","cpufreq_times_init","qcom_scm_init"
+            "ramoops_init","mtdoops_init","pstore_init","pstore_blk_init",
+            "bootinfo_init","regulator_fixed_voltage_init4","cpufreq_times_init",
+            "msm_drm_register","rmnet_init","rmnet_ctl_init","fragmentize_init",
+            "qcom_scm_init"
           ]
 
           lines=[]
@@ -133,33 +198,30 @@ jobs:
               sr=sm.get(fn,[]); cr=cm.get(fn,[])
               lines.append(f"TARGET={fn} STOCK_COUNT={len(sr)} C0014_COUNT={len(cr)}")
               for label,arr in (("STOCK",sr),("C0014",cr)):
+                  lvlmap=stock_l if label=="STOCK" else cand_l
                   for addr,level,name,raw in arr:
-                      order=[x[2] for x in (stock_l if label=="STOCK" else cand_l).get(level,[])].index(name)
+                      order=[x[2] for x in lvlmap.get(level,[])].index(name)
                       lines.append(f"{label}_{fn}=level:{level},order:{order},addr:{addr:016x},raw:{raw}")
 
-          # Exact function identities by level.
-          stock_set={(lvl,fn) for _,lvl,fn,_ in stock_i}
-          cand_set={(lvl,fn) for _,lvl,fn,_ in cand_i}
-          cand_only=sorted(cand_set-stock_set)
-          stock_only=sorted(stock_set-cand_set)
+          cand_pre_ram=[r for r in before(cand_i,cm.get("ramoops_init",[])) if (r[1],r[2]) in cand_set-stock_set]
+          stock_pre_ram=[r for r in before(stock_i,sm.get("ramoops_init",[])) if (r[1],r[2]) in stock_set-cand_set]
+          cand_pre_mtd=[r for r in before(cand_i,cm.get("mtdoops_init",[])) if (r[1],r[2]) in cand_set-stock_set]
+          stock_pre_mtd=[r for r in before(stock_i,sm.get("mtdoops_init",[])) if (r[1],r[2]) in stock_set-cand_set]
+          cand_pre_pstore=[r for r in before(cand_i,cm.get("pstore_init",[])) if (r[1],r[2]) in cand_set-stock_set]
+          stock_pre_pstore=[r for r in before(stock_i,sm.get("pstore_init",[])) if (r[1],r[2]) in stock_set-cand_set]
 
-          # Find Candidate mtdoops boundary. If present, list every Candidate-only
-          # initcall at levels that can run before it. At same level use linker order.
-          mtd=cm.get("mtdoops_init",[])
-          pre=[]
-          if mtd:
-              maddr,mlevel,_,_=mtd[0]
-              levels=["early","0","0s","1","1s","2","2s","3","3s","4","4s","5","5s","rootfs","6","6s","7","7s"]
-              rank={v:i for i,v in enumerate(levels)}
-              for addr,lvl,fn,raw in cand_i:
-                  if (lvl,fn) not in cand_set-stock_set: continue
-                  if rank.get(lvl,999)<rank.get(mlevel,999) or (lvl==mlevel and addr<maddr):
-                      pre.append((addr,lvl,fn,raw))
+          def write_rows(path,rows):
+              Path(path).write_text(
+                "level\taddress\tfunction\traw_symbol\n"+
+                "".join(f"{lvl}\t{addr:016x}\t{fn}\t{raw}\n" for addr,lvl,fn,raw in rows)
+              )
 
-          Path("candidate-only-before-mtdoops.tsv").write_text(
-            "level\taddress\tfunction\traw_symbol\n"+
-            "".join(f"{lvl}\t{addr:016x}\t{fn}\t{raw}\n" for addr,lvl,fn,raw in pre)
-          )
+          write_rows("candidate-only-before-ramoops.tsv",cand_pre_ram)
+          write_rows("stock-only-before-ramoops.tsv",stock_pre_ram)
+          write_rows("candidate-only-before-mtdoops.tsv",cand_pre_mtd)
+          write_rows("stock-only-before-mtdoops.tsv",stock_pre_mtd)
+          write_rows("candidate-only-before-pstore.tsv",cand_pre_pstore)
+          write_rows("stock-only-before-pstore.tsv",stock_pre_pstore)
           Path("all-candidate-only-initcalls.tsv").write_text(
             "level\tfunction\n"+"".join(f"{lvl}\t{fn}\n" for lvl,fn in cand_only)
           )
@@ -172,40 +234,61 @@ jobs:
             f"C0014_INITCALL_COUNT={len(cand_i)}",
             f"TRUE_C0014_ONLY_INITCALLS={len(cand_only)}",
             f"TRUE_STOCK_ONLY_INITCALLS={len(stock_only)}",
-            f"C0014_ONLY_BEFORE_MTD_OOPS={len(pre)}",
+            f"C0014_ONLY_BEFORE_RAMOOPS={len(cand_pre_ram)}",
+            f"STOCK_ONLY_BEFORE_RAMOOPS={len(stock_pre_ram)}",
+            f"C0014_ONLY_BEFORE_MTD_OOPS={len(cand_pre_mtd)}",
+            f"STOCK_ONLY_BEFORE_MTD_OOPS={len(stock_pre_mtd)}",
+            f"C0014_ONLY_BEFORE_PSTORE={len(cand_pre_pstore)}",
+            f"STOCK_ONLY_BEFORE_PSTORE={len(stock_pre_pstore)}",
           ]
 
-          # Highlight concrete built-in/module model mismatches.
-          suspect=re.compile(r"(msm_drm|rmnet|audio|wcd|swr|soundwire|lahaina_asoc|us_prox|fragmentize)",re.I)
-          suspects=[x for x in pre if suspect.search(x[2])]
-          lines.append(f"SUSPECT_C0014_ONLY_BEFORE_MTD_OOPS={len(suspects)}")
-          for addr,lvl,fn,raw in suspects:
-              lines.append(f"SUSPECT level={lvl} addr={addr:016x} fn={fn}")
+          for prefix,rows in (
+              ("C0014_PRE_RAMOOPS",cand_pre_ram),
+              ("STOCK_PRE_RAMOOPS",stock_pre_ram),
+              ("C0014_PRE_PSTORE",cand_pre_pstore),
+              ("STOCK_PRE_PSTORE",stock_pre_pstore)):
+              for addr,lvl,fn,raw in rows:
+                  lines.append(f"{prefix} level={lvl} addr={addr:016x} fn={fn}")
+
+          # Regression guard for the exact false positive seen in the prior parser.
+          false_reg=any(lvl=="0" and fn=="regulator_fixed_voltage_init4" for lvl,fn in stock_only)
+          lines.append(f"REGULATOR_SUFFIX_FALSE_POSITIVE_PRESENT={int(false_reg)}")
+          if false_reg:
+              raise SystemExit("compiler suffix parser regression")
 
           print("\n".join(lines))
           Path("pre-persistent-summary.txt").write_text("\n".join(lines)+"\n")
-          print("PRE_PERSISTENT_INITCALL_DIAGNOSIS=PASS")
+          print("PRE_PERSISTENT_INITCALL_DIAGNOSIS_V2=PASS")
           PY
 
       - name: Final gate
         run: |
           set -euo pipefail
-          grep -Fq 'PRE_PERSISTENT_INITCALL_DIAGNOSIS=PASS' pre-persistent-summary.txt
+          grep -Fq 'ARM64_IMAGE_HEADER_AUDIT=PASS' image-header-summary.txt
+          grep -Fq 'PRE_PERSISTENT_INITCALL_DIAGNOSIS_V2=PASS' pre-persistent-summary.txt
+          grep -Fq 'REGULATOR_SUFFIX_FALSE_POSITIVE_PRESENT=0' pre-persistent-summary.txt
           {
+            cat image-header-summary.txt
             cat pre-persistent-summary.txt
-            echo 'LISA_C0014_PRE_PERSISTENT_DIAGNOSIS=PASS'
+            echo 'LISA_C0014_PRE_PERSISTENT_DIAGNOSIS_V2=PASS'
           } | tee final.txt
 
       - name: Upload diagnosis
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-c0014-pre-persistent-initcall-diagnosis
+          name: lisa-c0014-pre-persistent-initcall-diagnosis-v2
           retention-days: 14
           if-no-files-found: error
           path: |
             final.txt
+            image-header-summary.txt
             pre-persistent-summary.txt
+            candidate-only-before-ramoops.tsv
+            stock-only-before-ramoops.tsv
             candidate-only-before-mtdoops.tsv
+            stock-only-before-mtdoops.tsv
+            candidate-only-before-pstore.tsv
+            stock-only-before-pstore.tsv
             all-candidate-only-initcalls.tsv
             all-stock-only-initcalls.tsv
             stock.kallsyms
