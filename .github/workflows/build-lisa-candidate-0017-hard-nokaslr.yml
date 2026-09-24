@@ -205,8 +205,8 @@ jobs:
           if len(hits) != 1:
               raise SystemExit(f'kaslr semantic insertion point count={len(hits)}')
           i=hits[0]
-          insert="    /* Lisa Candidate 0017 diagnostic control: hard-disable runtime KASLR after mandatory module base setup. */\\n    return 0;\\n"
-          lines.insert(i+2,insert)
+          lines.insert(i+2, "    /* Lisa Candidate 0017 diagnostic control: hard-disable runtime KASLR after mandatory module base setup. */" + chr(10))
+          lines.insert(i+3, "    return 0;" + chr(10))
           p.write_text(''.join(lines))
           PY
           cp arch/arm64/kernel/kaslr.c ../candidate-0017-kaslr.c.after
