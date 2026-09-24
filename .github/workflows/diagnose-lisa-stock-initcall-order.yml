@@ -1,0 +1,136 @@
+name: Diagnose Lisa stock SCM and AMU initcall order
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-stock-initcall-order.yml
+
+permissions:
+  contents: read
+
+env:
+  STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+  STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+  STOCK_KERNEL_SIZE: "51436032"
+  DONOR_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact stock boot metadata
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout exact reconstructed donor
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DONOR_SHA }}
+          path: donor
+          fetch-depth: 1
+          lfs: false
+
+      - name: Authenticate and extract stock Image
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, struct, hashlib
+          page=4096
+          b=Path(os.environ['STOCK_BOOT']).read_bytes()
+          if b[:8] != b'ANDROID!':
+              raise SystemExit('bad stock boot magic')
+          ksz=struct.unpack_from('<I', b, 8)[0]
+          if ksz != int(os.environ['STOCK_KERNEL_SIZE']):
+              raise SystemExit(f'unexpected stock kernel size: {ksz}')
+          image=b[page:page+ksz]
+          if struct.unpack_from('<I', image, 0x38)[0] != 0x644d5241:
+              raise SystemExit('ARM64 Image magic missing')
+          Path('stock-Image').write_bytes(image)
+          print('STOCK_IMAGE_SHA256='+hashlib.sha256(image).hexdigest())
+          print('STOCK_IMAGE_BYTES='+str(len(image)))
+          PY
+          test "$(git -C donor rev-parse HEAD)" = "$DONOR_SHA"
+          echo 'INPUT_AUTH_GATE=PASS'
+
+      - name: Install kallsyms extractor
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+
+      - name: Recover exact stock kallsyms
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          test -s stock.kallsyms
+          echo "STOCK_KALLSYMS_LINES=$(wc -l < stock.kallsyms)"
+          grep -E ' (qcom_scm_init|init_amu_fie|__initcall_.*qcom_scm_init.*|__initcall_.*init_amu_fie.*)$' stock.kallsyms \
+            | tee stock-initcall-symbols.txt || true
+
+      - name: Classify stock initcall evidence
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          lines=Path('stock.kallsyms').read_text(errors='replace').splitlines()
+          names=[x.split()[-1] for x in lines if len(x.split()) >= 3]
+
+          targets=['qcom_scm_init','init_amu_fie']
+          out=[]
+          for fn in targets:
+              direct=[n for n in names if n == fn]
+              init=[n for n in names if n.startswith('__initcall_') and fn in n]
+              out.append(f'{fn.upper()}_FUNCTION_PRESENT={int(bool(direct))}')
+              out.append(f'{fn.upper()}_INITCALL_SYMBOL_COUNT={len(init)}')
+              for n in init:
+                  out.append(f'{fn.upper()}_INITCALL_SYMBOL={n}')
+
+              levels=[]
+              for n in init:
+                  m=re.search(r'([0-9]+s?)$', n)
+                  if m:
+                      levels.append(m.group(1))
+              if levels:
+                  out.append(f'{fn.upper()}_INITCALL_LEVELS={",".join(sorted(set(levels)))}')
+              else:
+                  out.append(f'{fn.upper()}_INITCALL_LEVELS=unknown')
+
+          donor_scm=Path('donor/drivers/firmware/qcom_scm.c').read_text(errors='replace')
+          donor_top=Path('donor/arch/arm64/kernel/topology.c').read_text(errors='replace')
+          out.append('DONOR_QCOM_SCM_CORE_INITCALL='+str(int('core_initcall(qcom_scm_init)' in donor_scm)))
+          out.append('DONOR_QCOM_SCM_SUBSYS_INITCALL='+str(int('subsys_initcall(qcom_scm_init)' in donor_scm)))
+          out.append('DONOR_INIT_AMU_FIE_PRESENT='+str(int('init_amu_fie' in donor_top)))
+          out.append('STOCK_INITCALL_ORDER_DIAGNOSIS=PASS')
+          Path('stock-initcall-summary.txt').write_text('\n'.join(out)+'\n')
+          print('\n'.join(out))
+          PY
+
+      - name: Final diagnostic gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'STOCK_INITCALL_ORDER_DIAGNOSIS=PASS' stock-initcall-summary.txt
+          grep -Fqx 'DONOR_QCOM_SCM_SUBSYS_INITCALL=1' stock-initcall-summary.txt
+          echo 'LISA_STOCK_INITCALL_ORDER_DIAGNOSIS=PASS'
+
+      - name: Upload diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-initcall-order-diagnosis
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            stock-initcall-symbols.txt
+            stock-initcall-summary.txt
+            stock.kallsyms
