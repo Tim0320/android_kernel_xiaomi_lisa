@@ -1273,3 +1273,100 @@ The healthy stock AVB payload includes an `AVB0` vbmeta block with boot properti
 Before further kernel-source/config mutation, the next controlled test must preserve the healthy stock boot's header, ramdisk placement, complete non-kernel bytes, AVB0 metadata, and AVBf footer byte-for-byte, while changing only the kernel payload region to Candidate 0011. Candidate 0011 Image is shorter than the stock kernel region, so the remainder of the stock-sized kernel region can be zero-padded without changing any byte outside the kernel region.
 
 This is Candidate 0012 stock-layout/AVB control.
+
+
+## Iteration 0016 — 2026-09-24 15:53 +08:00
+
+- Candidate: Candidate 0012 stock-layout / AVB control
+- Tested boot SHA256: `f927ecf033222aa079364de9879a6443b04c36ff530cb3753ede02ab7341547f`
+- Kernel payload: Candidate 0011 Image
+  `1b587d60fbe5530102c1aa6430fea3232796c8c9265e002f63dd202697c6f09e`
+- Base/companion state: unchanged `stock-Image-3.09` firmware + vendor_boot + dtbo, current TW/global OS2.0.8 super, slot A
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Evidence package: `lisa-twrp-iter-0016_20260924-155309_boot_f927ecf03322.zip`
+
+### Persistent evidence
+
+```text
+oops:
+  9040d25c5db21b867be5ee5ea206fd3d988150280483943f3e38798397607312
+
+logdump:
+  08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a
+
+minidump:
+  40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d
+
+mdcompress:
+  072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea
+
+rawdump:
+  605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c
+
+logfs:
+  f5d2548be97c85185d4e2ea0eb0d8d7b543ebc543420f7dcc7a6c6d235d296dc
+```
+
+The `oops` partition is again byte-for-byte identical to the healthy-stock Iteration 0014 ring and Candidate 0011 Iteration 0015 ring. There is no new reconstructed-kernel record. `pstore` is empty, `/proc/last_kmsg` is unavailable, and the crash partitions remain the known stale payloads.
+
+### Fresh UEFI evidence
+
+Fresh `logfs` shows four consecutive mission boots:
+
+```text
+Active Slot _a is bootable, retry count 6
+Booting from slot (_a)
+Load Image boot_a
+Load Image dtbo_a
+Load Image vendor_boot_a
+VB2: Authenticate complete! boot state is: orange
+fatal error is not set
+Shutting Down UEFI Boot Services
+Start EBS
+```
+
+The retry count then decreases `6 -> 5 -> 4 -> 3`. Therefore Candidate 0012 is accepted by the same boot chain and reaches ExitBootServices, but still leaves no current Linux persistent record.
+
+### Candidate 0012 conclusion
+
+Candidate 0012 preserved byte-for-byte:
+
+- healthy stock Android boot v3 header;
+- stock kernel-region size;
+- stock ramdisk placement and bytes;
+- stock AVB0 metadata;
+- stock AVBf footer;
+- every byte outside the stock kernel region.
+
+Its static build gate proved:
+
+```text
+changed_bytes_outside_kernel_region=0
+stock_header_byte_exact=1
+stock_ramdisk_byte_exact=1
+stock_avb0_metadata_byte_exact=1
+stock_avbf_footer_byte_exact=1
+```
+
+Yet the device still fails identically after `Start EBS`.
+
+Therefore **boot layout, ramdisk offset, AVB0 metadata, and AVBf footer are now excluded as the current first blocker**. The current failure is inside the reconstructed kernel Image region itself.
+
+### Next controlled step
+
+Do not continue selecting individual config guesses.
+
+Build the next candidate by taking the complete embedded IKCONFIG from the healthy stock Image as the starting `.config`, then running the exact reconstructed donor source through `olddefconfig`. This creates the maximum stock configuration that the donor source can actually represent.
+
+The workflow must:
+
+1. extract the healthy stock kernel Image and full IKCONFIG;
+2. use that stock IKCONFIG as donor `out/.config`;
+3. patch only donor Kconfig constraints that mechanically prevent the stock values from being represented, where already proven (watchdog timing);
+4. run `olddefconfig`;
+5. emit the exact remaining stock-vs-donor config delta after resolution;
+6. build with stock-era Clang 11.0.2 and exact source lineage `6e568aabc77a06fa787baec1d9e60e4b559874a3`;
+7. package using Candidate 0012's exact stock-layout/AVB preservation method.
+
+This is Candidate 0013 maximal representable stock-config control. If it still fails, configuration mismatch is strongly reduced and the investigation should move to source/linkage differences in the reconstructed Image.
