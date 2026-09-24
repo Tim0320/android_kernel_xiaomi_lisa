@@ -1,0 +1,229 @@
+name: Build Lisa Candidate 0012 stock-layout AVB control
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0012-stock-layout-avb-control.yml
+      - reconstruction/stock/stock-Image/boot.img
+      - .gitattributes
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0012-stock-layout-avb-control
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_BOOT_BYTES: "201326592"
+      STOCK_KERNEL_SIZE: "51436032"
+      STOCK_RAMDISK_SIZE: "19883180"
+      STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+      C0011_ARTIFACT_ID: "10793021515"
+      C0011_IMAGE_SHA256: 1b587d60fbe5530102c1aa6430fea3232796c8c9265e002f63dd202697c6f09e
+      C0011_BOOT_SHA256: 6a5eb2b97bffa0377e1f41ac66f4aa1800e88a6e6ab6f4f959701992f8c0868b
+      TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
+
+    steps:
+      - name: Checkout healthy stock boot with Git LFS
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: true
+
+      - name: Authenticate healthy stock boot
+        run: |
+          set -euo pipefail
+          test -s "$STOCK_BOOT"
+          test "$(stat -c '%s' "$STOCK_BOOT")" = "$STOCK_BOOT_BYTES"
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          cp "$STOCK_BOOT" healthy-stock-boot.img
+          echo 'HEALTHY_STOCK_BOOT_GATE=PASS'
+
+      - name: Download exact Candidate 0011 Image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0011_ARTIFACT_ID}/zip" \
+            -o c0011.zip
+          mkdir -p c0011
+          unzip -q c0011.zip -d c0011
+
+          image="$(find c0011 -type f -name candidate-0011-Image -print -quit)"
+          boot="$(find c0011 -type f -name boot.img -print -quit)"
+          test -n "$image" && test -s "$image"
+          test -n "$boot" && test -s "$boot"
+          test "$(sha256sum "$image" | awk '{print $1}')" = "$C0011_IMAGE_SHA256"
+          test "$(sha256sum "$boot" | awk '{print $1}')" = "$C0011_BOOT_SHA256"
+          cp "$image" candidate-0011-Image
+          echo 'CANDIDATE_0011_INPUT_GATE=PASS'
+
+      - name: Build stock-layout Candidate 0012
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee candidate-0012-build.txt
+          from pathlib import Path
+          import hashlib, os, struct
+
+          PAGE=4096
+          stock=bytearray(Path('healthy-stock-boot.img').read_bytes())
+          kernel=Path('candidate-0011-Image').read_bytes()
+
+          def sha(b):
+              return hashlib.sha256(b).hexdigest()
+
+          def align(v,a):
+              return (v+a-1)//a*a
+
+          if stock[:8] != b'ANDROID!':
+              raise SystemExit('bad stock boot magic')
+
+          stock_kernel_size=struct.unpack_from('<I',stock,8)[0]
+          ramdisk_size=struct.unpack_from('<I',stock,12)[0]
+          header_version=struct.unpack_from('<I',stock,40)[0]
+          if stock_kernel_size != int(os.environ['STOCK_KERNEL_SIZE']):
+              raise SystemExit('stock kernel size mismatch')
+          if ramdisk_size != int(os.environ['STOCK_RAMDISK_SIZE']):
+              raise SystemExit('stock ramdisk size mismatch')
+          if header_version != 3:
+              raise SystemExit(f'expected boot v3, got {header_version}')
+          if len(kernel) > stock_kernel_size:
+              raise SystemExit('Candidate 0011 Image does not fit stock kernel region')
+          if struct.unpack_from('<I',kernel,0x38)[0] != 0x644d5241:
+              raise SystemExit('Candidate ARM64 Image magic missing')
+          if os.environ['TARGET_RELEASE'].encode() not in kernel:
+              raise SystemExit('Candidate target release missing')
+          if sha(kernel) != os.environ['C0011_IMAGE_SHA256']:
+              raise SystemExit('Candidate Image hash mismatch')
+
+          kernel_off=PAGE
+          ramdisk_off=align(kernel_off+stock_kernel_size,PAGE)
+          ramdisk=bytes(stock[ramdisk_off:ramdisk_off+ramdisk_size])
+          if sha(ramdisk) != os.environ['STOCK_RAMDISK_SHA256']:
+              raise SystemExit('healthy stock ramdisk hash mismatch')
+
+          logical_end=align(ramdisk_off+ramdisk_size,PAGE)
+          if bytes(stock[logical_end:logical_end+4]) != b'AVB0':
+              raise SystemExit('stock AVB0 metadata missing at logical end')
+          if bytes(stock[-64:-60]) != b'AVBf':
+              raise SystemExit('stock AVBf footer missing')
+
+          original=bytes(stock)
+          # Keep the complete healthy stock layout. Only replace bytes inside
+          # the stock kernel payload region; zero-pad the shorter Candidate
+          # Image to the original stock kernel_size.
+          stock[kernel_off:kernel_off+stock_kernel_size]=b'\0'*stock_kernel_size
+          stock[kernel_off:kernel_off+len(kernel)]=kernel
+          out=bytes(stock)
+
+          # Strong scope gate: every byte outside the stock kernel region must
+          # remain exactly identical to the known-good boot image.
+          if out[:kernel_off] != original[:kernel_off]:
+              raise SystemExit('header changed outside kernel region')
+          if out[kernel_off+stock_kernel_size:] != original[kernel_off+stock_kernel_size:]:
+              raise SystemExit('non-kernel stock bytes changed')
+
+          if struct.unpack_from('<I',out,8)[0] != stock_kernel_size:
+              raise SystemExit('stock boot header kernel_size was not preserved')
+          if out[ramdisk_off:ramdisk_off+ramdisk_size] != ramdisk:
+              raise SystemExit('stock ramdisk placement changed')
+          if out[logical_end:logical_end+4] != b'AVB0':
+              raise SystemExit('AVB0 not preserved')
+          if out[-64:-60] != b'AVBf':
+              raise SystemExit('AVBf not preserved')
+
+          Path('boot.img').write_bytes(out)
+          Path('boot.img.sha256').write_text(sha(out)+'  boot.img\n')
+
+          changed=[i for i,(a,b) in enumerate(zip(original,out)) if a!=b]
+          outside=[i for i in changed if not (kernel_off <= i < kernel_off+stock_kernel_size)]
+          print(f'stock_boot_sha256={sha(original)}')
+          print(f'candidate_0011_image_sha256={sha(kernel)}')
+          print(f'candidate_0012_boot_sha256={sha(out)}')
+          print(f'candidate_image_bytes={len(kernel)}')
+          print(f'stock_kernel_region_bytes={stock_kernel_size}')
+          print(f'kernel_zero_pad_bytes={stock_kernel_size-len(kernel)}')
+          print(f'ramdisk_offset={ramdisk_off}')
+          print(f'ramdisk_sha256={sha(ramdisk)}')
+          print(f'avb0_offset={logical_end}')
+          print(f'avb_footer_offset={len(out)-64}')
+          print(f'changed_bytes_total={len(changed)}')
+          print(f'changed_bytes_outside_kernel_region={len(outside)}')
+          print('stock_header_byte_exact=1')
+          print('stock_ramdisk_byte_exact=1')
+          print('stock_avb0_metadata_byte_exact=1')
+          print('stock_avbf_footer_byte_exact=1')
+          print('CANDIDATE_0012_STOCK_LAYOUT_GATE=PASS')
+          PY
+
+      - name: Verify exact partition-level delta
+        run: |
+          set -euo pipefail
+          grep -Fqx 'changed_bytes_outside_kernel_region=0' candidate-0012-build.txt
+          grep -Fqx 'stock_header_byte_exact=1' candidate-0012-build.txt
+          grep -Fqx 'stock_ramdisk_byte_exact=1' candidate-0012-build.txt
+          grep -Fqx 'stock_avb0_metadata_byte_exact=1' candidate-0012-build.txt
+          grep -Fqx 'stock_avbf_footer_byte_exact=1' candidate-0012-build.txt
+          grep -Fqx 'CANDIDATE_0012_STOCK_LAYOUT_GATE=PASS' candidate-0012-build.txt
+          test "$(stat -c '%s' boot.img)" = "$STOCK_BOOT_BYTES"
+
+          cat > FLASH_PLAN.txt <<'EOF'
+          Lisa Candidate 0012 — stock-layout / AVB control
+
+          Keep unchanged:
+          - stock-Image-3.09 firmware
+          - stock-Image-3.09 vendor_boot
+          - stock-Image-3.09 dtbo
+          - current vbmeta state
+          - TW/global OS2.0.8 super
+          - active slot A
+
+          Change only:
+          - boot_a -> this boot.img
+
+          This control preserves the known-good stock boot header, stock-sized
+          kernel region, stock ramdisk placement, AVB0 metadata, AVBf footer,
+          and every byte outside the kernel region. Only kernel-region bytes
+          differ from the healthy stock boot.
+
+          Fastboot:
+            fastboot set_active a
+            fastboot flash boot_a boot.img
+            fastboot reboot
+          EOF
+
+          {
+            echo "healthy_stock_boot_sha256=$STOCK_BOOT_SHA256"
+            echo "candidate_0011_image_sha256=$C0011_IMAGE_SHA256"
+            cat boot.img.sha256
+            echo 'FIRST_DIAGNOSTIC_QUESTION=does_preserving_exact_stock_boot_layout_and_AVB_metadata_restore_boot'
+            echo 'LISA_CANDIDATE_0012_FINAL_GATE=PASS'
+          } | tee candidate-0012-final.txt
+
+      - name: Upload Candidate 0012
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0012-stock-layout-avb-control
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0012-build.txt
+            candidate-0012-final.txt
+            FLASH_PLAN.txt
