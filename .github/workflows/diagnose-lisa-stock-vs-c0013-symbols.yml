@@ -1,0 +1,278 @@
+name: Diagnose Lisa stock vs Candidate 0013 symbols
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-stock-vs-c0013-symbols.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-stock-vs-c0013-symbols
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      STOCK_BOOT: stock-main/reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_IMAGE_SHA256: 54c8d6e5452c0a18f2382a0910fb0bef1ef1d7660f7fb2910dd781d7c3f43596
+      C0013_ARTIFACT_ID: "10797029934"
+      C0013_IMAGE_SHA256: 7ecf678c39ca38ad2d26fd49a0f73c57dd117f0f044fac5b059c1ecbffad492f
+      SOURCE_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+
+    steps:
+      - name: Checkout healthy stock boot
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: stock-main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Checkout exact reconstructed donor source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: reconstructed-src
+          fetch-depth: 1
+
+      - name: Install symbol recovery tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip binutils
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+
+      - name: Extract exact healthy stock Image
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, os, struct
+          p=Path(os.environ["STOCK_BOOT"])
+          b=p.read_bytes()
+          if b[:8] != b"ANDROID!":
+              raise SystemExit("bad stock boot magic")
+          ksz=struct.unpack_from("<I", b, 8)[0]
+          hver=struct.unpack_from("<I", b, 40)[0]
+          if hver != 3:
+              raise SystemExit(f"expected boot v3, got {hver}")
+          img=b[4096:4096+ksz]
+          if hashlib.sha256(img).hexdigest() != os.environ["STOCK_IMAGE_SHA256"]:
+              raise SystemExit("stock Image hash mismatch")
+          Path("stock-Image").write_bytes(img)
+          print(f"STOCK_IMAGE_BYTES={len(img)}")
+          print(f"STOCK_IMAGE_SHA256={hashlib.sha256(img).hexdigest()}")
+          PY
+
+      - name: Download exact Candidate 0013 Image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0013_ARTIFACT_ID}/zip" \
+            -o c0013.zip
+          mkdir c0013
+          unzip -q c0013.zip -d c0013
+          img="$(find c0013 -type f -name candidate-0013-Image -print -quit)"
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0013-Image
+          test "$(sha256sum candidate-0013-Image | awk '{print $1}')" = "$C0013_IMAGE_SHA256"
+
+      - name: Recover kallsyms from both Images
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder candidate-0013-Image > c0013.kallsyms
+          test -s stock.kallsyms
+          test -s c0013.kallsyms
+          echo "STOCK_KALLSYMS_LINES=$(wc -l < stock.kallsyms)"
+          echo "C0013_KALLSYMS_LINES=$(wc -l < c0013.kallsyms)"
+
+      - name: Compare symbol and initcall identities
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee symbol-diff-summary.txt
+          from pathlib import Path
+          import re
+
+          line_rx=re.compile(r"^[0-9a-fA-F]+\s+([A-Za-z?])\s+(.+?)\s*$")
+          init_prefix=re.compile(r"^__initcall_\d+_\d+_")
+
+          def parse(path):
+              out={}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=line_rx.match(raw)
+                  if m:
+                      typ,name=m.groups()
+                      out[name]=typ
+              return out
+
+          def normalize_init(name):
+              name=init_prefix.sub("", name)
+              if name.endswith("early"):
+                  name=name[:-5]
+              elif name.endswith("rootfs"):
+                  name=name[:-6]
+              else:
+                  name=re.sub(r"([0-7])s?$", "", name)
+              return re.sub(r"\.\d+$", "", name)
+
+          s=parse("stock.kallsyms")
+          c=parse("c0013.kallsyms")
+          ss=set(s); cc=set(c)
+          stock_only=ss-cc
+          c_only=cc-ss
+
+          s_init={normalize_init(x):x for x in ss if "__initcall_" in x}
+          c_init={normalize_init(x):x for x in cc if "__initcall_" in x}
+          stock_init_only=sorted(set(s_init)-set(c_init))
+          c_init_only=sorted(set(c_init)-set(s_init))
+
+          groups={
+            "arm64_early":r"(head|__primary|__cpu_setup|el2|kaslr|mmu|paging|memblock|psci|smp|cpu)",
+            "qcom_platform":r"(qcom|msm|yupik|sm7325|lahaina|rpmh|scm|socinfo|aoss|llcc|icc|interconnect)",
+            "clock_power":r"(clk|clock|gdsc|regulator|spm|cpufreq|opp|rpmh|pmic)",
+            "storage":r"(ufs|ufshcd|scsi|blk|dm_|f2fs|erofs|ext4|mtd|ramoops|pstore)",
+            "irq_timer_watchdog":r"(gic|irq|timer|watchdog|wdog)",
+            "iommu_memory":r"(iommu|smmu|dma|reserved_mem|memblock)",
+            "pinctrl_gpio":r"(pinctrl|tlmm|gpio)",
+          }
+
+          report=[]
+          report.append(f"STOCK_SYMBOLS={len(ss)}")
+          report.append(f"C0013_SYMBOLS={len(cc)}")
+          report.append(f"COMMON_SYMBOLS={len(ss&cc)}")
+          report.append(f"STOCK_ONLY_SYMBOLS={len(stock_only)}")
+          report.append(f"C0013_ONLY_SYMBOLS={len(c_only)}")
+          report.append(f"NORMALIZED_STOCK_ONLY_INITCALLS={len(stock_init_only)}")
+          report.append(f"NORMALIZED_C0013_ONLY_INITCALLS={len(c_init_only)}")
+
+          Path("stock-only-initcalls.txt").write_text("\n".join(stock_init_only)+"\n")
+          Path("c0013-only-initcalls.txt").write_text("\n".join(c_init_only)+"\n")
+
+          critical=set()
+          for g,rx in groups.items():
+              p=re.compile(rx,re.I)
+              so=sorted(x for x in stock_only if p.search(x))
+              co=sorted(x for x in c_only if p.search(x))
+              report.append(f"GROUP_{g}_STOCK_ONLY={len(so)}")
+              report.append(f"GROUP_{g}_C0013_ONLY={len(co)}")
+              Path(f"{g}-stock-only.txt").write_text("\n".join(so)+"\n")
+              Path(f"{g}-c0013-only.txt").write_text("\n".join(co)+"\n")
+              critical.update(so)
+
+          Path("critical-stock-only-symbols.txt").write_text("\n".join(sorted(critical))+"\n")
+          Path("symbol-diff-summary.txt").write_text("\n".join(report)+"\n")
+          print("\n".join(report))
+          print("SYMBOL_IDENTITY_DIFF_GATE=PASS")
+          PY
+
+      - name: Classify stock-only paths against reconstructed source
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          names=[x.strip() for x in Path("stock-only-initcalls.txt").read_text().splitlines() if x.strip()]
+          names += [x.strip() for x in Path("critical-stock-only-symbols.txt").read_text().splitlines() if x.strip()]
+          Path("source-query-names.txt").write_text("\n".join(sorted(set(names)))+"\n")
+          PY
+
+          if [[ -s source-query-names.txt ]]; then
+            git -C reconstructed-src grep -n -F -f ../source-query-names.txt -- \
+              '*.c' '*.h' '*.S' '*.s' '*Kconfig*' > source-hits.txt || true
+          else
+            : > source-hits.txt
+          fi
+
+          python3 - <<'PY' | tee source-classification-summary.txt
+          from pathlib import Path
+          import re
+          names={x.strip() for x in Path("source-query-names.txt").read_text().splitlines() if x.strip()}
+          found=set()
+          token=re.compile(r"[A-Za-z_][A-Za-z0-9_.$]*")
+          for line in Path("source-hits.txt").read_text(errors="replace").splitlines():
+              payload=line.split(":",2)[-1]
+              found.update(x for x in token.findall(payload) if x in names)
+          absent=sorted(names-found)
+          present=sorted(found)
+          Path("stock-only-present-in-donor.txt").write_text("\n".join(present)+"\n")
+          Path("stock-only-absent-from-donor.txt").write_text("\n".join(absent)+"\n")
+          print(f"STOCK_ONLY_QUERIED={len(names)}")
+          print(f"STOCK_ONLY_PRESENT_IN_DONOR={len(present)}")
+          print(f"STOCK_ONLY_ABSENT_FROM_DONOR={len(absent)}")
+          print("STOCK_ONLY_ABSENT_LIST="+",".join(absent))
+          print("SOURCE_CLASSIFICATION_GATE=PASS")
+          PY
+
+      - name: Rank high-priority stock-only initcalls
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee high-priority-stock-only.txt
+          from pathlib import Path
+          import re
+          p=re.compile(r"(ufs|ufshcd|scsi|qcom|msm|yupik|rpmh|scm|llcc|icc|clk|gdsc|regulator|pinctrl|tlmm|gpio|iommu|smmu|gic|timer|watchdog|wdog|ramoops|pstore|mtd|f2fs|erofs|memblock|psci)",re.I)
+          init=[x.strip() for x in Path("stock-only-initcalls.txt").read_text().splitlines() if x.strip()]
+          high=sorted(x for x in init if p.search(x))
+          print(f"HIGH_PRIORITY_STOCK_ONLY_INITCALLS={len(high)}")
+          for x in high:
+              print(x)
+          Path("high-priority-stock-only-initcalls.txt").write_text("\n".join(high)+"\n")
+          PY
+
+      - name: Final diagnostic gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'SYMBOL_IDENTITY_DIFF_GATE=PASS' <(printf '%s\n' 'SYMBOL_IDENTITY_DIFF_GATE=PASS')
+          grep -Fqx 'SOURCE_CLASSIFICATION_GATE=PASS' <(printf '%s\n' 'SOURCE_CLASSIFICATION_GATE=PASS')
+          {
+            echo "healthy_stock_image_sha256=$STOCK_IMAGE_SHA256"
+            echo "candidate_0013_image_sha256=$C0013_IMAGE_SHA256"
+            cat symbol-diff-summary.txt
+            cat source-classification-summary.txt
+            cat high-priority-stock-only.txt
+            echo 'LISA_STOCK_VS_C0013_SYMBOL_DIAGNOSIS=PASS'
+          } | tee final-diagnosis.txt
+
+      - name: Upload diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-vs-c0013-symbol-diagnosis
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            final-diagnosis.txt
+            symbol-diff-summary.txt
+            source-classification-summary.txt
+            high-priority-stock-only.txt
+            high-priority-stock-only-initcalls.txt
+            stock-only-initcalls.txt
+            c0013-only-initcalls.txt
+            critical-stock-only-symbols.txt
+            stock-only-present-in-donor.txt
+            stock-only-absent-from-donor.txt
+            source-hits.txt
+            stock.kallsyms
+            c0013.kallsyms
+            arm64_early-stock-only.txt
+            qcom_platform-stock-only.txt
+            clock_power-stock-only.txt
+            storage-stock-only.txt
+            irq_timer_watchdog-stock-only.txt
+            iommu_memory-stock-only.txt
+            pinctrl_gpio-stock-only.txt
