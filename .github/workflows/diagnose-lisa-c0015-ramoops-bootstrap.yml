@@ -203,10 +203,18 @@ jobs:
               return rows
 
           def addr(rows,name):
-              xs=[a for a,t,n in rows if n==name and t in "TtWw"]
-              if len(xs)!=1:
-                  raise SystemExit(f"{name}: expected one text symbol, got {xs}")
-              return xs[0]
+              def key(s):
+                  s=s.split("+",1)[0]
+                  s=re.sub(r"\\$[0-9a-fA-F]{8,}$","",s)
+                  s=re.sub(r"\\.llvm\\.[0-9A-Fa-f]+$","",s)
+                  s=re.sub(r"\\.(?:isra|constprop|part|cold)\\.\\d+$","",s)
+                  s=re.sub(r"\\.(?:cfi_jt|cfi)$","",s)
+                  return s
+              hits=[(a,n) for a,t,n in rows if t in "TtWw" and key(n)==name]
+              if len(hits)!=1:
+                  near=[n for a,t,n in rows if t in "TtWw" and name in n][:24]
+                  raise SystemExit(f"{name}: expected one canonical text symbol, got {hits}; near={near}")
+              return hits[0][0]
 
           def stop(rows,start):
               xs=sorted({a for a,t,n in rows if t in "TtWw" and a>start})
