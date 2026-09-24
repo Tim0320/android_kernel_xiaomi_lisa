@@ -1,0 +1,233 @@
+name: Diagnose Lisa Candidate 0015 core spine semantic v2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0015-core-spine-semantic-v2.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0015-core-spine-semantic-v2
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+      CORE_ARTIFACT_ID: "10818163784"
+      C0015_ARTIFACT_ID: "10810774162"
+
+    steps:
+      - name: Checkout exact user baseline metadata
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Authenticate stock-Image-3.09 companion baseline
+        run: |
+          set -euo pipefail
+          for f in vendor_boot.img dtbo.img vbmeta.img vbmeta_system.img; do
+            p="$COMPANION_BASE/$f"
+            test -s "$p"
+            if head -c 96 "$p" | grep -aFq 'version https://git-lfs.github.com/spec/v1'; then
+              echo "$p is still a Git LFS pointer" >&2
+              exit 1
+            fi
+          done
+          echo 'COMPANION_BASE=stock-Image-3.09'
+          echo 'BASELINE_AUTH_GATE=PASS'
+
+      - name: Download authenticated prior diagnostics and Candidate 0015 configs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CORE_ARTIFACT_ID}/zip" \
+            -o core.zip
+          mkdir core
+          unzip -q core.zip -d core
+          test -s core/core-boot-spine.tsv
+          test -d core/spine
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0015_ARTIFACT_ID}/zip" \
+            -o c0015.zip
+          mkdir c0015
+          unzip -q c0015.zip -d c0015
+          test -s c0015/stock.config
+          test -s c0015/candidate-0015.config
+          echo 'INPUT_ARTIFACT_GATE=PASS'
+
+      - name: Reclassify executable differences without data-symbol layout noise
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee core-spine-semantic-v2-summary.txt
+          from pathlib import Path
+          import difflib
+          import re
+
+          spine=Path('core/spine')
+          rx1=re.compile(r'^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+){4}\s*([a-z0-9.]+)\s*(.*)$',re.I)
+          rx2=re.compile(r'^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+([a-z0-9.]+)\s*(.*)$',re.I)
+          compiler_suffixes=[
+              re.compile(r'\.llvm\.[0-9A-Fa-f]+$'),
+              re.compile(r'\.(?:isra|constprop|part|cold)\.\d+$'),
+              re.compile(r'\.cfi_jt$'),
+              re.compile(r'\.\d+$'),
+          ]
+
+          def canon_symbol(s):
+              s=s.split('+',1)[0]
+              s=re.sub(r'\$[0-9a-fA-F]{16,}$','',s)
+              prev=None
+              while prev != s:
+                  prev=s
+                  for rx in compiler_suffixes:
+                      s=rx.sub('',s)
+              return s
+
+          def is_control(op):
+              return op in ('b','bl','br','blr','ret','cbz','cbnz','tbz','tbnz') or op.startswith('b.')
+
+          def parse(path,target):
+              seq=[]; calls=[]; external_tails=[]; x19_offsets=[]
+              for raw in path.read_text(errors='replace').splitlines():
+                  m=rx1.match(raw) or rx2.match(raw)
+                  if not m:
+                      continue
+                  op=m.group(1).lower(); operands=m.group(2).strip()
+                  if op in ('nop','hint'):
+                      continue
+                  sm=re.search(r'<([^>]+)>',operands)
+                  sym=canon_symbol(sm.group(1)) if sm else None
+                  normalized=op
+                  # Objdump labels attached to ADRP/LDR/STR are nearest-symbol
+                  # annotations and shift when unrelated linked objects move.
+                  # Keep symbolic targets only for control-flow instructions.
+                  if is_control(op) and sym:
+                      normalized += ' <'+sym+'>'
+                  seq.append(normalized)
+                  if op=='bl' and sym:
+                      calls.append(sym)
+                  if op=='b' and sym and sym != target:
+                      external_tails.append(sym)
+                  mo=re.search(r'\[x19(?:,\s*#(0x[0-9a-fA-F]+|\d+))?\]',operands)
+                  if mo:
+                      x19_offsets.append(int(mo.group(1),0) if mo.group(1) else 0)
+
+                  if target=='__primary_switch' and op=='br' and re.match(r'^x8(?:\s|$)',operands):
+                      break
+                  if target=='__primary_switched' and op=='b' and sym=='start_kernel':
+                      break
+                  if target=='stext' and op=='b' and sym=='__primary_switch':
+                      break
+              return seq,calls,external_tails,x19_offsets
+
+          rows=[]; unresolved=[]; first=None
+          for stock in sorted(spine.glob('*-stock.S')):
+              prefix=stock.name[:-len('-stock.S')]
+              target=prefix.split('-',1)[1]
+              cand=spine/(prefix+'-c0015.S')
+              if not cand.exists():
+                  unresolved.append((target,'missing-candidate'))
+                  continue
+              ss,sc,st,so=parse(stock,target)
+              cs,cc,ct,co=parse(cand,target)
+              equal=(ss==cs and sc==cc and st==ct)
+              status='EQUAL' if equal else 'DIFF'
+              rows.append((target,status,len(ss),len(cs),','.join(sc),','.join(cc),','.join(map(str,so)),','.join(map(str,co))))
+              if not equal and first is None:
+                  first=target
+              if not equal:
+                  diff='\n'.join(difflib.unified_diff(ss,cs,fromfile='stock',tofile='c0015',n=3))+'\n'
+                  Path(f'{prefix}-semantic.diff').write_text(diff)
+
+          Path('core-spine-semantic-v2.tsv').write_text(
+              'function\tstatus\tstock_insns\tc0015_insns\tstock_calls\tc0015_calls\tstock_x19_offsets\tc0015_x19_offsets\n'+
+              ''.join('\t'.join(map(str,r))+'\n' for r in rows)
+          )
+          Path('core-spine-semantic-v2-unresolved.tsv').write_text(
+              'function\treason\n'+''.join('\t'.join(r)+'\n' for r in unresolved)
+          )
+          eq=sum(r[1]=='EQUAL' for r in rows)
+          df=sum(r[1]=='DIFF' for r in rows)
+          print(f'CORE_SEM_V2_RESOLVED={len(rows)}')
+          print(f'CORE_SEM_V2_EQUAL={eq}')
+          print(f'CORE_SEM_V2_DIFF={df}')
+          print(f'CORE_SEM_V2_UNRESOLVED={len(unresolved)}')
+          print('FIRST_TRUE_CORE_DIVERGENCE='+(first or '<none>'))
+          print('DATA_REFERENCE_SYMBOL_LABELS_IGNORED=1')
+          print('LISA_C0015_CORE_SEM_V2=PASS')
+          PY
+
+      - name: Compare stock and Candidate 0015 configs around the true divergence
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee config-delta-summary.txt
+          from pathlib import Path
+
+          def cfg(path):
+              out={}
+              for line in Path(path).read_text(errors='replace').splitlines():
+                  if line.startswith('CONFIG_') and '=' in line:
+                      k,v=line.split('=',1); out[k]=v
+                  elif line.startswith('# CONFIG_') and line.endswith(' is not set'):
+                      out[line[2:].split(' is not set')[0]]='n'
+              return out
+
+          s=cfg('c0015/stock.config'); c=cfg('c0015/candidate-0015.config')
+          delta=[(k,s.get(k,'<absent>'),c.get(k,'<absent>')) for k in sorted(set(s)|set(c)) if s.get(k)!=c.get(k)]
+          stock_enabled_missing=[r for r in delta if r[1] in ('y','m') and r[2] in ('<absent>','n')]
+          Path('candidate-0015-config-delta.tsv').write_text(
+              'config\tstock\tcandidate\n'+''.join(f'{k}\t{a}\t{b}\n' for k,a,b in delta)
+          )
+          Path('stock-enabled-candidate-missing.tsv').write_text(
+              'config\tstock\tcandidate\n'+''.join(f'{k}\t{a}\t{b}\n' for k,a,b in stock_enabled_missing)
+          )
+          print(f'CONFIG_DELTA_COUNT={len(delta)}')
+          print(f'STOCK_ENABLED_CANDIDATE_MISSING={len(stock_enabled_missing)}')
+          print('STOCK_ENABLED_CANDIDATE_MISSING_LIST='+','.join(k for k,_,_ in stock_enabled_missing))
+          print('CONFIG_DELTA_GATE=PASS')
+          PY
+
+      - name: Final diagnostic gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'LISA_C0015_CORE_SEM_V2=PASS' core-spine-semantic-v2-summary.txt
+          grep -Fqx 'CORE_SEM_V2_UNRESOLVED=0' core-spine-semantic-v2-summary.txt
+          grep -Fqx 'CONFIG_DELTA_GATE=PASS' config-delta-summary.txt
+          cat core-spine-semantic-v2-summary.txt
+          cat core-spine-semantic-v2.tsv
+          cat config-delta-summary.txt
+
+      - name: Upload refined semantic diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0015-core-spine-semantic-v2
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            core-spine-semantic-v2-summary.txt
+            core-spine-semantic-v2.tsv
+            core-spine-semantic-v2-unresolved.tsv
+            *-semantic.diff
+            config-delta-summary.txt
+            candidate-0015-config-delta.tsv
+            stock-enabled-candidate-missing.tsv
