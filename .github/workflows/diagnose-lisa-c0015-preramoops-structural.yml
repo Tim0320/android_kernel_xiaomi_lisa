@@ -211,8 +211,18 @@ jobs:
                       return min(addr,start+cap)
               return start+cap
 
-          def follow_cfi(rows,text,elf,start):
+          def follow_cfi(rows,text,elf,start,expected):
               n=names_at(rows,start)
+              # Some Android/Clang kernels pack many 4-byte CFI jump-table
+              # entries under one parent symbol.  An initcall relocation may
+              # therefore land *inside* that table, with no .cfi_jt symbol
+              # beginning at the exact target address.  Detect the first
+              # instruction itself and follow it when it branches directly
+              # to the expected init function.
+              probe=disasm(elf,start,min(start+8,next_text(text,start,0x40)))
+              m=re.search(r"\b(?:b|bl)\s+([0-9a-fA-F]+)\s+<([^>]+)>",probe)
+              if m and canon_symbol(m.group(2))==expected:
+                  return int(m.group(1),16),"packed-cfi:"+canon_symbol(m.group(2))
               if not any(".cfi_jt" in x for x in n):
                   return start,"direct"
               stub=disasm(elf,start,min(next_text(text,start,0x40),start+0x40))
@@ -279,8 +289,8 @@ jobs:
               sptr=smap[(lvl,fn)][0]; cptr=cmap[(lvl,fn)][0]
               if sptr not in srel or cptr not in crel:
                   unresolved.append((order,lvl,fn,"missing-relocation")); continue
-              ss,ssrc=follow_cfi(stock_rows,stext,"stock.elf",srel[sptr])
-              cs,csrc=follow_cfi(cand_rows,ctext,"c0015.elf",crel[cptr])
+              ss,ssrc=follow_cfi(stock_rows,stext,"stock.elf",srel[sptr],fn)
+              cs,csrc=follow_cfi(cand_rows,ctext,"c0015.elf",crel[cptr],fn)
               se=next_text(stext,ss); ce=next_text(ctext,cs)
               sd=disasm("stock.elf",ss,se); cd=disasm("c0015.elf",cs,ce)
               smn,scalls,stails,sh=signature(sd,ss,se)
