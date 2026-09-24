@@ -62,12 +62,13 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import struct
-          b=Path("stock-main/reconstruction/stock/stock-Image/boot.img").read_bytes()
-          if b[:8] != b"ANDROID!":
+
+          boot = Path("stock-main/reconstruction/stock/stock-Image/boot.img").read_bytes()
+          if boot[:8] != b"ANDROID!":
               raise SystemExit("bad stock boot magic")
-          ksz=struct.unpack_from("<I", b, 8)[0]
-          Path("stock-Image").write_bytes(b[4096:4096+ksz])
-          print(f"STOCK_IMAGE_BYTES={ksz}")
+          kernel_size = struct.unpack_from("<I", boot, 8)[0]
+          Path("stock-Image").write_bytes(boot[4096:4096 + kernel_size])
+          print(f"STOCK_IMAGE_BYTES={kernel_size}")
           PY
 
           curl -fL \
@@ -76,10 +77,11 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0014_ARTIFACT_ID}/zip" \
             -o c0014.zip
-          mkdir c0014
+          mkdir -p c0014
           unzip -q c0014.zip -d c0014
           img="$(find c0014 -type f -name candidate-0014-Image -print -quit)"
-          test -n "$img" && test -s "$img"
+          test -n "$img"
+          test -s "$img"
           cp "$img" candidate-0014-Image
           test "$(sha256sum candidate-0014-Image | awk '{print $1}')" = "$C0014_IMAGE_SHA256"
 
@@ -95,157 +97,189 @@ jobs:
           test -s stock.elf
           test -s c0014.elf
 
-      - name: Compute strict bounded ranges for stock-only pre-ramoops init functions
+      - name: Resolve stock initcall targets and bounded disassembly
         run: |
           set -euo pipefail
-          python3 - <<'PY' | tee bounded-ranges.txt
+          python3 - <<'PY'
           from pathlib import Path
-          import re, struct, subprocess
+          import re
+          import struct
+          import subprocess
 
-          targets=["cpufreq_times_init","pm_debug_init","alarm_record_init","uevent_record_init"]
-          line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+          targets = [
+              "cpufreq_times_init",
+              "pm_debug_init",
+              "alarm_record_init",
+              "uevent_record_init",
+          ]
+          line_rx = re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
 
           def parse(path):
-              rows=[]
+              rows = []
               for raw in Path(path).read_text(errors="replace").splitlines():
-                  m=line_rx.match(raw)
-                  if not m:
-                      continue
-                  addr=int(m.group(1),16)
-                  typ=m.group(2)
-                  name=m.group(3)
-                  rows.append((addr,typ,name))
+                  match = line_rx.match(raw)
+                  if match:
+                      rows.append((int(match.group(1), 16), match.group(2), match.group(3)))
               return rows
 
-          stock=parse("stock.kallsyms")
-          cand=parse("c0014.kallsyms")
-          image=Path("stock-Image").read_bytes()
-
-          text=sorted({addr for addr,typ,name in stock if typ in "TtWw"})
-          if not text:
+          stock = parse("stock.kallsyms")
+          cand = parse("c0014.kallsyms")
+          image = Path("stock-Image").read_bytes()
+          text_addrs = sorted({addr for addr, typ, _ in stock if typ in "TtWw"})
+          if not text_addrs:
               raise SystemExit("no stock text symbols")
-          image_base=min(text)
 
-          cand_init_targets=set()
-          for _,_,name in cand:
+          image_base = text_addrs[0]
+          cand_init_targets = set()
+          for _, _, name in cand:
               if name.startswith("__initcall_"):
-                  for fn in targets:
-                      if fn in name:
-                          cand_init_targets.add(fn)
+                  for target in targets:
+                      if target in name:
+                          cand_init_targets.add(target)
 
-          rows=[]
-          for fn in targets:
-              init_entries=[
-                  (addr,name) for addr,typ,name in stock
-                  if name.startswith("__initcall_") and fn in name
+          output_rows = []
+          for target in targets:
+              entries = [
+                  (addr, name)
+                  for addr, _, name in stock
+                  if name.startswith("__initcall_") and target in name
               ]
-              if len(init_entries)!=1:
-                  raise SystemExit(f"expected one stock initcall pointer for {fn}, got {init_entries}")
+              if len(entries) != 1:
+                  raise SystemExit(f"expected one stock initcall pointer for {target}, got {entries}")
 
-              ptr_addr,init_name=init_entries[0]
-              off=ptr_addr-image_base
-              if off < 0 or off+8 > len(image):
-                  raise SystemExit(f"initcall pointer outside raw Image for {fn}: off=0x{off:x}")
+              ptr_addr, init_symbol = entries[0]
+              raw_offset = ptr_addr - image_base
+              if raw_offset < 0 or raw_offset + 8 > len(image):
+                  raise SystemExit(f"initcall pointer outside raw Image for {target}: 0x{raw_offset:x}")
 
-              start=struct.unpack_from("<Q",image,off)[0]
-              if not (image_base <= start < image_base+len(image)):
+              start = struct.unpack_from("<Q", image, raw_offset)[0]
+              if not (image_base <= start < image_base + len(image)):
                   raise SystemExit(
-                      f"decoded init target outside stock Image for {fn}: "
+                      f"decoded target outside stock Image for {target}: "
                       f"ptr=0x{ptr_addr:x} target=0x{start:x} base=0x{image_base:x}"
                   )
 
-              next_addrs=[a for a in text if a>start]
-              stop=min(next_addrs[0] if next_addrs else start+0x1000,start+0x1000)
-              if stop<=start:
-                  raise SystemExit(f"bad decoded range for {fn}")
+              greater = [addr for addr in text_addrs if addr > start]
+              stop = min(greater[0] if greater else start + 0x1000, start + 0x1000)
+              if stop <= start:
+                  raise SystemExit(f"bad function range for {target}")
 
-              exact_names=sorted(name for addr,typ,name in stock if addr==start and typ in "TtWw")
-              rows.append((
-                  fn,start,stop,stop-start,int(fn in cand_init_targets),
-                  ptr_addr,init_name,
-                  ",".join(exact_names) if exact_names else "<no-exact-kallsyms-name>"
+              exact_names = sorted(
+                  name for addr, typ, name in stock
+                  if addr == start and typ in "TtWw"
+              )
+              output_rows.append((
+                  target,
+                  start,
+                  stop,
+                  stop - start,
+                  int(target in cand_init_targets),
+                  ptr_addr,
+                  init_symbol,
+                  ",".join(exact_names) if exact_names else "<no-exact-kallsyms-name>",
               ))
 
-              out=Path(f"stock-{fn}.S")
-              with out.open("w") as fh:
+              out_path = Path(f"stock-{target}.S")
+              with out_path.open("w") as handle:
                   subprocess.run(
                       [
-                          "aarch64-linux-gnu-objdump","-d",
+                          "aarch64-linux-gnu-objdump",
+                          "-d",
                           f"--start-address=0x{start:x}",
                           f"--stop-address=0x{stop:x}",
-                          "stock.elf"
+                          "stock.elf",
                       ],
-                      check=True,stdout=fh
+                      check=True,
+                      stdout=handle,
                   )
-              if out.stat().st_size == 0:
-                  raise SystemExit(f"empty disassembly for {fn}")
+              if out_path.stat().st_size == 0:
+                  raise SystemExit(f"empty disassembly for {target}")
 
-          header=(
+          header = (
               "function\tstart\tstop\tbytes\tpresent_in_c0014\t"
               "stock_initcall_ptr\tstock_initcall_symbol\tstock_exact_text_symbol"
           )
-          lines=[
-              f"{fn}\t0x{start:x}\t0x{stop:x}\t{size}\t{present}\t"
-              f"0x{ptr:x}\t{initsym}\t{textsym}"
-              for fn,start,stop,size,present,ptr,initsym,textsym in rows
+          lines = [
+              f"{target}\t0x{start:x}\t0x{stop:x}\t{size}\t{present}\t"
+              f"0x{ptr:x}\t{init_symbol}\t{text_symbol}"
+              for target, start, stop, size, present, ptr, init_symbol, text_symbol in output_rows
           ]
-          print(header)
-          print("\n".join(lines))
-          Path("bounded-ranges.tsv").write_text(header+"\n"+"\n".join(lines)+"\n")
-          print("INITCALL_POINTER_RANGE_RESOLUTION=PASS")
+          Path("bounded-ranges.tsv").write_text(header + "\n" + "\n".join(lines) + "\n")
+          Path("bounded-ranges.txt").write_text(
+              header + "\n" + "\n".join(lines) + "\nINITCALL_POINTER_RANGE_RESOLUTION=PASS\n"
+          )
+          print(Path("bounded-ranges.txt").read_text())
           PY
 
-      - name: Extract direct call targets and classify likely semantic role
+      - name: Classify direct callees
         run: |
           set -euo pipefail
-          python3 - <<'PY' | tee function-semantics-summary.txt
+          python3 - <<'PY'
           from pathlib import Path
           import re
 
-          targets=["cpufreq_times_init","pm_debug_init","alarm_record_init","uevent_record_init"]
-          branch_rx=re.compile(r"\b(?:bl|b)\s+[0-9a-fx]+\s+<([^>]+)>")
-          c_line=re.compile(r"^[0-9a-fA-F]+\s+[A-Za-z?]\s+(.+?)\s*$")
+          targets = [
+              "cpufreq_times_init",
+              "pm_debug_init",
+              "alarm_record_init",
+              "uevent_record_init",
+          ]
+          branch_rx = re.compile(r"\b(?:bl|b)\s+[0-9a-fx]+\s+<([^>]+)>")
+          kallsyms_rx = re.compile(r"^[0-9a-fA-F]+\s+[A-Za-z?]\s+(.+?)\s*$")
 
-          cand=set()
+          candidate_symbols = set()
           for raw in Path("c0014.kallsyms").read_text(errors="replace").splitlines():
-              m=c_line.match(raw)
-              if m:
-                  cand.add(m.group(1))
+              match = kallsyms_rx.match(raw)
+              if match:
+                  candidate_symbols.add(match.group(1))
 
-          debug_terms=("proc_","debug","trace","record","log","sysfs","seq_","kobject","uevent","alarm","time_in_state","uid_")
-          critical_terms=("panic","restart","reboot","poweroff","power_off","watchdog","psci","scm","smmu","iommu","irq","gic","mmu","clk","regulator","ufs","qcom")
+          debug_terms = (
+              "proc_", "debug", "trace", "record", "log", "sysfs", "seq_",
+              "kobject", "uevent", "alarm", "time_in_state", "uid_",
+          )
+          critical_terms = (
+              "panic", "restart", "reboot", "poweroff", "power_off", "watchdog",
+              "psci", "scm", "smmu", "iommu", "irq", "gic", "mmu", "clk",
+              "regulator", "ufs", "qcom",
+          )
 
-          out=[]
-          for fn in targets:
-              txt=Path(f"stock-{fn}.S").read_text(errors="replace")
-              calls=[]
-              for line in txt.splitlines():
-                  m=branch_rx.search(line)
-                  if m:
-                      callee=m.group(1).split('+',1)[0]
-                      if callee not in calls:
-                          calls.append(callee)
-              low=" ".join([fn]+calls).lower()
-              debug_hits=sorted({t for t in debug_terms if t in low})
-              critical_hits=sorted({t for t in critical_terms if t in low})
-              missing=[c for c in calls if c not in cand]
-              out.append(f"TARGET={fn}")
-              out.append(f"DIRECT_CALL_COUNT={len(calls)}")
-              out.append("DIRECT_CALLS="+",".join(calls))
-              out.append(f"DIRECT_CALLS_MISSING_IN_C0014={len(missing)}")
-              out.append("MISSING_CALLEES="+",".join(missing))
-              out.append("DEBUG_RECORD_HINTS="+",".join(debug_hits))
-              out.append("PLATFORM_CRITICAL_HINTS="+",".join(critical_hits))
+          summary = []
+          for target in targets:
+              text = Path(f"stock-{target}.S").read_text(errors="replace")
+              calls = []
+              for line in text.splitlines():
+                  match = branch_rx.search(line)
+                  if not match:
+                      continue
+                  callee = match.group(1).split("+", 1)[0]
+                  if callee not in calls:
+                      calls.append(callee)
+
+              joined = " ".join([target] + calls).lower()
+              debug_hits = sorted({term for term in debug_terms if term in joined})
+              critical_hits = sorted({term for term in critical_terms if term in joined})
+              missing = [callee for callee in calls if callee not in candidate_symbols]
               if critical_hits:
-                  role="needs-critical-review"
+                  role = "needs-critical-review"
               elif debug_hits:
-                  role="likely-observability-accounting"
+                  role = "likely-observability-accounting"
               else:
-                  role="undetermined"
-              out.append(f"SEMANTIC_ROLE={role}")
-              out.append("")
-          print("\n".join(out))
-          Path("function-semantics-summary.txt").write_text("\n".join(out)+"\n")
+                  role = "undetermined"
+
+              summary.extend([
+                  f"TARGET={target}",
+                  f"DIRECT_CALL_COUNT={len(calls)}",
+                  "DIRECT_CALLS=" + ",".join(calls),
+                  f"DIRECT_CALLS_MISSING_IN_C0014={len(missing)}",
+                  "MISSING_CALLEES=" + ",".join(missing),
+                  "DEBUG_RECORD_HINTS=" + ",".join(debug_hits),
+                  "PLATFORM_CRITICAL_HINTS=" + ",".join(critical_hits),
+                  f"SEMANTIC_ROLE={role}",
+                  "",
+              ])
+
+          Path("function-semantics-summary.txt").write_text("\n".join(summary) + "\n")
+          print(Path("function-semantics-summary.txt").read_text())
           PY
 
       - name: Cross-check reconstructed source lineage
