@@ -1,4 +1,4 @@
-name: Build Lisa full CN fastboot firmware control for TW super
+name: Build Lisa stock-Image-3.09 port baseline with Candidate 0008
 
 on:
   workflow_dispatch:
@@ -7,28 +7,29 @@ on:
       - main
     paths:
       - .github/workflows/build-lisa-cn-fastboot-full-firmware-tw-super-control.yml
+      - reconstruction/stock/stock-Image-3.09/**
+      - .gitattributes
 
 permissions:
   contents: read
   actions: read
 
 concurrency:
-  group: lisa-cn-fastboot-full-firmware-tw-super-control
+  group: lisa-stock-image-3-09-port-baseline
   cancel-in-progress: true
 
 jobs:
   package:
     runs-on: ubuntu-24.04
-    timeout-minutes: 330
+    timeout-minutes: 45
 
     env:
-      CN_FASTBOOT_URL: https://bigota.d.miui.com/OS2.0.16.0.UKOCNXM/lisa_images_OS2.0.16.0.UKOCNXM_20251221.0000.00_14.0_cn_48554e03ca.tgz
-      EXPECT_CN_FASTBOOT_MD5: 48554e03ca0ad00d3b4cd7f32a1de4f3
-      CN_CONTROL_ARTIFACT_ID: 10772598639
-      CN_CONTROL_ARTIFACT_SHA256: 1314cf9ecbd8e7f8b9faf6601cf699ba4ed9386c162bc0c91fd7e2a256cf35b2
-      EXPECT_CN_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
-      EXPECT_CN_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
-      EXPECT_CN_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
+      BASE: reconstruction/stock/stock-Image-3.09
+      CANDIDATE_0008_ARTIFACT_ID: "10765228960"
+      CANDIDATE_0008_ARTIFACT_SHA256: b248c0fc9edd03d26e3527973cd2aae1b25e6517aa6be167f9704c26d1116a0b
+      CANDIDATE_0008_BOOT_SHA256: 585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063
+      HISTORICAL_CN_OS2_0_16_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+      HISTORICAL_CN_OS2_0_16_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
 
     steps:
       - name: Checkout reconstruction metadata
@@ -37,203 +38,172 @@ jobs:
           fetch-depth: 1
           lfs: false
 
-      - name: Install tools
+      - name: Materialize exact stock-Image-3.09 Git LFS baseline
         run: |
           set -euo pipefail
+
           sudo apt-get update
-          sudo apt-get install -y aria2 curl tar gzip unzip python3 file
+          sudo apt-get install -y git-lfs curl unzip file python3
+          git lfs install --local
 
-      - name: Download and extract CN fastboot firmware without TW-preserved images
-        run: |
-          set -euo pipefail
-          mkdir -p extracted package/images
+          expected=(
+            abl.img
+            aop.img
+            bluetooth.img
+            cpucp.img
+            devcfg.img
+            dsp.img
+            dtbo.img
+            featenabler.img
+            hyp.img
+            imagefv.img
+            keymaster.img
+            modem.img
+            qupfw.img
+            shrm.img
+            tz.img
+            uefisecapp.img
+            vbmeta.img
+            vbmeta_system.img
+            vendor_boot.img
+            xbl.img
+            xbl_config.img
+          )
 
-          # The previous run piped curl directly into tar. The Xiaomi CDN closed
-          # that 6.7 GB response after only ~15 MB, which makes a gzip stream
-          # unrecoverable. Download to disk with ranged, resumable connections
-          # first, authenticate the complete archive by its published MD5, and
-          # only then extract the small set of non-TW images.
-          df -h .
-          aria2c \
-            --continue=true \
-            --file-allocation=none \
-            --max-connection-per-server=16 \
-            --split=16 \
-            --min-split-size=4M \
-            --max-tries=20 \
-            --retry-wait=5 \
-            --connect-timeout=20 \
-            --timeout=60 \
-            --summary-interval=30 \
-            --console-log-level=warn \
-            --dir=. \
-            --out=cn-fastboot.tgz \
-            "$CN_FASTBOOT_URL"
+          mkdir -p gate package/images
 
-          echo "$EXPECT_CN_FASTBOOT_MD5  cn-fastboot.tgz" | md5sum -c -
+          for name in "${expected[@]}"; do
+            path="$BASE/$name"
+            pointer="$(git show "HEAD:$path")"
+            printf '%s\n' "$pointer" | grep -Fqx 'version https://git-lfs.github.com/spec/v1'
+            printf '%s\n' "$pointer" | grep -Eq '^oid sha256:[0-9a-f]{64}$'
+            printf '%s\n' "$pointer" | grep -Eq '^size [0-9]+$'
+          done
 
-          tar -xzf cn-fastboot.tgz -C extracted \
-            --wildcards \
-            --exclude='*/images/super.img' \
-            --exclude='*/images/super_empty.img' \
-            --exclude='*/images/userdata.img' \
-            --exclude='*/images/metadata.img' \
-            --exclude='*/images/vbmeta.img' \
-            --exclude='*/images/vbmeta_system.img' \
-            --exclude='*/images/vbmeta_vendor.img' \
-            '*/images/*.img'
-          rm -f cn-fastboot.tgz cn-fastboot.tgz.aria2
+          git lfs pull --include="$BASE/*.img" --exclude=""
 
-          root="$(find extracted -type d -name images -printf '%h\n' | head -n1)"
-          test -n "$root"
-          test -d "$root/images"
-          cp -a "$root/images/." package/images/
+          : > gate/STOCK_IMAGE_3_09_INVENTORY.tsv
+          printf 'image\tbytes\tsha256\tlfs_oid_match\n' >> gate/STOCK_IMAGE_3_09_INVENTORY.tsv
 
-          find package/images -maxdepth 1 -type f -name '*.img' -printf '%f\n' | sort | tee package/FASTBOOT_IMAGE_INVENTORY.txt
-          sha256sum package/images/*.img | sort | tee package/SHA256SUMS.txt
+          for name in "${expected[@]}"; do
+            path="$BASE/$name"
+            pointer="$(git show "HEAD:$path")"
+            expected_sha="$(printf '%s\n' "$pointer" | awk -F: '/^oid sha256:/ {print $2}')"
+            expected_size="$(printf '%s\n' "$pointer" | awk '/^size / {print $2}')"
 
-      - name: Authenticate exact CN OS2.0.16 boot chain
-        run: |
-          set -euo pipefail
-          test "$(sha256sum package/images/boot.img | awk '{print $1}')" = "$EXPECT_CN_BOOT_SHA256"
-          test "$(sha256sum package/images/vendor_boot.img | awk '{print $1}')" = "$EXPECT_CN_VENDOR_BOOT_SHA256"
-          test "$(sha256sum package/images/dtbo.img | awk '{print $1}')" = "$EXPECT_CN_DTBO_SHA256"
+            test -s "$path"
+            if head -n1 "$path" | grep -Fqx 'version https://git-lfs.github.com/spec/v1'; then
+              echo "LFS pointer was not materialized: $path" >&2
+              exit 1
+            fi
+
+            actual_sha="$(sha256sum "$path" | awk '{print $1}')"
+            actual_size="$(stat -c '%s' "$path")"
+            test "$actual_sha" = "$expected_sha"
+            test "$actual_size" = "$expected_size"
+
+            printf '%s\t%s\t%s\t1\n' "$name" "$actual_size" "$actual_sha" >> gate/STOCK_IMAGE_3_09_INVENTORY.tsv
+            cp "$path" "package/images/$name"
+          done
+
+          test "$(find package/images -maxdepth 1 -type f -name '*.img' | wc -l)" -eq "${#expected[@]}"
+          sha256sum package/images/*.img | sort > package/STOCK_IMAGE_3_09_SHA256SUMS.txt
 
           {
-            echo 'CN_FASTBOOT_BOOT_EXACT=PASS'
-            echo 'CN_FASTBOOT_VENDOR_BOOT_EXACT=PASS'
-            echo 'CN_FASTBOOT_DTBO_EXACT=PASS'
-          } | tee package/boot-chain-gate.txt
+            echo "baseline_commit=$GITHUB_SHA"
+            echo "baseline_path=$BASE"
+            echo "image_count=${#expected[@]}"
+            echo "LFS_POINTER_CONTENT_GATE=PASS"
+            echo "LISA_STOCK_IMAGE_3_09_BASELINE_GATE=PASS"
+          } | tee gate/BASELINE_GATE.txt
 
-      - name: Download validated recovery-OTA control artifact
+      - name: Classify stock-Image-3.09 against historical CN OS2.0.16 companion state
+        run: |
+          set -euo pipefail
+
+          new_vendor_boot="$(sha256sum "$BASE/vendor_boot.img" | awk '{print $1}')"
+          new_dtbo="$(sha256sum "$BASE/dtbo.img" | awk '{print $1}')"
+
+          {
+            echo "stock_image_3_09_vendor_boot_sha256=$new_vendor_boot"
+            echo "historical_cn_os2_0_16_vendor_boot_sha256=$HISTORICAL_CN_OS2_0_16_VENDOR_BOOT_SHA256"
+            echo "vendor_boot_matches_historical_cn=$([ "$new_vendor_boot" = "$HISTORICAL_CN_OS2_0_16_VENDOR_BOOT_SHA256" ] && echo 1 || echo 0)"
+            echo
+            echo "stock_image_3_09_dtbo_sha256=$new_dtbo"
+            echo "historical_cn_os2_0_16_dtbo_sha256=$HISTORICAL_CN_OS2_0_16_DTBO_SHA256"
+            echo "dtbo_matches_historical_cn=$([ "$new_dtbo" = "$HISTORICAL_CN_OS2_0_16_DTBO_SHA256" ] && echo 1 || echo 0)"
+          } | tee gate/HISTORICAL_BASELINE_DELTA.txt
+
+      - name: Download exact Candidate 0008 reconstructed boot
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CN_CONTROL_ARTIFACT_ID}/zip" \
-            -o cn-control.zip
-          echo "$CN_CONTROL_ARTIFACT_SHA256  cn-control.zip" | sha256sum -c -
-          mkdir -p cn-control
-          unzip -q cn-control.zip -d cn-control
-          control_root="$(find cn-control -type f -name final-gate.txt -printf '%h\n' | head -n1)"
-          test -n "$control_root"
-          grep -Fqx 'LISA_CN_FIRMWARE_TW_SUPER_CONTROL_GATE=PASS' "$control_root/final-gate.txt"
-          echo "CONTROL_ROOT=$control_root" >> "$GITHUB_ENV"
 
-      - name: Cross-check fastboot and recovery OTA overlap
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANDIDATE_0008_ARTIFACT_ID}/zip"             -o candidate0008.zip
+
+          echo "$CANDIDATE_0008_ARTIFACT_SHA256  candidate0008.zip" | sha256sum -c -
+
+          mkdir -p candidate0008
+          unzip -q candidate0008.zip -d candidate0008
+          candidate_boot="$(find candidate0008 -type f -name boot.img -print -quit)"
+          test -n "$candidate_boot"
+          test -s "$candidate_boot"
+          test "$(sha256sum "$candidate_boot" | awk '{print $1}')" = "$CANDIDATE_0008_BOOT_SHA256"
+
+          cp "$candidate_boot" package/images/boot.img
+
+          {
+            echo "candidate_artifact_id=$CANDIDATE_0008_ARTIFACT_ID"
+            echo "candidate_boot_sha256=$CANDIDATE_0008_BOOT_SHA256"
+            echo "CANDIDATE_0008_BOOT_EXACT=PASS"
+          } | tee gate/CANDIDATE_GATE.txt
+
+      - name: Build stock-Image-3.09 aligned port package
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import hashlib, os
 
-          fast = Path('package/images')
-          ctrl = Path(os.environ['CONTROL_ROOT']) / 'images'
+          cat > package/PORT_BASELINE.md <<'EOF'
+          # Lisa ROM-port baseline: reconstruction/stock/stock-Image-3.09
 
-          def sha(p):
-              h = hashlib.sha256()
-              with p.open('rb') as f:
-                  for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
-                      h.update(chunk)
-              return h.hexdigest()
+          This package is aligned to the exact bottom package used for the user's
+          Lisa ROM port. It supersedes the earlier assumption that the complete
+          companion/firmware state should be reconstructed from CN OS2.0.16.
 
-          overlap = []
-          mismatch = []
-          for p in sorted(ctrl.glob('*.img')):
-              q = fast / p.name
-              if not q.exists():
-                  continue
-              sp, sq = sha(p), sha(q)
-              overlap.append((p.name, sp, sq, sp == sq))
-              if sp != sq:
-                  mismatch.append(p.name)
+          ## Exact bottom-package source
 
-          Path('package/FASTBOOT_VS_RECOVERY_OVERLAP.tsv').write_text(
-              'image\trecovery_sha256\tfastboot_sha256\tidentical\n' +
-              ''.join(f'{n}\t{a}\t{b}\t{int(ok)}\n' for n,a,b,ok in overlap)
-          )
+          reconstruction/stock/stock-Image-3.09/
 
-          fast_names = {p.name for p in fast.glob('*.img')}
-          ctrl_names = {p.name for p in ctrl.glob('*.img')}
-          extra = sorted(fast_names - ctrl_names)
-          Path('package/FASTBOOT_ONLY_IMAGES.txt').write_text('\n'.join(extra) + ('\n' if extra else ''))
+          Git LFS object SHA-256 and byte size are checked against the pointers
+          committed in the same repository revision before this artifact is built.
 
-          print(f'overlap_count={len(overlap)}')
-          print('mismatch=' + ','.join(mismatch))
-          print('fastboot_only=' + ','.join(extra))
+          The baseline contains:
 
-          if not overlap:
-              raise SystemExit('no recovery/fastboot overlap found')
-          if mismatch:
-              raise SystemExit('same-version fastboot/recovery image mismatch: ' + ','.join(mismatch))
+          - abl / aop / bluetooth / cpucp / devcfg / dsp
+          - dtbo / featenabler / hyp / imagefv / keymaster / modem
+          - qupfw / shrm / tz / uefisecapp
+          - vbmeta / vbmeta_system / vendor_boot
+          - xbl / xbl_config
 
-          Path('package/OVERLAP_GATE.txt').write_text(
-              f'overlap_count={len(overlap)}\n'
-              'mismatch=\n'
-              'FASTBOOT_RECOVERY_OVERLAP_EXACT=PASS\n'
-          )
-          PY
+          boot.img is not present in stock-Image-3.09. For this diagnostic package
+          it is supplied only from the exact reconstructed Candidate 0008 artifact.
 
-      - name: Write full CN firmware control matrix
-        run: |
-          set -euo pipefail
-          cat > package/PRESERVE_TW.txt <<'EOF'
-          super
-          vbmeta
-          vbmeta_system
-          vbmeta_vendor
-          userdata
-          metadata
-          EOF
+          ## Intended variable separation
 
-          cat > package/FLASH_MATRIX.md <<'EOF'
-          # Lisa full CN OS2.0.16 fastboot firmware + TW super control
-
-          This package is the stricter version of the earlier recovery-OTA control.
-          It comes from the official CN OS2.0.16.0.UKOCNXM **fastboot ROM**, so it also
-          captures firmware images that may not be shipped in the recovery OTA.
-
-          ## CN side
-
-          Every image present in `images/` is taken from the CN fastboot package.
-          `FASTBOOT_ONLY_IMAGES.txt` lists images that were absent from the validated
-          CN recovery-OTA control package. The overlapping images are required to be
-          byte-for-byte identical before this artifact is accepted.
-
-          ## Preserve from the current TW device state
-
-          - `super`
-          - `vbmeta`
-          - `vbmeta_system`
-          - `vbmeta_vendor` if present
-          - `userdata`
-          - `metadata`
-
-          `vbmeta*` stays with the TW dynamic userspace for the control test so an AVB
-          descriptor mismatch is not introduced as a second variable. The low-level
-          firmware and boot chain themselves are CN.
-
-          ## Device-test sequence
-
-          1. Keep a known-good recovery / fastboot path available.
-          2. First test this package with CN stock `boot`, `vendor_boot`, `dtbo` and the
-             CN fastboot firmware while preserving the TW partitions listed above.
-          3. If the stock-CN control boots with the TW `super`, replace **only** `boot`
-             with Candidate 0008 (`585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063`).
-          4. Keep every other partition unchanged for the Candidate 0008 test.
-          5. If Candidate 0008 fails after the stock-CN control succeeds, the
-             reconstructed kernel becomes the isolated changed variable.
+          - Bottom firmware and companion partitions: exact stock-Image-3.09
+          - Dynamic userspace (super): the user's actual ported ROM
+          - Boot/kernel under test: Candidate 0008 only
+          - Do not introduce CN OS2.0.16 vendor_boot/dtbo merely to reproduce the
+            old historical g598 environment; that is no longer the active port base.
 
           No automatic device flashing is performed by CI.
           EOF
 
           cat > package/verify-package.ps1 <<'EOF'
           $ErrorActionPreference = 'Stop'
-          Get-Content "$PSScriptRoot\SHA256SUMS.txt" | ForEach-Object {
+
+          $sumFile = Join-Path $PSScriptRoot 'STOCK_IMAGE_3_09_SHA256SUMS.txt'
+          Get-Content $sumFile | ForEach-Object {
               if ($_ -match '^([0-9a-f]{64})\s+(.+)$') {
                   $expected = $matches[1]
                   $rel = ($matches[2] -replace '^package/', '')
@@ -242,28 +212,42 @@ jobs:
                   if ($actual -ne $expected) { throw "SHA256 mismatch: $path" }
               }
           }
-          Write-Host 'PACKAGE_SHA256_GATE=PASS'
+
+          Write-Host 'STOCK_IMAGE_3_09_PACKAGE_SHA256_GATE=PASS'
           EOF
 
-      - name: Final full-fastboot static gate
+          cp gate/STOCK_IMAGE_3_09_INVENTORY.tsv package/
+          cp gate/HISTORICAL_BASELINE_DELTA.txt package/
+          cp gate/BASELINE_GATE.txt package/
+          cp gate/CANDIDATE_GATE.txt package/
+
+          find package/images -maxdepth 1 -type f -name '*.img' -printf '%f\n' | sort > package/FINAL_IMAGE_INVENTORY.txt
+
+      - name: Final stock-Image-3.09 alignment gate
         run: |
           set -euo pipefail
-          grep -Fqx 'CN_FASTBOOT_BOOT_EXACT=PASS' package/boot-chain-gate.txt
-          grep -Fqx 'CN_FASTBOOT_VENDOR_BOOT_EXACT=PASS' package/boot-chain-gate.txt
-          grep -Fqx 'CN_FASTBOOT_DTBO_EXACT=PASS' package/boot-chain-gate.txt
-          grep -Fqx 'FASTBOOT_RECOVERY_OVERLAP_EXACT=PASS' package/OVERLAP_GATE.txt
+
+          grep -Fqx 'LFS_POINTER_CONTENT_GATE=PASS' gate/BASELINE_GATE.txt
+          grep -Fqx 'LISA_STOCK_IMAGE_3_09_BASELINE_GATE=PASS' gate/BASELINE_GATE.txt
+          grep -Fqx 'CANDIDATE_0008_BOOT_EXACT=PASS' gate/CANDIDATE_GATE.txt
+
           test -s package/images/abl.img
           test -s package/images/xbl.img
           test -s package/images/xbl_config.img
-          test ! -e package/images/super.img
-          test ! -e package/images/vbmeta.img
-          test ! -e package/images/vbmeta_system.img
-          echo 'LISA_CN_FASTBOOT_FULL_FIRMWARE_TW_SUPER_CONTROL_GATE=PASS' | tee package/final-gate.txt
+          test -s package/images/vendor_boot.img
+          test -s package/images/dtbo.img
+          test -s package/images/vbmeta.img
+          test -s package/images/vbmeta_system.img
+          test -s package/images/boot.img
 
-      - name: Upload full CN fastboot firmware control package
+          test "$(sha256sum package/images/boot.img | awk '{print $1}')" = "$CANDIDATE_0008_BOOT_SHA256"
+
+          echo 'LISA_STOCK_IMAGE_3_09_CANDIDATE_0008_FINAL_GATE=PASS' | tee package/final-gate.txt
+
+      - name: Upload stock-Image-3.09 aligned package
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-cn-os2-0-16-fastboot-full-firmware-tw-super-control
+          name: lisa-stock-image-3-09-candidate-0008-port-baseline
           retention-days: 14
           compression-level: 0
           if-no-files-found: error
