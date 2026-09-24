@@ -1182,3 +1182,94 @@ Iteration 0014:
 This isolates the first current blocker to **Candidate 0008 boot / reconstructed kernel Image**, not the 3.09 companion chain and not the TW/global super.
 
 The next non-speculative action is an exact healthy-stock-vs-Candidate-0008 kernel Image diagnosis: boot-v3 payload equality, ramdisk/header preservation, ARM64 Image header/entry layout, embedded IKCONFIG diff, and early-boot-sensitive config comparison.
+
+
+## Iteration 0015 — 2026-09-24 15:16 +08:00
+
+- Candidate: Candidate 0011 stock early-config control v2
+- Tested boot SHA256: `6a5eb2b97bffa0377e1f41ac66f4aa1800e88a6e6ab6f4f959701992f8c0868b`
+- Candidate Image SHA256: `1b587d60fbe5530102c1aa6430fea3232796c8c9265e002f63dd202697c6f09e`
+- Base/companion state: unchanged `stock-Image-3.09` firmware + vendor_boot + dtbo, current TW/global OS2.0.8 super, slot A
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Evidence package: `lisa-twrp-iter-0015_20260924-151620_boot_6a5eb2b97bff.zip`
+
+### Persistent evidence
+
+```text
+oops:
+  9040d25c5db21b867be5ee5ea206fd3d988150280483943f3e38798397607312
+
+logdump:
+  08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a
+
+minidump:
+  40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d
+
+mdcompress:
+  072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea
+
+rawdump:
+  605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c
+
+logfs:
+  d289931050a948b7e818f2726154d89f59c932eedd25f7085edc6393a628f084
+```
+
+The Iteration 0015 `oops` hash is byte-for-byte equal to the successful stock-boot Iteration 0014 `oops` hash. The ring still tops out at the previously recorded stock lineage counter `0x517` (1303), with no Candidate 0011 build record. `pstore` is empty and the other crash partitions remain the already-known stale payloads.
+
+Therefore Candidate 0011 did not improve the persistent Linux-entry evidence over Candidate 0008.
+
+### Fresh UEFI evidence
+
+The fresh `logfs` contains repeated accepted mission boots:
+
+```text
+Active Slot _a is bootable, retry count 6
+Booting from slot (_a)
+Load Image boot_a
+Load Image dtbo_a
+Load Image vendor_boot_a
+VB2: Authenticate complete! boot state is: orange
+fatal error is not set
+Shutting Down UEFI Boot Services
+Start EBS
+```
+
+and subsequent retries decrement 6 -> 5 -> 4. The current companion state is therefore still accepted by UEFI and control is handed off at ExitBootServices.
+
+### Candidate 0011 disposition
+
+Candidate 0011 proved that restoring the representable stock early-config deltas:
+
+```text
+CONFIG_ARM64_LSE_ATOMICS=y
+CONFIG_ARM64_USE_LSE_ATOMICS=y
+CONFIG_QCOM_WATCHDOG_BARK_TIME=20000
+CONFIG_QCOM_WATCHDOG_PET_TIME=15000
+```
+
+does **not** restore boot. Those config differences are not sufficient to explain the current failure.
+
+### Newly identified packaging confounder
+
+The healthy exact stock boot and reconstructed candidates are not yet a perfect byte-level single-variable comparison.
+
+Healthy stock boot:
+
+```text
+kernel_size=51436032
+ramdisk_size=19883180
+logical_end=71327744
+tail_nonzero_bytes=367
+tail_start_magic=AVB0
+partition_end_magic=AVBf
+```
+
+Candidate 0008 / Candidate 0011 repacks zero the partition tail after their shorter logical payload and therefore remove the stock boot partition's AVB hash-footer/vbmeta metadata.
+
+The healthy stock AVB payload includes an `AVB0` vbmeta block with boot properties/fingerprint and an `AVBf` footer at the end of the 192 MiB boot partition.
+
+Before further kernel-source/config mutation, the next controlled test must preserve the healthy stock boot's header, ramdisk placement, complete non-kernel bytes, AVB0 metadata, and AVBf footer byte-for-byte, while changing only the kernel payload region to Candidate 0011. Candidate 0011 Image is shorter than the stock kernel region, so the remainder of the stock-sized kernel region can be zero-padded without changing any byte outside the kernel region.
+
+This is Candidate 0012 stock-layout/AVB control.
