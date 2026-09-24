@@ -86,13 +86,15 @@ jobs:
           cp "$img" candidate-0015-Image
           test "$(sha256sum candidate-0015-Image | awk '{print $1}')" = "$C0015_IMAGE_SHA256"
 
-      - name: Recover ELF containers
+      - name: Recover ELF containers and relocation ranges
         run: |
           set -euo pipefail
           vmlinux-to-elf stock-Image stock.elf > stock-vmlinux-to-elf.log 2>&1
           vmlinux-to-elf candidate-0015-Image c0015.elf > c0015-vmlinux-to-elf.log 2>&1
           test -s stock.elf
           test -s c0015.elf
+          grep -F 'Found relocations table at file offset' stock-vmlinux-to-elf.log
+          grep -F 'Found relocations table at file offset' c0015-vmlinux-to-elf.log
 
       - name: Resolve exact pre-ramoops initcall implementations
         run: |
@@ -117,6 +119,7 @@ jobs:
           ]
           insn_rx1=re.compile(r"^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+){4}\s*([a-z0-9.]+)\s*(.*)$",re.I)
           insn_rx2=re.compile(r"^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+([a-z0-9.]+)\s*(.*)$",re.I)
+          reloc_rx=re.compile(r"Found relocations table at file offset 0x([0-9a-fA-F]+) - 0x([0-9a-fA-F]+) \(count=(\d+)\)")
 
           def strip_suffixes(s):
               prev=None
@@ -170,24 +173,31 @@ jobs:
           def names_at(rows,addr):
               return [n for a,t,n in rows if a==addr and t in "TtWw"]
 
-          def relocation_map(image_path,rows):
+          def relocation_map(image_path,log_path,rows):
               text=text_addresses(rows)
               if not text:
                   raise SystemExit(f"no text symbols for {image_path}")
-              base=text[0]
-              syms={n:a for a,t,n in rows if n in ("__rela_dyn_start","__rela_dyn_end")}
-              if set(syms)!={"__rela_dyn_start","__rela_dyn_end"}:
-                  raise SystemExit(f"missing rela bounds for {image_path}: {syms}")
               raw=Path(image_path).read_bytes()
-              start=syms["__rela_dyn_start"]-base
-              end=syms["__rela_dyn_end"]-base
+              log=Path(log_path).read_text(errors="replace")
+              m=reloc_rx.search(log)
+              if not m:
+                  raise SystemExit(f"missing relocation range in {log_path}")
+              start=int(m.group(1),16); end=int(m.group(2),16); count=int(m.group(3))
               if start<0 or end>len(raw) or end<=start or (end-start)%24:
-                  raise SystemExit(f"bad rela range {image_path} start={start} end={end} len={len(raw)}")
+                  raise SystemExit(f"bad relocation range {image_path} start={start} end={end} len={len(raw)}")
+              if (end-start)//24 != count:
+                  raise SystemExit(f"relocation count mismatch {image_path} parsed={(end-start)//24} logged={count}")
               mp={}
+              type_counts={}
               for off in range(start,end,24):
                   r_offset,r_info,r_addend=struct.unpack_from("<QQq",raw,off)
+                  r_type=r_info & 0xffffffff
+                  type_counts[r_type]=type_counts.get(r_type,0)+1
                   mp[r_offset]=r_addend & ((1<<64)-1)
-              return mp,base,raw,text
+              print(f"{image_path}_RELOCATION_RANGE=0x{start:x}-0x{end:x}")
+              print(f"{image_path}_RELOCATION_COUNT={count}")
+              print(f"{image_path}_RELOCATION_TYPES="+",".join(f"{k}:{v}" for k,v in sorted(type_counts.items())))
+              return mp,text
 
           def disasm(elf,start,stop):
               return subprocess.run([
@@ -196,8 +206,10 @@ jobs:
               ],check=True,capture_output=True,text=True).stdout
 
           def next_text(text,start,cap=0x20000):
-              greater=[a for a in text if a>start]
-              return min(greater[0] if greater else start+cap,start+cap)
+              for addr in text:
+                  if addr>start:
+                      return min(addr,start+cap)
+              return start+cap
 
           def follow_cfi(rows,text,elf,start):
               n=names_at(rows,start)
@@ -257,8 +269,8 @@ jobs:
               if sl!=cl:
                   moves.append((fn,sl,cl))
 
-          srel,sbase,sraw,stext=relocation_map("stock-Image",stock_rows)
-          crel,cbase,craw,ctext=relocation_map("candidate-0015-Image",cand_rows)
+          srel,stext=relocation_map("stock-Image","stock-vmlinux-to-elf.log",stock_rows)
+          crel,ctext=relocation_map("candidate-0015-Image","c0015-vmlinux-to-elf.log",cand_rows)
 
           results=[]; unresolved=[]; first_diff=None
           platform_rx=re.compile(r"(qcom|msm|scm|rpmh|icc|interconnect|ufs|gic|irq|watchdog|smmu|iommu|clk|regulator|pinctrl|psci)",re.I)
