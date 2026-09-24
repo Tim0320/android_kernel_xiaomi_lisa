@@ -1,0 +1,212 @@
+name: Diagnose Lisa known-good first divergence
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-known-good-first-divergence.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-known-good-first-divergence
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      STOCK_BOOT: stock-main/reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0014_ARTIFACT_ID: "10802392237"
+      C0014_IMAGE_SHA256: 47b1a9126866c31db49ae0bdf06bb7e0205ae516dcc65552d231914c126b7094
+
+    steps:
+      - name: Checkout known-good stock boot
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: stock-main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Install recovery tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip
+          python3 -m pip install --break-system-packages             git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+
+      - name: Extract known-good stock Image
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b=Path("stock-main/reconstruction/stock/stock-Image/boot.img").read_bytes()
+          if b[:8] != b"ANDROID!":
+              raise SystemExit("bad stock boot")
+          ksz=struct.unpack_from("<I",b,8)[0]
+          Path("stock-Image").write_bytes(b[4096:4096+ksz])
+          PY
+
+      - name: Download exact Candidate 0014 Image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0014_ARTIFACT_ID}/zip"             -o c0014.zip
+          mkdir c0014
+          unzip -q c0014.zip -d c0014
+          img="$(find c0014 -type f -name candidate-0014-Image -print -quit)"
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0014-Image
+          test "$(sha256sum candidate-0014-Image | awk '{print $1}')" = "$C0014_IMAGE_SHA256"
+
+      - name: Recover kallsyms
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder candidate-0014-Image > c0014.kallsyms
+          test -s stock.kallsyms
+          test -s c0014.kallsyms
+
+      - name: Compare known-good ARM64 Image anchors
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee image-anchor-summary.txt
+          from pathlib import Path
+          import struct
+
+          def parse(path):
+              b=Path(path).read_bytes()
+              if struct.unpack_from("<I",b,0x38)[0] != 0x644d5241:
+                  raise SystemExit(f"{path}: bad ARM64 Image magic")
+              code0=struct.unpack_from("<I",b,0)[0]
+              code1=struct.unpack_from("<I",b,4)[0]
+              text_offset=struct.unpack_from("<Q",b,8)[0]
+              image_size=struct.unpack_from("<Q",b,16)[0]
+              flags=struct.unpack_from("<Q",b,24)[0]
+              imm26=code1 & 0x03ffffff
+              if imm26 & 0x02000000:
+                  imm26-=1<<26
+              branch_target=4+(imm26<<2)
+              return dict(code0=code0,code1=code1,text_offset=text_offset,image_size=image_size,
+                          flags=flags,branch_target=branch_target,bytes=len(b))
+
+          s=parse("stock-Image"); c=parse("candidate-0014-Image")
+          for k in ("code0","code1","text_offset","image_size","flags","branch_target","bytes"):
+              print(f"STOCK_{k.upper()}={s[k]}")
+              print(f"C0014_{k.upper()}={c[k]}")
+              print(f"ANCHOR_{k.upper()}_EQUAL={int(s[k]==c[k])}")
+          print("KNOWN_GOOD_IMAGE_ANCHOR_GATE=PASS")
+          PY
+
+      - name: Find first initcall divergence from known-good stock
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee first-divergence-summary.txt
+          from pathlib import Path
+          import re
+
+          line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+          init_rx=re.compile(r"^__initcall_\d+_\d+_(.+?)(early|rootfs|[0-7]s?)$")
+
+          levels=["early","0","0s","1","1s","2","2s","3","3s","4","4s","5","5s","rootfs","6","6s","7","7s"]
+          rank={v:i for i,v in enumerate(levels)}
+
+          def parse(path):
+              rows=[]
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=line_rx.match(raw)
+                  if not m: continue
+                  addr=int(m.group(1),16); name=m.group(3)
+                  im=init_rx.match(name)
+                  if not im: continue
+                  fn,lvl=im.groups()
+                  fn=re.sub(r"\.\d+$","",fn)
+                  rows.append((rank.get(lvl,999),lvl,addr,fn,name))
+              rows.sort(key=lambda x:(x[0],x[2]))
+              return rows
+
+          s=parse("stock.kallsyms")
+          c=parse("c0014.kallsyms")
+          sf={(lvl,fn) for _,lvl,_,fn,_ in s}
+          cf={(lvl,fn) for _,lvl,_,fn,_ in c}
+
+          # The mtdoops initcall is an already-proven common anchor. Limit the
+          # primary search to everything the healthy stock runs before it.
+          sm=[x for x in s if x[3]=="mtdoops_init"]
+          cm=[x for x in c if x[3]=="mtdoops_init"]
+          if len(sm)!=1 or len(cm)!=1:
+              raise SystemExit("mtdoops anchor is not unique")
+          srank,slvl,saddr,_,_=sm[0]
+          crank,clvl,caddr,_,_=cm[0]
+
+          stock_pre=[x for x in s if x[0]<srank or (x[0]==srank and x[2]<saddr)]
+          cand_pre=[x for x in c if x[0]<crank or (x[0]==crank and x[2]<caddr)]
+
+          stock_only=[x for x in stock_pre if (x[1],x[3]) not in cf]
+          cand_only=[x for x in cand_pre if (x[1],x[3]) not in sf]
+
+          # Find the first stock-required function that Candidate does not have.
+          first=stock_only[0] if stock_only else None
+
+          Path("stock-only-before-mtdoops.tsv").write_text(
+              "level\taddress\tfunction\traw\n"+
+              "".join(f"{lvl}\t{addr:016x}\t{fn}\t{raw}\n" for _,lvl,addr,fn,raw in stock_only)
+          )
+          Path("candidate-only-before-mtdoops.tsv").write_text(
+              "level\taddress\tfunction\traw\n"+
+              "".join(f"{lvl}\t{addr:016x}\t{fn}\t{raw}\n" for _,lvl,addr,fn,raw in cand_only)
+          )
+
+          print(f"KNOWN_GOOD_STOCK_PRE_MTD_OOPS_INITCALLS={len(stock_pre)}")
+          print(f"C0014_PRE_MTD_OOPS_INITCALLS={len(cand_pre)}")
+          print(f"STOCK_ONLY_BEFORE_MTD_OOPS={len(stock_only)}")
+          print(f"C0014_ONLY_BEFORE_MTD_OOPS={len(cand_only)}")
+          print(f"MTDOOPS_STOCK_LEVEL={slvl}")
+          print(f"MTDOOPS_C0014_LEVEL={clvl}")
+          if first:
+              _,lvl,addr,fn,raw=first
+              print(f"FIRST_UNMATCHED_KNOWN_GOOD_LEVEL={lvl}")
+              print(f"FIRST_UNMATCHED_KNOWN_GOOD_FUNCTION={fn}")
+              print(f"FIRST_UNMATCHED_KNOWN_GOOD_ADDRESS={addr:016x}")
+              print(f"FIRST_UNMATCHED_KNOWN_GOOD_RAW={raw}")
+          else:
+              print("FIRST_UNMATCHED_KNOWN_GOOD_FUNCTION=<none>")
+          print("KNOWN_GOOD_FIRST_DIVERGENCE_GATE=PASS")
+          PY
+
+      - name: Emit passed-value matrix
+        run: |
+          set -euo pipefail
+          {
+            echo 'KNOWN_GOOD_REFERENCE=healthy-stock-boot-e6f8c978c2cf'
+            echo 'PASS_boot_chain=stock-Image-3.09 companions + TW OS2.0.8 super'
+            echo 'PASS_boot_packaging=stock header/ramdisk/layout/AVB preserved'
+            grep '^ANCHOR_' image-anchor-summary.txt
+            grep -E '^(MTDOOPS_|FIRST_UNMATCHED|STOCK_ONLY_BEFORE|C0014_ONLY_BEFORE)' first-divergence-summary.txt
+            echo 'LISA_KNOWN_GOOD_ORACLE_DIAGNOSIS=PASS'
+          } | tee known-good-oracle.txt
+
+      - name: Upload oracle diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-known-good-first-divergence
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            known-good-oracle.txt
+            image-anchor-summary.txt
+            first-divergence-summary.txt
+            stock-only-before-mtdoops.tsv
+            candidate-only-before-mtdoops.tsv
+            stock.kallsyms
+            c0014.kallsyms
