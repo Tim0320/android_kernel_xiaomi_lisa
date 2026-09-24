@@ -1,0 +1,308 @@
+name: Compare Lisa stock-Image-3.09 vs historical g598 companion
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/compare-lisa-stock-image-3-09-vs-historical-companion.yml
+      - reconstruction/stock/stock-Image-3.09/vendor_boot.img
+      - reconstruction/stock/stock-Image-3.09/dtbo.img
+      - reconstruction/stock/stock-Image/vendor_boot.img
+      - reconstruction/stock/stock-Image/dtbo.img
+      - .gitattributes
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-stock-3-09-vs-historical-companion
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEW_VENDOR_BOOT: reconstruction/stock/stock-Image-3.09/vendor_boot.img
+      NEW_DTBO: reconstruction/stock/stock-Image-3.09/dtbo.img
+      OLD_VENDOR_BOOT: reconstruction/stock/stock-Image/vendor_boot.img
+      OLD_DTBO: reconstruction/stock/stock-Image/dtbo.img
+      EXPECT_NEW_VENDOR_BOOT_SHA256: a94ecc2b8e53666693fd3cfc99ad07b5f24f586e85841728bf1d41333bc4b053
+      EXPECT_NEW_DTBO_SHA256: 537655919c72edcba2e1dcbc83edb45fe92484263f3b8d5b29e8c1408282a35c
+      EXPECT_OLD_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+      EXPECT_OLD_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
+
+    steps:
+      - name: Checkout exact companion images with Git LFS
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: true
+
+      - name: Install comparison tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cpio lz4 zstd xz-utils gzip python3 python3-pyelftools
+
+      - name: Authenticate exact inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$NEW_VENDOR_BOOT" | awk '{print $1}')" = "$EXPECT_NEW_VENDOR_BOOT_SHA256"
+          test "$(sha256sum "$NEW_DTBO" | awk '{print $1}')" = "$EXPECT_NEW_DTBO_SHA256"
+          test "$(sha256sum "$OLD_VENDOR_BOOT" | awk '{print $1}')" = "$EXPECT_OLD_VENDOR_BOOT_SHA256"
+          test "$(sha256sum "$OLD_DTBO" | awk '{print $1}')" = "$EXPECT_OLD_DTBO_SHA256"
+          echo 'COMPANION_INPUT_HASH_GATE=PASS'
+
+      - name: Extract vendor_boot payloads
+        run: |
+          set -euo pipefail
+          mkdir -p compare/new compare/old
+          python3 - "$NEW_VENDOR_BOOT" compare/new <<'PY'
+          import hashlib, struct, sys
+          from pathlib import Path
+
+          def align(v,a): return (v+a-1)//a*a
+          p=Path(sys.argv[1]); out=Path(sys.argv[2]); b=p.read_bytes()
+          if b[:8] != b'VNDRBOOT': raise SystemExit('bad vendor_boot magic')
+          u32=lambda o: struct.unpack_from('<I',b,o)[0]
+          ver=u32(8); page=u32(12); rsz=u32(24); hsz=u32(2096); dsz=u32(2100)
+          roff=align(hsz,page); doff=align(roff+rsz,page)
+          cmd=b[28:28+2048].split(b'\0',1)[0].decode('utf-8','replace')
+          ram=b[roff:roff+rsz]; dtb=b[doff:doff+dsz]
+          (out/'vendor_ramdisk.bin').write_bytes(ram)
+          (out/'vendor_dtb.bin').write_bytes(dtb)
+          (out/'layout.txt').write_text(
+              f'header_version={ver}\npage_size={page}\nheader_size={hsz}\n'
+              f'vendor_ramdisk_size={rsz}\ndtb_size={dsz}\n'
+              f'cmdline={cmd}\n'
+              f'vendor_ramdisk_sha256={hashlib.sha256(ram).hexdigest()}\n'
+              f'vendor_dtb_sha256={hashlib.sha256(dtb).hexdigest()}\n'
+          )
+          PY
+          python3 - "$OLD_VENDOR_BOOT" compare/old <<'PY'
+          import hashlib, struct, sys
+          from pathlib import Path
+
+          def align(v,a): return (v+a-1)//a*a
+          p=Path(sys.argv[1]); out=Path(sys.argv[2]); b=p.read_bytes()
+          if b[:8] != b'VNDRBOOT': raise SystemExit('bad vendor_boot magic')
+          u32=lambda o: struct.unpack_from('<I',b,o)[0]
+          ver=u32(8); page=u32(12); rsz=u32(24); hsz=u32(2096); dsz=u32(2100)
+          roff=align(hsz,page); doff=align(roff+rsz,page)
+          cmd=b[28:28+2048].split(b'\0',1)[0].decode('utf-8','replace')
+          ram=b[roff:roff+rsz]; dtb=b[doff:doff+dsz]
+          (out/'vendor_ramdisk.bin').write_bytes(ram)
+          (out/'vendor_dtb.bin').write_bytes(dtb)
+          (out/'layout.txt').write_text(
+              f'header_version={ver}\npage_size={page}\nheader_size={hsz}\n'
+              f'vendor_ramdisk_size={rsz}\ndtb_size={dsz}\n'
+              f'cmdline={cmd}\n'
+              f'vendor_ramdisk_sha256={hashlib.sha256(ram).hexdigest()}\n'
+              f'vendor_dtb_sha256={hashlib.sha256(dtb).hexdigest()}\n'
+          )
+          PY
+
+          cat compare/new/layout.txt
+          cat compare/old/layout.txt
+
+      - name: Unpack both vendor ramdisks
+        run: |
+          set -euo pipefail
+          unpack_ramdisk() {
+            local src="$1"
+            local out="$2"
+            local cpio_file="$3"
+            mkdir -p "$out"
+            local magic
+            magic="$(xxd -p -l 8 "$src")"
+            case "$magic" in
+              1f8b*) gzip -dc "$src" > "$cpio_file" ;;
+              04224d18*|02214c18*) lz4 -dc "$src" > "$cpio_file" ;;
+              fd377a585a00*) xz -dc "$src" > "$cpio_file" ;;
+              28b52ffd*) zstd -dc "$src" > "$cpio_file" ;;
+              303730373031*|303730373032*) cp "$src" "$cpio_file" ;;
+              *) echo "unknown ramdisk compression: $src ($magic)" >&2; exit 1 ;;
+            esac
+            local abs
+            abs="$(realpath "$cpio_file")"
+            (cd "$out" && cpio --quiet -idm --no-absolute-filenames < "$abs")
+          }
+
+          unpack_ramdisk compare/new/vendor_ramdisk.bin compare/new/root compare/new/vendor_ramdisk.cpio
+          unpack_ramdisk compare/old/vendor_ramdisk.bin compare/old/root compare/old/vendor_ramdisk.cpio
+
+      - name: Compare module payload and load plan
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          def sha(p):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for c in iter(lambda:f.read(1<<20),b''): h.update(c)
+              return h.hexdigest()
+
+          def collect(root):
+              mods={}
+              for p in Path(root).rglob('*.ko'):
+                  if p.name in mods:
+                      raise SystemExit(f'duplicate module basename {p.name} in {root}')
+                  mods[p.name]=(str(p.relative_to(root)),sha(p))
+              loads=[]
+              for p in sorted(Path(root).rglob('modules.load*')):
+                  loads.append((str(p.relative_to(root)),p.read_text(errors='replace')))
+              return mods,loads
+
+          new, newloads=collect('compare/new/root')
+          old, oldloads=collect('compare/old/root')
+          names=sorted(set(new)|set(old))
+          rows=['module\tnew_sha256\told_sha256\tidentical']
+          changed=[]; added=[]; missing=[]
+          for n in names:
+              a=new.get(n); b=old.get(n)
+              if a and b:
+                  ok=a[1]==b[1]
+                  rows.append(f'{n}\t{a[1]}\t{b[1]}\t{int(ok)}')
+                  if not ok: changed.append(n)
+              elif a:
+                  rows.append(f'{n}\t{a[1]}\tMISSING\t0'); added.append(n)
+              else:
+                  rows.append(f'{n}\tMISSING\t{b[1]}\t0'); missing.append(n)
+
+          Path('compare/module-delta.tsv').write_text('\n'.join(rows)+'\n')
+          msm_identical=int(
+              'msm_drm.ko' in new and 'msm_drm.ko' in old
+              and new['msm_drm.ko'][1]==old['msm_drm.ko'][1]
+          )
+          new_load_blob='\n---FILE---\n'.join(f'{p}\n{c}' for p,c in newloads)
+          old_load_blob='\n---FILE---\n'.join(f'{p}\n{c}' for p,c in oldloads)
+          load_identical=int(new_load_blob==old_load_blob)
+
+          summary=[
+              f'new_module_count={len(new)}',
+              f'old_module_count={len(old)}',
+              f'changed_modules={",".join(changed)}',
+              f'new_only_modules={",".join(added)}',
+              f'old_only_modules={",".join(missing)}',
+              f'msm_drm_byte_identical={msm_identical}',
+              f'modules_load_byte_identical={load_identical}',
+          ]
+          Path('compare/module-summary.txt').write_text('\n'.join(summary)+'\n')
+          print('\n'.join(summary))
+          PY
+
+      - name: Compare DTBO entry blobs
+        run: |
+          set -euo pipefail
+          python3 - "$NEW_DTBO" "$OLD_DTBO" <<'PY'
+          import hashlib, struct, sys
+          from pathlib import Path
+
+          MAGIC=0xd7b7ab1e
+
+          def parse(path):
+              b=Path(path).read_bytes()
+              if len(b)<32: raise SystemExit(f'{path}: short dtbo')
+              vals=struct.unpack_from('>8I',b,0)
+              magic,total,hsz,esz,count,eoff,page,ver=vals
+              if magic!=MAGIC:
+                  vals=struct.unpack_from('<8I',b,0)
+                  magic,total,hsz,esz,count,eoff,page,ver=vals
+                  endian='<'
+              else:
+                  endian='>'
+              if magic!=MAGIC: raise SystemExit(f'{path}: bad dtbo magic {magic:#x}')
+              out=[]
+              for i in range(count):
+                  o=eoff+i*esz
+                  if o+32>len(b): raise SystemExit(f'{path}: short entry {i}')
+                  size,off,ident,rev,c0,c1,c2,c3=struct.unpack_from(endian+'8I',b,o)
+                  blob=b[off:off+size]
+                  if len(blob)!=size: raise SystemExit(f'{path}: short dt blob {i}')
+                  out.append((i,ident,rev,(c0,c1,c2,c3),size,hashlib.sha256(blob).hexdigest()))
+              return dict(total=total,header_size=hsz,entry_size=esz,count=count,entries=out)
+
+          new=parse(sys.argv[1]); old=parse(sys.argv[2])
+          lines=['side\tindex\tid\trev\tcustom\tsize\tsha256']
+          for side,obj in [('new',new),('old',old)]:
+              for i,ident,rev,custom,size,h in obj['entries']:
+                  lines.append(f'{side}\t{i}\t{ident}\t{rev}\t{",".join(map(str,custom))}\t{size}\t{h}')
+          Path('compare/dtbo-entries.tsv').write_text('\n'.join(lines)+'\n')
+
+          def key(e): return (e[1],e[2],e[3])
+          nm={key(e):e for e in new['entries']}
+          om={key(e):e for e in old['entries']}
+          common=sorted(set(nm)&set(om))
+          changed=[k for k in common if nm[k][5]!=om[k][5]]
+          summary=[
+              f'new_dtbo_entry_count={new["count"]}',
+              f'old_dtbo_entry_count={old["count"]}',
+              f'common_entry_keys={len(common)}',
+              f'changed_common_entry_blobs={len(changed)}',
+              f'new_only_entry_keys={len(set(nm)-set(om))}',
+              f'old_only_entry_keys={len(set(om)-set(nm))}',
+          ]
+          Path('compare/dtbo-summary.txt').write_text('\n'.join(summary)+'\n')
+          print('\n'.join(summary))
+          PY
+
+      - name: Classify companion delta
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def kv(path):
+              out={}
+              for line in Path(path).read_text(errors='replace').splitlines():
+                  if '=' in line:
+                      k,v=line.split('=',1); out[k]=v
+              return out
+
+          n=kv('compare/new/layout.txt')
+          o=kv('compare/old/layout.txt')
+          m=kv('compare/module-summary.txt')
+          d=kv('compare/dtbo-summary.txt')
+
+          ramdisk_same=int(n['vendor_ramdisk_sha256']==o['vendor_ramdisk_sha256'])
+          dtb_same=int(n['vendor_dtb_sha256']==o['vendor_dtb_sha256'])
+          cmdline_same=int(n['cmdline']==o['cmdline'])
+          msm_same=int(m['msm_drm_byte_identical'])
+          load_same=int(m['modules_load_byte_identical'])
+
+          lines=[
+              f'vendor_ramdisk_byte_identical={ramdisk_same}',
+              f'vendor_dtb_byte_identical={dtb_same}',
+              f'vendor_cmdline_identical={cmdline_same}',
+              f'msm_drm_byte_identical={msm_same}',
+              f'modules_load_byte_identical={load_same}',
+              f'changed_modules={m["changed_modules"]}',
+              f'dtbo_changed_common_entry_blobs={d["changed_common_entry_blobs"]}',
+          ]
+
+          if msm_same and not m['changed_modules'] and load_same:
+              lines.append('MODULE_PAYLOAD_ABI_DELTA=0')
+          else:
+              lines.append('MODULE_PAYLOAD_ABI_DELTA=1')
+
+          if not dtb_same or int(d['changed_common_entry_blobs']) or int(d['new_only_entry_keys']) or int(d['old_only_entry_keys']):
+              lines.append('DT_COMPANION_DELTA=1')
+          else:
+              lines.append('DT_COMPANION_DELTA=0')
+
+          lines.append('LISA_STOCK_3_09_COMPANION_STRUCTURAL_COMPARE=PASS')
+          Path('compare/final-gate.txt').write_text('\n'.join(lines)+'\n')
+          print('\n'.join(lines))
+          PY
+
+      - name: Upload structural comparison
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-3-09-vs-historical-companion-compare
+          retention-days: 14
+          if-no-files-found: error
+          path: compare/
