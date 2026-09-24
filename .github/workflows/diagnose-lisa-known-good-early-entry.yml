@@ -39,9 +39,11 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y python3-pip curl unzip binutils-aarch64-linux-gnu
-          python3 -m pip install --break-system-packages             git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
           command -v kallsyms-finder
           command -v vmlinux-to-elf
+          command -v aarch64-linux-gnu-objdump
 
       - name: Extract exact Images
         env:
@@ -59,7 +61,12 @@ jobs:
           Path("stock-Image").write_bytes(b[4096:4096+ksz])
           PY
 
-          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0014_ARTIFACT_ID}/zip"             -o c0014.zip
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0014_ARTIFACT_ID}/zip" \
+            -o c0014.zip
           mkdir c0014
           unzip -q c0014.zip -d c0014
           img="$(find c0014 -type f -name candidate-0014-Image -print -quit)"
@@ -136,52 +143,157 @@ jobs:
           print("\n".join(lines))
           PY
 
-      - name: Disassemble key early functions
+      - name: Resolve bounded early function ranges
         run: |
           set -euo pipefail
-          for fn in stext __primary_switch __primary_switched start_kernel setup_arch early_fixmap_init paging_init; do
-            aarch64-linux-gnu-objdump -d --disassemble="$fn" stock.elf > "stock-${fn}.S" 2>/dev/null || true
-            aarch64-linux-gnu-objdump -d --disassemble="$fn" c0014.elf > "c0014-${fn}.S" 2>/dev/null || true
+          mkdir -p bounded
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          targets=["stext","__primary_switch","__primary_switched","start_kernel","setup_arch","early_fixmap_init","paging_init"]
+          line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+
+          def canon(name):
+              name=re.sub(r"\.cfi_jt$", "", name)
+              name=re.sub(r"\.llvm\.[0-9A-Fa-f]+$", "", name)
+              name=re.sub(r"\.(?:isra|constprop|part)\.\d+$", "", name)
+              name=re.sub(r"\.\d{3,}$", "", name)
+              return name
+
+          def parse(path):
+              rows=[]
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=line_rx.match(raw)
+                  if not m or m.group(2) not in "Tt":
+                      continue
+                  rows.append((int(m.group(1),16),m.group(2),m.group(3)))
+              rows.sort(key=lambda x:(x[0],x[2]))
+              return rows
+
+          def choose(rows,target):
+              exact=[r for r in rows if r[2]==target]
+              if exact:
+                  return exact[0]
+              matches=[r for r in rows if canon(r[2])==target and not r[2].endswith(".cfi_jt")]
+              if matches:
+                  return matches[0]
+              matches=[r for r in rows if canon(r[2])==target]
+              return matches[0] if matches else None
+
+          for label,path in (("stock","stock.kallsyms"),("c0014","c0014.kallsyms")):
+              rows=parse(path)
+              addrs=sorted(set(r[0] for r in rows))
+              out=[]
+              for target in targets:
+                  row=choose(rows,target)
+                  if row is None:
+                      out.append(f"{target}\tMISSING\tMISSING\tMISSING")
+                      continue
+                  start=row[0]
+                  greater=[a for a in addrs if a>start]
+                  natural_stop=greater[0] if greater else start+0x10000
+                  stop=min(natural_stop,start+0x10000)
+                  if stop<=start:
+                      raise SystemExit(f"bad range {label} {target}: {start:x}-{stop:x}")
+                  out.append(f"{target}\t{start:016x}\t{stop:016x}\t{row[2]}")
+              Path(f"bounded/{label}-ranges.tsv").write_text("\n".join(out)+"\n")
+          PY
+
+          cat bounded/stock-ranges.tsv
+          cat bounded/c0014-ranges.tsv
+
+      - name: Bounded-disassemble key early functions
+        run: |
+          set -euo pipefail
+          for label in stock c0014; do
+            elf="${label}.elf"
+            while IFS=$'\t' read -r fn start stop provider; do
+              if [ "$start" = MISSING ]; then
+                : > "bounded/${label}-${fn}.S"
+                continue
+              fi
+              aarch64-linux-gnu-objdump -d \
+                --start-address="0x${start}" \
+                --stop-address="0x${stop}" \
+                "$elf" > "bounded/${label}-${fn}.S"
+            done < "bounded/${label}-ranges.tsv"
           done
 
+      - name: Normalize bounded disassembly and compare
+        run: |
+          set -euo pipefail
           python3 - <<'PY' | tee early-entry-disasm-summary.txt
           from pathlib import Path
-          import re, hashlib
+          import hashlib,re
 
           fns=["stext","__primary_switch","__primary_switched","start_kernel","setup_arch","early_fixmap_init","paging_init"]
+          insn_rx=re.compile(r"^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+){4}(.*)$",re.I)
+          word_rx=re.compile(r"^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+(.*)$",re.I)
+
+          def canon_symbol(name):
+              name=re.sub(r"\+0x[0-9a-f]+$", "", name, flags=re.I)
+              name=re.sub(r"\.cfi_jt$", "", name)
+              name=re.sub(r"\.llvm\.[0-9A-Fa-f]+$", "", name)
+              name=re.sub(r"\.(?:isra|constprop|part)\.\d+$", "", name)
+              name=re.sub(r"\.\d{3,}$", "", name)
+              return name
 
           def norm(path):
-              txt=Path(path).read_text(errors="replace")
               out=[]
-              for line in txt.splitlines():
-                  if not re.search(r"\b[0-9a-f]+:\s+[0-9a-f]{8}\b",line):
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=insn_rx.match(raw) or word_rx.match(raw)
+                  if not m:
                       continue
-                  line=re.sub(r"^\s*[0-9a-f]+:", "ADDR:", line)
-                  line=re.sub(r"<[^>]+>", "<SYM>", line)
-                  line=re.sub(r"\b[0-9a-f]{8,16}\b", "IMM", line)
-                  out.append(line.strip())
+                  text=m.group(1).strip()
+                  def repl(match):
+                      return "<"+canon_symbol(match.group(1))+">"
+                  text=re.sub(r"<([^>]+)>",repl,text)
+                  # Mask layout-dependent raw addresses while preserving symbolic targets.
+                  text=re.sub(r"\b(?:0x)?f{4,}[0-9a-f]{6,}\b","<ADDR>",text,flags=re.I)
+                  text=re.sub(r"\b[0-9a-f]{12,16}\b","<ADDR>",text,flags=re.I)
+                  out.append(text)
               return "\n".join(out)
 
-          lines=[]
+          def lines(path):
+              n=norm(path)
+              return n,len(n.splitlines()) if n else 0
+
           first_diff=None
+          summary=[]
           for fn in fns:
-              sp=Path(f"stock-{fn}.S"); cp=Path(f"c0014-{fn}.S")
-              sn=norm(sp) if sp.exists() else ""
-              cn=norm(cp) if cp.exists() else ""
+              sp=Path(f"bounded/stock-{fn}.S")
+              cp=Path(f"bounded/c0014-{fn}.S")
+              sn,sl=lines(sp); cn,cl=lines(cp)
               sh=hashlib.sha256(sn.encode()).hexdigest()
               ch=hashlib.sha256(cn.encode()).hexdigest()
-              eq=int(bool(sn) and sn==cn)
-              lines.append(f"DISASM_{fn}_STOCK_LINES={len(sn.splitlines()) if sn else 0}")
-              lines.append(f"DISASM_{fn}_C0014_LINES={len(cn.splitlines()) if cn else 0}")
-              lines.append(f"DISASM_{fn}_NORMALIZED_EQUAL={eq}")
-              lines.append(f"DISASM_{fn}_STOCK_SHA256={sh}")
-              lines.append(f"DISASM_{fn}_C0014_SHA256={ch}")
+              eq=int(bool(sn) and bool(cn) and sn==cn)
+              summary += [
+                f"BOUNDED_{fn}_STOCK_LINES={sl}",
+                f"BOUNDED_{fn}_C0014_LINES={cl}",
+                f"BOUNDED_{fn}_NORMALIZED_EQUAL={eq}",
+                f"BOUNDED_{fn}_STOCK_SHA256={sh}",
+                f"BOUNDED_{fn}_C0014_SHA256={ch}",
+              ]
+              Path(f"bounded/stock-{fn}.norm").write_text(sn+"\n" if sn else "")
+              Path(f"bounded/c0014-{fn}.norm").write_text(cn+"\n" if cn else "")
               if not eq and first_diff is None:
                   first_diff=fn
 
-          lines.append(f"FIRST_NORMALIZED_EARLY_DISASM_DIVERGENCE={first_diff or '<none>'}")
-          lines.append("EARLY_ENTRY_DISASM_GATE=PASS")
-          print("\n".join(lines))
+          summary.append(f"FIRST_BOUNDED_EARLY_DISASM_DIVERGENCE={first_diff or '<none>'}")
+          summary.append("BOUNDED_EARLY_ENTRY_DISASM_GATE=PASS")
+          print("\n".join(summary))
+          PY
+
+          # Reject the old failure mode: a supposedly present function producing no body.
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          txt=Path("early-entry-disasm-summary.txt").read_text()
+          for label in ("STOCK","C0014"):
+              vals=[int(v) for v in re.findall(rf"^BOUNDED_.+_{label}_LINES=(\d+)$",txt,re.M)]
+              if not vals or any(v==0 for v in vals):
+                  raise SystemExit(f"bounded disassembly incomplete for {label}: {vals}")
           PY
 
       - name: Emit known-good decision matrix
@@ -210,7 +322,6 @@ jobs:
             known-good-early-entry.txt
             early-entry-anchor-summary.txt
             early-entry-disasm-summary.txt
-            stock-*.S
-            c0014-*.S
+            bounded/
             stock.kallsyms
             c0014.kallsyms
