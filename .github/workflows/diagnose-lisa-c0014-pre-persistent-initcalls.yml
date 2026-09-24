@@ -34,6 +34,13 @@ jobs:
           lfs: true
           fetch-depth: 1
 
+      - name: Checkout reconstructed source
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          path: reconstructed-source
+          fetch-depth: 1
+
       - name: Install symbol recovery tools
         run: |
           set -euo pipefail
@@ -98,6 +105,7 @@ jobs:
 
           s=parse("stock-Image")
           c=parse("candidate-0014-Image")
+          expected_magic=bytes.fromhex("41524d64")
           for label,x in (("STOCK",s),("C0014",c)):
               print(f"{label}_FILE_BYTES={x['bytes']}")
               print(f"{label}_CODE0=0x{x['code0']:08x}")
@@ -108,7 +116,7 @@ jobs:
               print(f"{label}_MAGIC={x['magic'].hex()}")
           print(f"TEXT_OFFSET_MATCH={int(s['text_offset']==c['text_offset'])}")
           print(f"FLAGS_MATCH={int(s['flags']==c['flags'])}")
-          print(f"MAGIC_MATCH={int(s['magic']==c['magic']==b'ARM\\x64')}")
+          print(f"MAGIC_MATCH={int(s['magic']==c['magic']==expected_magic)}")
           print(f"IMAGE_SIZE_FIELD_MATCH={int(s['image_size']==c['image_size'])}")
           print("ARM64_IMAGE_HEADER_AUDIT=PASS")
           PY
@@ -134,9 +142,6 @@ jobs:
           rank={v:i for i,v in enumerate(levels)}
 
           def strip_compiler_suffix(name):
-              # Initcall symbols can be emitted as e.g.
-              # __initcall_*_regulator_fixed_voltage_init4.12170 .
-              # The suffix must be removed before parsing the initcall level.
               return name.split('.',1)[0]
 
           def parse(path):
@@ -250,7 +255,6 @@ jobs:
               for addr,lvl,fn,raw in rows:
                   lines.append(f"{prefix} level={lvl} addr={addr:016x} fn={fn}")
 
-          # Regression guard for the exact false positive seen in the prior parser.
           false_reg=any(lvl=="0" and fn=="regulator_fixed_voltage_init4" for lvl,fn in stock_only)
           lines.append(f"REGULATOR_SUFFIX_FALSE_POSITIVE_PRESENT={int(false_reg)}")
           if false_reg:
@@ -261,28 +265,66 @@ jobs:
           print("PRE_PERSISTENT_INITCALL_DIAGNOSIS_V2=PASS")
           PY
 
+      - name: Map stock-only pre-ramoops providers in reconstructed source
+        run: |
+          set -euo pipefail
+          targets=(cpufreq_times_init pm_debug_init alarm_record_init uevent_record_init)
+          : > pre-ramoops-source-map.txt
+          for fn in "${targets[@]}"; do
+            echo "### ${fn}" | tee -a pre-ramoops-source-map.txt
+            hits="$(git -C reconstructed-source grep -n -F "$fn" -- '*.c' '*.h' '*.S' '*Kconfig*' '*Makefile*' || true)"
+            if [[ -n "$hits" ]]; then
+              echo "EXACT_SYMBOL_PRESENT=1" | tee -a pre-ramoops-source-map.txt
+              printf '%s\n' "$hits" | tee -a pre-ramoops-source-map.txt
+            else
+              echo "EXACT_SYMBOL_PRESENT=0" | tee -a pre-ramoops-source-map.txt
+              stem="${fn%_init}"
+              echo "FALLBACK_STEM=${stem}" | tee -a pre-ramoops-source-map.txt
+              git -C reconstructed-source grep -n -F "$stem" -- '*.c' '*.h' '*.S' '*Kconfig*' '*Makefile*' \
+                | head -n 120 | tee -a pre-ramoops-source-map.txt || true
+            fi
+          done
+
+          echo '### candidate config clues' | tee -a pre-ramoops-source-map.txt
+          for key in CPU_FREQ_TIMES CPU_FREQ_STAT PM_DEBUG DEBUG_POWER_MI ALARM_RECORD UEVENT_RECORD; do
+            echo "## CONFIG_${key}" | tee -a pre-ramoops-source-map.txt
+            git -C reconstructed-source grep -n -E "(^|[^A-Za-z0-9_])(${key}|CONFIG_${key})([^A-Za-z0-9_]|$)" -- '*Kconfig*' '*Makefile*' '*.c' '*.h' \
+              | head -n 120 | tee -a pre-ramoops-source-map.txt || true
+          done
+
+          grep -Fq '### cpufreq_times_init' pre-ramoops-source-map.txt
+          grep -Fq '### pm_debug_init' pre-ramoops-source-map.txt
+          grep -Fq '### alarm_record_init' pre-ramoops-source-map.txt
+          grep -Fq '### uevent_record_init' pre-ramoops-source-map.txt
+          echo 'PRE_RAMOOPS_SOURCE_MAP=PASS' | tee -a pre-ramoops-source-map.txt
+
       - name: Final gate
         run: |
           set -euo pipefail
           grep -Fq 'ARM64_IMAGE_HEADER_AUDIT=PASS' image-header-summary.txt
+          grep -Fq 'MAGIC_MATCH=1' image-header-summary.txt
           grep -Fq 'PRE_PERSISTENT_INITCALL_DIAGNOSIS_V2=PASS' pre-persistent-summary.txt
           grep -Fq 'REGULATOR_SUFFIX_FALSE_POSITIVE_PRESENT=0' pre-persistent-summary.txt
+          grep -Fq 'C0014_ONLY_BEFORE_RAMOOPS=0' pre-persistent-summary.txt
+          grep -Fq 'PRE_RAMOOPS_SOURCE_MAP=PASS' pre-ramoops-source-map.txt
           {
             cat image-header-summary.txt
             cat pre-persistent-summary.txt
-            echo 'LISA_C0014_PRE_PERSISTENT_DIAGNOSIS_V2=PASS'
+            cat pre-ramoops-source-map.txt
+            echo 'LISA_C0014_PRE_PERSISTENT_DIAGNOSIS_V3=PASS'
           } | tee final.txt
 
       - name: Upload diagnosis
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-c0014-pre-persistent-initcall-diagnosis-v2
+          name: lisa-c0014-pre-persistent-initcall-diagnosis-v3
           retention-days: 14
           if-no-files-found: error
           path: |
             final.txt
             image-header-summary.txt
             pre-persistent-summary.txt
+            pre-ramoops-source-map.txt
             candidate-only-before-ramoops.tsv
             stock-only-before-ramoops.tsv
             candidate-only-before-mtdoops.tsv
