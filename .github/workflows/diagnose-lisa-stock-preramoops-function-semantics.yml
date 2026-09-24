@@ -131,6 +131,7 @@ jobs:
               raise SystemExit("no stock text symbols")
 
           image_base = text_addrs[0]
+          u64_mask = (1 << 64) - 1
 
           def resolve_relocated_pointer(path, vaddr):
               with open(path, "rb") as stream:
@@ -143,11 +144,11 @@ jobs:
                           if int(reloc["r_offset"]) != vaddr:
                               continue
                           rtype = int(reloc["r_info_type"])
-                          # AArch64 R_AARCH64_RELATIVE = 1027. Its addend is the
-                          # final kernel virtual target for these initcall slots.
+                          # AArch64 R_AARCH64_RELATIVE = 1027. Treat the signed
+                          # ELF64 addend as an unsigned 64-bit kernel VA.
                           if section["sh_type"] == "SHT_RELA":
-                              addend = int(reloc["r_addend"])
-                              return addend, f"elf-reloc-section:{section.name}:type={rtype}"
+                              target = int(reloc["r_addend"]) & u64_mask
+                              return target, f"elf-reloc-section:{section.name}:type={rtype}"
                           raise SystemExit(
                               f"REL without addend at initcall slot 0x{vaddr:x} "
                               f"in {section.name}, type={rtype}"
@@ -184,7 +185,8 @@ jobs:
                   r_offset, r_info, r_addend = struct.unpack_from("<QQq", raw, off)
                   if r_offset == vaddr:
                       rtype = r_info & 0xffffffff
-                      target = int(r_addend) & ((1 << 64) - 1)\n                      return target, f"raw-rela-dyn:type={rtype}:entry_off=0x{off:x}"
+                      target = int(r_addend) & u64_mask
+                      return target, f"raw-rela-dyn:type={rtype}:entry_off=0x{off:x}"
 
               raise SystemExit(f"no relocation found for initcall slot 0x{vaddr:x}")
 
