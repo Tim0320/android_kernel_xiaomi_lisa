@@ -1,0 +1,167 @@
+name: Diagnose Lisa Candidate 0013 stock-only config gaps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-stock-only-config-gaps.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-stock-only-config-gaps
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+
+    steps:
+      - name: Checkout exact Candidate 0013 reconstructed donor
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: donor
+          fetch-depth: 1
+
+      - name: Classify unresolved stock config symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > unresolved-stock-configs.txt <<'EOF'
+          BQ2597X
+          DEBUG_POLICY_STATUS
+          DEBUG_POWER_MI
+          F2FS_CP_OPT
+          FASTBOOT_CMD_CTRL_UART
+          IIO_TRIGGERED_BUFFER
+          MIGT
+          MILLET
+          MIUI_ZRAM_MEMORY_TRACKING
+          MIUS_PROXIMITY
+          MI_UFS_FFU
+          OEM_KERNEL
+          PACKAGE_RUNTIME_INFO
+          PASSTHROUGH_SYSTEM
+          PERF_CRITICAL_RT_TASK
+          PERF_HUMANTASK
+          QCOM_MINIDUMP_ENCRYPT
+          QTI_BATTERY_CHARGER_K8
+          SF_BINDER
+          UFSGKI
+          UFS_WB
+          XLOGCHAR
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import csv
+          import re
+          import subprocess
+
+          repo = "donor"
+          symbols = [x.strip() for x in Path("unresolved-stock-configs.txt").read_text().splitlines() if x.strip()]
+
+          priority = {
+              "UFSGKI": "P0-storage",
+              "UFS_WB": "P0-storage",
+              "MI_UFS_FFU": "P0-storage",
+              "IIO_TRIGGERED_BUFFER": "P1-platform",
+              "OEM_KERNEL": "P1-global-build",
+              "PASSTHROUGH_SYSTEM": "P1-global-build",
+              "FASTBOOT_CMD_CTRL_UART": "P2-boot-diagnostic",
+              "QCOM_MINIDUMP_ENCRYPT": "P2-diagnostic",
+          }
+
+          def gitgrep(args):
+              p = subprocess.run(["git", "-C", repo, "grep", "-n"] + args,
+                                 text=True, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+              if p.returncode not in (0, 1):
+                  raise SystemExit(f"git grep failed: {args} rc={p.returncode}")
+              return [x for x in p.stdout.splitlines() if x.strip()]
+
+          rows = []
+          all_hits = []
+          for sym in symbols:
+              # Kconfig declaration, allowing config/menuconfig and indentation.
+              decl_rx = rf"^[[:space:]]*(menu)?config[[:space:]]+{re.escape(sym)}([[:space:]]|$)"
+              decl = gitgrep(["-E", decl_rx, "--", "*Kconfig*"])
+              macro = gitgrep(["-F", f"CONFIG_{sym}", "--", "*.c", "*.h", "*.S", "*.s", "*Kconfig*", "Makefile", "Kbuild", "*.mk"])
+
+              # Exclude the declaration itself from the usage count where possible.
+              source_macro = [x for x in macro if not re.search(r"(?:^|/)Kconfig[^:]*:", x)]
+
+              if decl and source_macro:
+                  cls = "present-definition-and-source-refs"
+                  next_action = "inspect dependency chain/default/select and why olddefconfig drops it"
+              elif decl:
+                  cls = "present-definition-no-source-ref"
+                  next_action = "inspect Kconfig dependency/reachability; likely marker or indirect build switch"
+              elif source_macro:
+                  cls = "source-refs-but-definition-missing"
+                  next_action = "recover matching Kconfig definition/dependencies before any build experiment"
+              else:
+                  cls = "source-and-kconfig-absent"
+                  next_action = "recover/document implementation from matching Lisa/Xiaomi lineage; do not force undefined CONFIG"
+
+              tag = priority.get(sym, "P3-runtime-or-vendor")
+              rows.append({
+                  "symbol": f"CONFIG_{sym}",
+                  "priority": tag,
+                  "classification": cls,
+                  "kconfig_declarations": len(decl),
+                  "source_macro_refs": len(source_macro),
+                  "next_action": next_action,
+              })
+              all_hits.append(f"===== CONFIG_{sym} =====")
+              all_hits.append("-- Kconfig declarations --")
+              all_hits.extend(decl[:80] or ["<none>"])
+              all_hits.append("-- source/build CONFIG_ references --")
+              all_hits.extend(source_macro[:160] or ["<none>"])
+              all_hits.append("")
+
+          with open("stock-only-config-classification.tsv", "w", newline="") as f:
+              w = csv.DictWriter(f, fieldnames=rows[0].keys(), delimiter="\t")
+              w.writeheader(); w.writerows(rows)
+          Path("stock-only-config-hits.txt").write_text("\n".join(all_hits) + "\n")
+
+          counts = {}
+          for r in rows:
+              counts[r["classification"]] = counts.get(r["classification"], 0) + 1
+
+          with open("stock-only-config-summary.txt", "w") as f:
+              f.write(f"SOURCE_SHA={Path(repo + '/.git/HEAD').read_text().strip()}\n")
+              f.write(f"TOTAL_UNRESOLVED_STOCK_CONFIGS={len(rows)}\n")
+              for k in sorted(counts):
+                  f.write(f"CLASS_{k}={counts[k]}\n")
+              for r in rows:
+                  f.write("{symbol}\t{priority}\t{classification}\tdecl={kconfig_declarations}\trefs={source_macro_refs}\n".format(**r))
+              f.write("LISA_STOCK_ONLY_CONFIG_GAP_CLASSIFICATION=PASS\n")
+
+          print(Path("stock-only-config-summary.txt").read_text())
+          PY
+
+      - name: Gate classification completeness
+        run: |
+          set -euo pipefail
+          test "$(tail -n +2 stock-only-config-classification.tsv | wc -l)" -eq 22
+          grep -Fqx 'LISA_STOCK_ONLY_CONFIG_GAP_CLASSIFICATION=PASS' stock-only-config-summary.txt
+          echo 'LISA_STOCK_ONLY_CONFIG_GAP_GATE=PASS'
+
+      - name: Upload diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-only-config-gap-classification
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            unresolved-stock-configs.txt
+            stock-only-config-summary.txt
+            stock-only-config-classification.tsv
+            stock-only-config-hits.txt
