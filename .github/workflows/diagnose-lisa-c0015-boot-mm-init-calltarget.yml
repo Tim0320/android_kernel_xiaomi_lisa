@@ -1,0 +1,256 @@
+name: Diagnose Lisa Candidate 0015 boot mm_init call target
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0015-boot-mm-init-calltarget.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0015-boot-mm-init-calltarget
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      HEALTHY_STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0015_ARTIFACT_ID: "10810774162"
+      C0015_IMAGE_SHA256: c40049716600f16d85e87abad8e7c4613dfbdb7dd8cef198cfb774674eef4ccc
+
+    steps:
+      - name: Checkout exact user baseline metadata
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Authenticate user baseline
+        run: |
+          set -euo pipefail
+          test -s "$HEALTHY_STOCK_BOOT"
+          test "$(sha256sum "$HEALTHY_STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          for f in vendor_boot.img dtbo.img vbmeta.img vbmeta_system.img; do
+            p="$COMPANION_BASE/$f"
+            test -s "$p"
+            if head -c 96 "$p" | grep -aFq 'version https://git-lfs.github.com/spec/v1'; then
+              echo "$p is still a Git LFS pointer" >&2
+              exit 1
+            fi
+          done
+          echo 'COMPANION_BASE=stock-Image-3.09'
+          echo 'BASELINE_AUTH_GATE=PASS'
+
+      - name: Install analysis tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip binutils-aarch64-linux-gnu
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+          command -v vmlinux-to-elf
+          command -v aarch64-linux-gnu-objdump
+
+      - name: Materialize exact stock and Candidate 0015 Images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, struct
+          b=Path(os.environ['HEALTHY_STOCK_BOOT']).read_bytes()
+          if b[:8] != b'ANDROID!':
+              raise SystemExit('bad stock boot magic')
+          ksz=struct.unpack_from('<I',b,8)[0]
+          Path('stock-Image').write_bytes(b[4096:4096+ksz])
+          print(f'STOCK_IMAGE_BYTES={ksz}')
+          PY
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0015_ARTIFACT_ID}/zip" \
+            -o c0015.zip
+          mkdir c0015
+          unzip -q c0015.zip -d c0015
+          img="$(find c0015 -type f -name candidate-0015-Image -print -quit)"
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0015-Image
+          test "$(sha256sum candidate-0015-Image | awk '{print $1}')" = "$C0015_IMAGE_SHA256"
+          echo 'INPUT_IMAGE_GATE=PASS'
+
+      - name: Recover kallsyms and ELF containers
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder candidate-0015-Image > c0015.kallsyms
+          test -s stock.kallsyms
+          test -s c0015.kallsyms
+          vmlinux-to-elf stock-Image stock.elf > stock-vmlinux-to-elf.log 2>&1
+          vmlinux-to-elf candidate-0015-Image c0015.elf > c0015-vmlinux-to-elf.log 2>&1
+          test -s stock.elf
+          test -s c0015.elf
+
+      - name: Resolve the boot mm_init from the actual start_kernel call
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee boot-mm-init-summary.txt
+          from pathlib import Path
+          import difflib
+          import re
+          import subprocess
+
+          line_rx=re.compile(r'^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$')
+          insn_rx1=re.compile(r'^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+){4}\s*([a-z0-9.]+)\s*(.*)$',re.I)
+          insn_rx2=re.compile(r'^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+([a-z0-9.]+)\s*(.*)$',re.I)
+          suffixes=[
+              re.compile(r'\.llvm\.[0-9A-Fa-f]+$'),
+              re.compile(r'\.(?:isra|constprop|part|cold)\.\d+$'),
+              re.compile(r'\.cfi_jt$'),
+              re.compile(r'\.\d+$'),
+          ]
+
+          def canon(s):
+              s=s.split('+',1)[0]
+              s=re.sub(r'\$[0-9a-fA-F]{16,}$','',s)
+              old=None
+              while old != s:
+                  old=s
+                  for rx in suffixes:
+                      s=rx.sub('',s)
+              return s
+
+          def syms(path):
+              out=[]
+              for raw in Path(path).read_text(errors='replace').splitlines():
+                  m=line_rx.match(raw)
+                  if m and m.group(2) in 'TtWw':
+                      out.append((int(m.group(1),16),m.group(2),m.group(3)))
+              out.sort(key=lambda x:(x[0],x[2]))
+              return out
+
+          def next_addr(rows,start,cap=0x40000):
+              greater=sorted({a for a,_,_ in rows if a>start})
+              return min(greater[0] if greater else start+cap,start+cap)
+
+          def disasm(elf,start,stop):
+              return subprocess.run([
+                  'aarch64-linux-gnu-objdump','-d',
+                  f'--start-address=0x{start:x}',f'--stop-address=0x{stop:x}',elf
+              ],check=True,capture_output=True,text=True).stdout
+
+          def exact(rows,name):
+              return [r for r in rows if r[2]==name]
+
+          def find_call_target(rows,elf,caller,callee):
+              callers=exact(rows,caller)
+              if len(callers)!=1:
+                  raise SystemExit(f'{elf}: expected one {caller}, got {callers}')
+              start=callers[0][0]
+              text=disasm(elf,start,next_addr(rows,start))
+              hits=[]
+              for raw in text.splitlines():
+                  m=insn_rx1.match(raw) or insn_rx2.match(raw)
+                  if not m:
+                      continue
+                  op=m.group(1).lower(); operands=m.group(2).strip()
+                  sm=re.search(r'<([^>]+)>',operands)
+                  am=re.match(r'([0-9a-fA-F]+)',operands)
+                  if op=='bl' and sm and am and canon(sm.group(1))==callee:
+                      hits.append(int(am.group(1),16))
+              if len(hits)!=1:
+                  raise SystemExit(f'{elf}: expected one {caller}->{callee} call, got {[hex(x) for x in hits]}')
+              return hits[0],text
+
+          def normalize(text,start,stop):
+              seq=[]; calls=[]; tails=[]
+              for raw in text.splitlines():
+                  m=insn_rx1.match(raw) or insn_rx2.match(raw)
+                  if not m:
+                      continue
+                  op=m.group(1).lower(); operands=m.group(2).strip()
+                  if op in ('nop','hint'):
+                      continue
+                  sm=re.search(r'<([^>]+)>',operands)
+                  sym=canon(sm.group(1)) if sm else None
+                  norm=op
+                  if op in ('b','bl','br','blr','ret','cbz','cbnz','tbz','tbnz') or op.startswith('b.'):
+                      if sym:
+                          norm += ' <'+sym+'>'
+                  seq.append(norm)
+                  if op=='bl' and sym:
+                      calls.append(sym)
+                  elif op=='b' and sym:
+                      am=re.match(r'([0-9a-fA-F]+)',operands)
+                      if am:
+                          d=int(am.group(1),16)
+                          if not (start <= d < stop):
+                              tails.append(sym)
+              return seq,calls,tails
+
+          sr=syms('stock.kallsyms'); cr=syms('c0015.kallsyms')
+          stock_dups=exact(sr,'mm_init'); cand_dups=exact(cr,'mm_init')
+          sa,_=find_call_target(sr,'stock.elf','start_kernel','mm_init')
+          ca,_=find_call_target(cr,'c0015.elf','start_kernel','mm_init')
+          if sa not in [x[0] for x in stock_dups]:
+              raise SystemExit(f'stock call target 0x{sa:x} not among mm_init symbols')
+          if ca not in [x[0] for x in cand_dups]:
+              raise SystemExit(f'candidate call target 0x{ca:x} not among mm_init symbols')
+
+          se=next_addr(sr,sa); ce=next_addr(cr,ca)
+          sd=disasm('stock.elf',sa,se); cd=disasm('c0015.elf',ca,ce)
+          Path('boot-mm_init-stock.S').write_text(sd)
+          Path('boot-mm_init-c0015.S').write_text(cd)
+          ss,sc,st=normalize(sd,sa,se); cs,cc,ct=normalize(cd,ca,ce)
+          Path('boot-mm_init-semantic.diff').write_text('\n'.join(difflib.unified_diff(ss,cs,fromfile='stock',tofile='c0015',n=5))+'\n')
+          equal=(ss==cs and sc==cc and st==ct)
+
+          print('STOCK_MM_INIT_SYMBOLS='+','.join(f'0x{x[0]:x}' for x in stock_dups))
+          print('C0015_MM_INIT_SYMBOLS='+','.join(f'0x{x[0]:x}' for x in cand_dups))
+          print(f'STOCK_START_KERNEL_MM_INIT_TARGET=0x{sa:x}')
+          print(f'C0015_START_KERNEL_MM_INIT_TARGET=0x{ca:x}')
+          print(f'STOCK_BOOT_MM_INIT_INSNS={len(ss)}')
+          print(f'C0015_BOOT_MM_INIT_INSNS={len(cs)}')
+          print('STOCK_BOOT_MM_INIT_CALLS='+','.join(sc))
+          print('C0015_BOOT_MM_INIT_CALLS='+','.join(cc))
+          print('BOOT_MM_INIT_SEMANTIC='+('EQUAL' if equal else 'DIFF'))
+          print('MM_INIT_DUPLICATE_NAME_HAZARD=CONFIRMED' if len(stock_dups)>1 or len(cand_dups)>1 else 'MM_INIT_DUPLICATE_NAME_HAZARD=ABSENT')
+          print('LISA_C0015_BOOT_MM_INIT_CALLTARGET=PASS')
+          PY
+
+      - name: Final diagnostic gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'LISA_C0015_BOOT_MM_INIT_CALLTARGET=PASS' boot-mm-init-summary.txt
+          grep -Fqx 'MM_INIT_DUPLICATE_NAME_HAZARD=CONFIRMED' boot-mm-init-summary.txt
+          cat boot-mm-init-summary.txt
+          cat boot-mm_init-semantic.diff
+
+      - name: Upload boot mm_init diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0015-boot-mm-init-calltarget
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            boot-mm-init-summary.txt
+            boot-mm_init-stock.S
+            boot-mm_init-c0015.S
+            boot-mm_init-semantic.diff
+            stock.kallsyms
+            c0015.kallsyms
+            stock-vmlinux-to-elf.log
+            c0015-vmlinux-to-elf.log
