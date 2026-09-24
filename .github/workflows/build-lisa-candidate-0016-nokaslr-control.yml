@@ -1,0 +1,207 @@
+name: Build Lisa Candidate 0016 nokaslr control
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0016-nokaslr-control.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0016-nokaslr
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      C0015_ARTIFACT_ID: "10810774162"
+      C0015_BOOT_SHA256: 5d82a39039b5c4a3e1f3642d81283f9cc3e35fb18e812dbede5dd9d23ea4da71
+      C0015_IMAGE_SHA256: c40049716600f16d85e87abad8e7c4613dfbdb7dd8cef198cfb774674eef4ccc
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+      BASE_VENDOR_BOOT_SHA256: a94ecc2b8e53666693fd3cfc99ad07b5f24f586e85841728bf1d41333bc4b053
+
+    steps:
+      - name: Checkout exact 3.09 companion baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Authenticate 3.09 vendor_boot
+        run: |
+          set -euo pipefail
+          test -s "$COMPANION_BASE/vendor_boot.img"
+          test "$(sha256sum "$COMPANION_BASE/vendor_boot.img" | awk '{print $1}')" = "$BASE_VENDOR_BOOT_SHA256"
+          test "$(head -c 8 "$COMPANION_BASE/vendor_boot.img")" = "VNDRBOOT"
+          echo "BASE_3_09_VENDOR_BOOT_GATE=PASS"
+
+      - name: Download exact Candidate 0015 artifact
+        run: |
+          set -euo pipefail
+          mkdir -p input
+          curl -fL \
+            -H "Authorization: Bearer ${{ github.token }}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0015_ARTIFACT_ID}/zip" \
+            -o c0015.zip
+          unzip -q c0015.zip -d input
+          test "$(sha256sum input/boot.img | awk '{print $1}')" = "$C0015_BOOT_SHA256"
+          test "$(sha256sum input/candidate-0015-Image | awk '{print $1}')" = "$C0015_IMAGE_SHA256"
+          grep -Fqx 'CONFIG_RANDOMIZE_BASE=y' input/candidate-0015.ikconfig
+          echo "C0015_INPUT_GATE=PASS"
+
+      - name: Patch only 3.09 vendor_boot cmdline with nokaslr
+        run: |
+          set -euo pipefail
+          mkdir -p candidate-0016 rollback-3.09
+          cp input/boot.img candidate-0016/boot.img
+          cp "$COMPANION_BASE/vendor_boot.img" rollback-3.09/vendor_boot.img
+
+          python3 - <<'PY' | tee candidate-0016-patch.txt
+          from pathlib import Path
+          import hashlib, struct
+
+          src=Path("rollback-3.09/vendor_boot.img").read_bytes()
+          data=bytearray(src)
+          if src[:8] != b"VNDRBOOT":
+              raise SystemExit("vendor_boot magic mismatch")
+
+          header_version, page_size = struct.unpack_from("<II", src, 8)
+          if header_version not in (3,4):
+              raise SystemExit(f"unsupported vendor_boot header version {header_version}")
+          if page_size != 4096:
+              raise SystemExit(f"unexpected vendor_boot page size {page_size}")
+
+          cmd_off=28
+          cmd_len=2048
+          old=src[cmd_off:cmd_off+cmd_len].split(b"\0",1)[0]
+          words=old.split()
+          if b"nokaslr" in words:
+              raise SystemExit("baseline vendor_boot already has nokaslr")
+
+          new=old + (b" " if old else b"") + b"nokaslr"
+          if len(new) >= cmd_len:
+              raise SystemExit("vendor cmdline overflow")
+
+          data[cmd_off:cmd_off+cmd_len]=b"\0"*cmd_len
+          data[cmd_off:cmd_off+len(new)]=new
+
+          changed=[i for i,(a,b) in enumerate(zip(src,data)) if a!=b]
+          if not changed:
+              raise SystemExit("patch changed no bytes")
+          if min(changed)<cmd_off or max(changed)>=cmd_off+cmd_len:
+              raise SystemExit("bytes changed outside vendor cmdline")
+
+          # Strong single-variable gate: every byte outside the cmdline field stays exact.
+          if bytes(data[:cmd_off]) != src[:cmd_off] or bytes(data[cmd_off+cmd_len:]) != src[cmd_off+cmd_len:]:
+              raise SystemExit("vendor_boot payload drift outside cmdline")
+
+          Path("candidate-0016/vendor_boot.img").write_bytes(data)
+          sha=lambda b: hashlib.sha256(b).hexdigest()
+          print(f"header_version={header_version}")
+          print(f"page_size={page_size}")
+          print("old_cmdline="+old.decode("utf-8","replace"))
+          print("new_cmdline="+new.decode("utf-8","replace"))
+          print(f"changed_byte_count={len(changed)}")
+          print(f"changed_first_offset={min(changed)}")
+          print(f"changed_last_offset={max(changed)}")
+          print(f"base_vendor_boot_sha256={sha(src)}")
+          print(f"patched_vendor_boot_sha256={sha(data)}")
+          print("VENDOR_BOOT_ONLY_CMDLINE_CHANGED=PASS")
+          PY
+
+      - name: Verify Candidate 0016 single-variable scope
+        run: |
+          set -euo pipefail
+          test "$(sha256sum candidate-0016/boot.img | awk '{print $1}')" = "$C0015_BOOT_SHA256"
+          test "$(sha256sum rollback-3.09/vendor_boot.img | awk '{print $1}')" = "$BASE_VENDOR_BOOT_SHA256"
+          grep -Fqx 'VENDOR_BOOT_ONLY_CMDLINE_CHANGED=PASS' candidate-0016-patch.txt
+          grep -F 'new_cmdline=' candidate-0016-patch.txt | grep -Eq '(^| )nokaslr($| )'
+          echo "C0016_NOKASLR_SCOPE_GATE=PASS"
+
+      - name: Write manifest and device test plan
+        run: |
+          set -euo pipefail
+          PATCHED_SHA="$(sha256sum candidate-0016/vendor_boot.img | awk '{print $1}')"
+          cat > candidate-0016-manifest.txt <<EOF
+          candidate=Lisa Candidate 0016 nokaslr runtime-relocation control
+          base_candidate=Candidate 0015
+          boot_sha256=$C0015_BOOT_SHA256
+          base_vendor_boot_sha256=$BASE_VENDOR_BOOT_SHA256
+          patched_vendor_boot_sha256=$PATCHED_SHA
+          companion_base=stock-Image-3.09
+          mutation=vendor_boot header cmdline appends nokaslr only
+          kernel_image_unchanged=1
+          ramdisk_payload_unchanged=1
+          dtb_payload_unchanged=1
+          purpose=isolate ARM64 KASLR/runtime relocation path after Start EBS
+          LISA_CANDIDATE_0016_PACKAGE_GATE=PASS
+          EOF
+
+          cat > FLASH_PLAN.txt <<'EOF'
+          Lisa Candidate 0016 — nokaslr runtime-relocation control
+
+          This is a diagnostic control, not a final kernel.
+
+          Preserved:
+          - Candidate 0015 boot.img byte-for-byte
+          - stock-Image-3.09 vendor ramdisk / modules / DTB / remaining vendor_boot bytes
+          - current stock-Image-3.09 dtbo / firmware / vbmeta state
+          - user's current ported super
+
+          Single mutation:
+          - append "nokaslr" to stock-Image-3.09 vendor_boot header cmdline
+
+          If Candidate 0015 boot_a is still installed:
+            fastboot flash vendor_boot_a candidate-0016\vendor_boot.img
+            fastboot --set-active=a
+            fastboot reboot
+
+          Full reproducible pair:
+            fastboot flash boot_a candidate-0016\boot.img
+            fastboot flash vendor_boot_a candidate-0016\vendor_boot.img
+            fastboot --set-active=a
+            fastboot reboot
+
+          Rollback only this diagnostic:
+            fastboot flash vendor_boot_a rollback-3.09\vendor_boot.img
+            fastboot --set-active=a
+            fastboot reboot
+
+          Interpretation:
+          - boots: KASLR/runtime relocation path becomes the primary suspect.
+          - same black-screen reboot: KASLR relocation is excluded as sufficient cause.
+          EOF
+
+          sha256sum candidate-0016/* rollback-3.09/* | sort | tee PACKAGE_SHA256SUMS.txt
+
+      - name: Final gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'BASE_3_09_VENDOR_BOOT_GATE=PASS' <(echo BASE_3_09_VENDOR_BOOT_GATE=PASS)
+          grep -Fqx 'C0016_NOKASLR_SCOPE_GATE=PASS' <(echo C0016_NOKASLR_SCOPE_GATE=PASS)
+          grep -Fqx 'LISA_CANDIDATE_0016_PACKAGE_GATE=PASS' candidate-0016-manifest.txt
+          echo "LISA_CANDIDATE_0016_FINAL_GATE=PASS"
+
+      - name: Upload Candidate 0016 package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0016-nokaslr
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            candidate-0016/
+            rollback-3.09/
+            candidate-0016-patch.txt
+            candidate-0016-manifest.txt
+            FLASH_PLAN.txt
+            PACKAGE_SHA256SUMS.txt
