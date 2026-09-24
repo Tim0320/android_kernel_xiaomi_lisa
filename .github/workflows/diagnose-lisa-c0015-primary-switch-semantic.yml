@@ -1,0 +1,166 @@
+name: Diagnose Lisa Candidate 0015 primary-switch semantics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0015-primary-switch-semantic.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0014_ARTIFACT_ID: "10802392237"
+      C0014_IMAGE_SHA256: 47b1a9126866c31db49ae0bdf06bb7e0205ae516dcc65552d231914c126b7094
+      C0015_ARTIFACT_ID: "10810774162"
+      C0015_IMAGE_SHA256: c40049716600f16d85e87abad8e7c4613dfbdb7dd8cef198cfb774674eef4ccc
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Install tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip binutils-aarch64-linux-gnu
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+
+      - name: Materialize three Images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b=Path("reconstruction/stock/stock-Image/boot.img").read_bytes()
+          ksz=struct.unpack_from("<I",b,8)[0]
+          Path("stock-Image").write_bytes(b[4096:4096+ksz])
+          PY
+          for spec in "0014:$C0014_ARTIFACT_ID:$C0014_IMAGE_SHA256" "0015:$C0015_ARTIFACT_ID:$C0015_IMAGE_SHA256"; do
+            IFS=: read -r tag aid sha <<<"$spec"
+            curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${aid}/zip" -o "c${tag}.zip"
+            mkdir "c${tag}"
+            unzip -q "c${tag}.zip" -d "c${tag}"
+            img="$(find "c${tag}" -type f -name "candidate-${tag}-Image" -print -quit)"
+            test -n "$img"
+            cp "$img" "candidate-${tag}-Image"
+            test "$(sha256sum "candidate-${tag}-Image" | awk '{print $1}')" = "$sha"
+          done
+
+      - name: Recover symbols and ELF
+        run: |
+          set -euo pipefail
+          for x in stock c0014 c0015; do
+            case "$x" in
+              stock) img=stock-Image ;;
+              c0014) img=candidate-0014-Image ;;
+              c0015) img=candidate-0015-Image ;;
+            esac
+            kallsyms-finder "$img" > "$x.kallsyms"
+            vmlinux-to-elf "$img" "$x.elf" >/tmp/"$x".log 2>&1
+          done
+
+      - name: Compare executable primary-switch prefix
+        run: |
+          set -euo pipefail
+          mkdir -p semantic
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,subprocess
+
+          symrx=re.compile(r"^([0-9a-fA-F]+)\s+([Tt])\s+(.+?)\s*$")
+          def addr(label):
+              rows=[]
+              for line in Path(label+".kallsyms").read_text(errors="replace").splitlines():
+                  m=symrx.match(line)
+                  if m: rows.append((int(m.group(1),16),m.group(3)))
+              rows.sort()
+              exact=[r for r in rows if r[1]=="__primary_switch"]
+              if not exact: raise SystemExit("missing __primary_switch "+label)
+              start=exact[0][0]
+              greater=sorted(set(a for a,_ in rows if a>start))
+              return start,min(greater[0] if greater else start+0x200,start+0x200)
+
+          for label in ["stock","c0014","c0015"]:
+              s,e=addr(label)
+              out=subprocess.check_output([
+                  "aarch64-linux-gnu-objdump","-d",
+                  f"--start-address=0x{s:x}",f"--stop-address=0x{e:x}",
+                  label+".elf"
+              ],text=True,errors="replace")
+              Path(f"semantic/{label}.S").write_text(out)
+          PY
+
+          python3 - <<'PY' | tee primary-switch-semantic-summary.txt
+          from pathlib import Path
+          import difflib,re,hashlib
+
+          insn=re.compile(r"^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+){4}(.*)$",re.I)
+          word=re.compile(r"^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+(.*)$",re.I)
+
+          def canon_symbol(n):
+              n=re.sub(r"\+0x[0-9a-f]+$","",n,flags=re.I)
+              n=re.sub(r"\.cfi_jt$","",n)
+              n=re.sub(r"\.llvm\.[0-9A-Fa-f]+$","",n)
+              n=re.sub(r"\.(?:isra|constprop|part)\.\d+$","",n)
+              n=re.sub(r"\.\d{3,}$","",n)
+              return n
+
+          def prefix(label):
+              out=[]
+              for raw in Path(f"semantic/{label}.S").read_text(errors="replace").splitlines():
+                  m=insn.match(raw) or word.match(raw)
+                  if not m: continue
+                  t=m.group(1).strip()
+                  t=re.sub(r"<([^>]+)>",lambda m:"<"+canon_symbol(m.group(1))+">",t)
+                  t=re.sub(r"\b(?:0x)?f{4,}[0-9a-f]{6,}\b","<ADDR>",t,flags=re.I)
+                  t=re.sub(r"\b[0-9a-f]{12,16}\b","<ADDR>",t,flags=re.I)
+                  out.append(t)
+                  # __primary_switch terminates by branching into the virtual mapping.
+                  if re.match(r"^br\s+x8(?:\s|$)",t):
+                      break
+              return out
+
+          s=prefix("stock"); c14=prefix("c0014"); c15=prefix("c0015")
+          for label,arr in [("stock",s),("c0014",c14),("c0015",c15)]:
+              Path(f"semantic/{label}.prefix").write_text("\n".join(arr)+"\n")
+              print(f"{label.upper()}_EXEC_PREFIX_LINES={len(arr)}")
+              print(f"{label.upper()}_EXEC_PREFIX_SHA256={hashlib.sha256(chr(10).join(arr).encode()).hexdigest()}")
+
+          print("C0014_EXEC_PREFIX_EQUALS_STOCK="+str(int(c14==s)))
+          print("C0015_EXEC_PREFIX_EQUALS_STOCK="+str(int(c15==s)))
+          print("C0015_EXEC_PREFIX_IMPROVED_OVER_C0014="+str(int(c15==s and c14!=s)))
+          if c15!=s:
+              print("C0015_SEMANTIC_DIFF_BEGIN")
+              for l in difflib.unified_diff(s,c15,fromfile="stock",tofile="c0015",lineterm=""):
+                  print(l)
+              print("C0015_SEMANTIC_DIFF_END")
+          if not (c15==s and c14!=s):
+              raise SystemExit("Candidate 0015 did not isolate the executable primary-switch path")
+          print("LISA_C0015_PRIMARY_SWITCH_SEMANTIC_GATE=PASS")
+          PY
+
+      - name: Upload diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0015-primary-switch-semantic
+          retention-days: 14
+          path: |
+            primary-switch-semantic-summary.txt
+            semantic/
