@@ -184,7 +184,7 @@ jobs:
                   r_offset, r_info, r_addend = struct.unpack_from("<QQq", raw, off)
                   if r_offset == vaddr:
                       rtype = r_info & 0xffffffff
-                      return int(r_addend), f"raw-rela-dyn:type={rtype}:entry_off=0x{off:x}"
+                      target = int(r_addend) & ((1 << 64) - 1)\n                      return target, f"raw-rela-dyn:type={rtype}:entry_off=0x{off:x}"
 
               raise SystemExit(f"no relocation found for initcall slot 0x{vaddr:x}")
 
