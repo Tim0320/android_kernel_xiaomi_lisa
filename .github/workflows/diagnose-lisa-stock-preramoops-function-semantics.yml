@@ -52,6 +52,7 @@ jobs:
           command -v kallsyms-finder
           command -v vmlinux-to-elf
           command -v aarch64-linux-gnu-objdump
+          command -v aarch64-linux-gnu-readelf
 
       - name: Extract exact stock and Candidate 0014 Images
         env:
@@ -131,24 +132,61 @@ jobs:
 
           image_base = text_addrs[0]
 
-          def read_u64_from_elf_vaddr(path, vaddr):
+          def resolve_relocated_pointer(path, vaddr):
               with open(path, "rb") as stream:
                   elf = ELFFile(stream)
-                  for segment in elf.iter_segments():
-                      if segment["p_type"] != "PT_LOAD":
+                  # First prefer explicit relocation sections in the recovered ELF.
+                  for section in elf.iter_sections():
+                      if section["sh_type"] not in ("SHT_RELA", "SHT_REL"):
                           continue
-                      start = int(segment["p_vaddr"])
-                      filesz = int(segment["p_filesz"])
-                      if start <= vaddr and vaddr + 8 <= start + filesz:
-                          file_off = int(segment["p_offset"]) + (vaddr - start)
-                          stream.seek(file_off)
-                          data = stream.read(8)
-                          if len(data) != 8:
-                              raise SystemExit(
-                                  f"short ELF read for vaddr 0x{vaddr:x} at file offset 0x{file_off:x}"
-                              )
-                          return struct.unpack("<Q", data)[0]
-              raise SystemExit(f"no PT_LOAD maps vaddr 0x{vaddr:x}")
+                      for reloc in section.iter_relocations():
+                          if int(reloc["r_offset"]) != vaddr:
+                              continue
+                          rtype = int(reloc["r_info_type"])
+                          # AArch64 R_AARCH64_RELATIVE = 1027. Its addend is the
+                          # final kernel virtual target for these initcall slots.
+                          if section["sh_type"] == "SHT_RELA":
+                              addend = int(reloc["r_addend"])
+                              return addend, f"elf-reloc-section:{section.name}:type={rtype}"
+                          raise SystemExit(
+                              f"REL without addend at initcall slot 0x{vaddr:x} "
+                              f"in {section.name}, type={rtype}"
+                          )
+
+              # vmlinux-to-elf may consume/drop relocation sections. Fall back to
+              # the original stock Image's in-image .rela.dyn table using its
+              # recovered kallsyms boundaries.
+              syms = {
+                  name: addr
+                  for addr, typ, name in stock
+                  if name in ("__rela_dyn_start", "__rela_dyn_end")
+              }
+              if "__rela_dyn_start" not in syms or "__rela_dyn_end" not in syms:
+                  raise SystemExit(
+                      f"no ELF relocation section and no __rela_dyn_start/end "
+                      f"for initcall slot 0x{vaddr:x}"
+                  )
+
+              raw = Path("stock-Image").read_bytes()
+              rela_start = syms["__rela_dyn_start"]
+              rela_end = syms["__rela_dyn_end"]
+              off_start = rela_start - image_base
+              off_end = rela_end - image_base
+              if off_start < 0 or off_end > len(raw) or off_end <= off_start:
+                  raise SystemExit(
+                      f"bad raw .rela.dyn bounds: "
+                      f"0x{rela_start:x}..0x{rela_end:x} base=0x{image_base:x}"
+                  )
+              if (off_end - off_start) % 24:
+                  raise SystemExit("raw .rela.dyn size is not Elf64_Rela aligned")
+
+              for off in range(off_start, off_end, 24):
+                  r_offset, r_info, r_addend = struct.unpack_from("<QQq", raw, off)
+                  if r_offset == vaddr:
+                      rtype = r_info & 0xffffffff
+                      return int(r_addend), f"raw-rela-dyn:type={rtype}:entry_off=0x{off:x}"
+
+              raise SystemExit(f"no relocation found for initcall slot 0x{vaddr:x}")
 
           cand_init_targets = set()
           for _, _, name in cand:
@@ -168,10 +206,9 @@ jobs:
                   raise SystemExit(f"expected one stock initcall pointer for {target}, got {entries}")
 
               ptr_addr, init_symbol = entries[0]
-              # The raw Image contains relocation placeholders for this table.
-              # stock.elf has already had RELA relocations applied by vmlinux-to-elf,
-              # so read the pointer from the mapped PT_LOAD bytes instead.
-              start = read_u64_from_elf_vaddr("stock.elf", ptr_addr)
+              # Resolve the slot through its AArch64 relocation rather than
+              # reading the zero placeholder stored in the flat Image.
+              start, reloc_source = resolve_relocated_pointer("stock.elf", ptr_addr)
               if not (image_base <= start < image_base + 0x40000000):
                   raise SystemExit(
                       f"decoded relocated target outside expected stock kernel VA range for {target}: "
@@ -196,6 +233,7 @@ jobs:
                   ptr_addr,
                   init_symbol,
                   ",".join(exact_names) if exact_names else "<no-exact-kallsyms-name>",
+                  reloc_source,
               ))
 
               out_path = Path(f"stock-{target}.S")
@@ -216,12 +254,13 @@ jobs:
 
           header = (
               "function\tstart\tstop\tbytes\tpresent_in_c0014\t"
-              "stock_initcall_ptr\tstock_initcall_symbol\tstock_exact_text_symbol"
+              "stock_initcall_ptr\tstock_initcall_symbol\tstock_exact_text_symbol\t"
+              "relocation_source"
           )
           lines = [
               f"{target}\t0x{start:x}\t0x{stop:x}\t{size}\t{present}\t"
-              f"0x{ptr:x}\t{init_symbol}\t{text_symbol}"
-              for target, start, stop, size, present, ptr, init_symbol, text_symbol in output_rows
+              f"0x{ptr:x}\t{init_symbol}\t{text_symbol}\t{reloc_source}"
+              for target, start, stop, size, present, ptr, init_symbol, text_symbol, reloc_source in output_rows
           ]
           Path("bounded-ranges.tsv").write_text(header + "\n" + "\n".join(lines) + "\n")
           Path("bounded-ranges.txt").write_text(
