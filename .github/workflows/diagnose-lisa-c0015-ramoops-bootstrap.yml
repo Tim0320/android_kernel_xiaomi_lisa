@@ -205,13 +205,19 @@ jobs:
           def addr(rows,name):
               def key(s):
                   s=s.split("+",1)[0]
-                  s=re.sub(r"\\.(?:cfi_jt|cfi)$","",s)
-                  s=re.sub(r"\\$[0-9a-fA-F]{8,}$","",s)
-                  s=re.sub(r"\\.llvm\\.[0-9A-Fa-f]+$","",s)
-                  s=re.sub(r"\\.(?:isra|constprop|part|cold)\\.\\d+$","",s)
+                  for suffix in (".cfi_jt",".cfi"):
+                      if s.endswith(suffix):
+                          s=s[:-len(suffix)]
+                          break
+                  if "$" in s:
+                      base,tail=s.rsplit("$",1)
+                      if len(tail)>=8 and all(ch in "0123456789abcdefABCDEF" for ch in tail):
+                          s=base
+                  s=re.sub(r"\.llvm\.[0-9A-Fa-f]+$","",s)
+                  s=re.sub(r"\.(?:isra|constprop|part|cold)\.\d+$","",s)
                   return s
               hits=[(a,n) for a,t,n in rows if t in "TtWw" and key(n)==name]
-              bodies=[(a,n) for a,n in hits if not re.search(r"\\.(?:cfi_jt|cfi)$",n)]
+              bodies=[(a,n) for a,n in hits if not (n.endswith(".cfi_jt") or n.endswith(".cfi"))]
               if len(bodies)==1:
                   return bodies[0][0]
               if len(hits)==1:
