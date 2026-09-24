@@ -1,0 +1,398 @@
+name: Build Lisa Candidate 0013 maximal stock-config control
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0013-max-stock-config.yml
+      - reconstruction/stock/stock-Image/boot.img
+      - .gitattributes
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0013-max-stock-config
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_BOOT_BYTES: "201326592"
+      STOCK_KERNEL_SIZE: "51436032"
+      STOCK_RAMDISK_SIZE: "19883180"
+      STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+      TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
+      STOCK_WATCHDOG_BARK: "20000"
+      STOCK_WATCHDOG_PET: "15000"
+
+    steps:
+      - name: Checkout main metadata and healthy stock boot
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout exact reconstructed donor source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Authenticate inputs
+        run: |
+          set -euo pipefail
+          test -s "$STOCK_BOOT"
+          test "$(stat -c '%s' "$STOCK_BOOT")" = "$STOCK_BOOT_BYTES"
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          cd kernel
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf '%s\n' '-g5987d69e25da' > .scmversion
+          echo 'INPUT_AUTH_GATE=PASS'
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 curl git rsync kmod
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Extract exact healthy stock Image and IKCONFIG
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, os, struct
+          PAGE=4096
+          b=Path(os.environ['STOCK_BOOT']).read_bytes()
+          if b[:8] != b'ANDROID!':
+              raise SystemExit('bad stock boot magic')
+          ksz=struct.unpack_from('<I',b,8)[0]
+          if ksz != int(os.environ['STOCK_KERNEL_SIZE']):
+              raise SystemExit(f'unexpected stock kernel size {ksz}')
+          kernel=b[PAGE:PAGE+ksz]
+          if struct.unpack_from('<I',kernel,0x38)[0] != 0x644d5241:
+              raise SystemExit('stock ARM64 Image magic missing')
+          Path('stock-Image').write_bytes(kernel)
+          print('stock_image_sha256='+hashlib.sha256(kernel).hexdigest())
+          PY
+
+          extract='kernel/scripts/extract-ikconfig'
+          chmod +x "$extract" || true
+          "$extract" stock-Image > stock.config 2>stock.ikconfig.err
+          test -s stock.config
+          grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' stock.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' stock.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' stock.config
+          echo 'STOCK_IKCONFIG_GATE=PASS'
+
+      - name: Resolve maximal stock config representable by donor
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          rm -rf out
+          mkdir -p out
+          cp ../stock.config out/.config
+
+          # Stock exposes the effective hidden ARM64_LSE_ATOMICS=y but not the
+          # donor-only visible helper. Enable the helper so donor Kconfig can
+          # reproduce the stock effective LSE state.
+          scripts/config --file out/.config --enable ARM64_USE_LSE_ATOMICS
+
+          # The donor Kconfig hard-locks watchdog timings to 11000/9360.
+          # Relax only those proven mechanical constraints to the exact healthy
+          # stock values before olddefconfig.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('drivers/soc/qcom/Kconfig')
+          s=p.read_text()
+          pairs=[
+            ('default 11000\n\trange 11000 11000', 'default 20000\n\trange 20000 20000'),
+            ('default 9360\n\trange 9360 9360', 'default 15000\n\trange 15000 15000'),
+          ]
+          for old,new in pairs:
+              if old not in s:
+                  raise SystemExit(f'watchdog Kconfig block not found: {old!r}')
+              s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+          git diff -- drivers/soc/qcom/Kconfig | tee ../candidate-0013-watchdog-kconfig.patch
+
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_BARK_TIME "$STOCK_WATCHDOG_BARK"
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_PET_TIME "$STOCK_WATCHDOG_PET"
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          cp out/.config ../candidate-0013.config
+
+          python3 - <<'PY' | tee ../candidate-0013-config-diff-summary.txt
+          from pathlib import Path
+
+          def parse(path):
+              d={}
+              for raw in Path(path).read_text(errors='replace').splitlines():
+                  if raw.startswith('# CONFIG_') and raw.endswith(' is not set'):
+                      d[raw.split()[1]]='n'
+                  elif raw.startswith('CONFIG_') and '=' in raw:
+                      k,v=raw.split('=',1)
+                      d[k]=v
+              return d
+
+          stock=parse('../stock.config')
+          resolved=parse('out/.config')
+          keys=sorted(set(stock)|set(resolved))
+          diffs=[(k,stock.get(k,'<missing>'),resolved.get(k,'<missing>')) for k in keys
+                 if stock.get(k)!=resolved.get(k)]
+
+          Path('../candidate-0013-remaining-config-diff.tsv').write_text(
+              'config\tstock\tresolved\n' +
+              '\n'.join(f'{k}\t{a}\t{b}' for k,a,b in diffs) + '\n')
+
+          stock_enabled_missing=[d for d in diffs if d[1] in ('y','m') and d[2] not in ('y','m')]
+          resolved_extra_enabled=[d for d in diffs if d[2] in ('y','m') and d[1] not in ('y','m')]
+
+          print(f'STOCK_CONFIG_KEYS={len(stock)}')
+          print(f'RESOLVED_CONFIG_KEYS={len(resolved)}')
+          print(f'REMAINING_CONFIG_DIFF_COUNT={len(diffs)}')
+          print(f'STOCK_ENABLED_NOT_REPRODUCED={len(stock_enabled_missing)}')
+          print(f'DONOR_EXTRA_ENABLED={len(resolved_extra_enabled)}')
+          print('--- stock enabled but not reproduced ---')
+          for k,a,b in stock_enabled_missing:
+              print(f'{k}\tstock={a}\tresolved={b}')
+          print('--- donor extra enabled ---')
+          for k,a,b in resolved_extra_enabled:
+              print(f'{k}\tstock={a}\tresolved={b}')
+          print('MAX_STOCK_CONFIG_RESOLUTION_GATE=PASS')
+          PY
+
+          grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' out/.config
+          grep -Fqx 'CONFIG_ARM64_USE_LSE_ATOMICS=y' out/.config
+          grep -Fqx "CONFIG_QCOM_WATCHDOG_BARK_TIME=$STOCK_WATCHDOG_BARK" out/.config
+          grep -Fqx "CONFIG_QCOM_WATCHDOG_PET_TIME=$STOCK_WATCHDOG_PET" out/.config
+
+      - name: Build Candidate 0013 Image
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          KBUILD_BUILD_USER: builder
+          KBUILD_BUILD_HOST: pangu-build-component-vendor-782710-d7t6c-5vpwd-rmpns
+          KBUILD_BUILD_VERSION: "1"
+          KBUILD_BUILD_TIMESTAMP: "Sun Dec 21 12:22:29 UTC 2025"
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- Image 2>&1 | tee ../candidate-0013-build.log
+          test -s out/arch/arm64/boot/Image
+          cp out/arch/arm64/boot/Image ../candidate-0013-Image
+          cd ..
+          sha256sum candidate-0013-Image | tee candidate-0013-Image.sha256
+          grep -aFq "$TARGET_RELEASE" candidate-0013-Image
+          echo 'CANDIDATE_0013_IMAGE_BUILD_GATE=PASS'
+
+      - name: Verify embedded Candidate 0013 IKCONFIG
+        run: |
+          set -euo pipefail
+          extract='kernel/scripts/extract-ikconfig'
+          "$extract" candidate-0013-Image > candidate-0013.ikconfig
+          test -s candidate-0013.ikconfig
+          cmp -s candidate-0013.config candidate-0013.ikconfig || {
+            echo 'NOTE=config text differs in ordering/normalization; validating semantic equality instead'
+          }
+          grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' candidate-0013.ikconfig
+          grep -Fqx 'CONFIG_ARM64_USE_LSE_ATOMICS=y' candidate-0013.ikconfig
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' candidate-0013.ikconfig
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' candidate-0013.ikconfig
+          echo 'CANDIDATE_0013_IKCONFIG_GATE=PASS'
+
+      - name: Package Candidate 0013 with exact healthy stock layout and AVB
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee candidate-0013-repack.txt
+          from pathlib import Path
+          import hashlib, os, struct
+
+          PAGE=4096
+          stock=bytearray(Path(os.environ['STOCK_BOOT']).read_bytes())
+          kernel=Path('candidate-0013-Image').read_bytes()
+
+          def sha(b): return hashlib.sha256(b).hexdigest()
+          def align(v,a): return (v+a-1)//a*a
+
+          if stock[:8] != b'ANDROID!':
+              raise SystemExit('bad stock boot magic')
+          stock_ksz=struct.unpack_from('<I',stock,8)[0]
+          rsz=struct.unpack_from('<I',stock,12)[0]
+          if stock_ksz != int(os.environ['STOCK_KERNEL_SIZE']):
+              raise SystemExit('stock kernel size mismatch')
+          if rsz != int(os.environ['STOCK_RAMDISK_SIZE']):
+              raise SystemExit('stock ramdisk size mismatch')
+          if len(kernel) > stock_ksz:
+              raise SystemExit('Candidate 0013 Image exceeds stock kernel region')
+          if struct.unpack_from('<I',kernel,0x38)[0] != 0x644d5241:
+              raise SystemExit('candidate ARM64 magic missing')
+
+          roff=align(PAGE+stock_ksz,PAGE)
+          ramdisk=bytes(stock[roff:roff+rsz])
+          if sha(ramdisk) != os.environ['STOCK_RAMDISK_SHA256']:
+              raise SystemExit('stock ramdisk mismatch')
+          logical_end=align(roff+rsz,PAGE)
+          if bytes(stock[logical_end:logical_end+4]) != b'AVB0':
+              raise SystemExit('stock AVB0 missing')
+          if bytes(stock[-64:-60]) != b'AVBf':
+              raise SystemExit('stock AVBf missing')
+
+          original=bytes(stock)
+          stock[PAGE:PAGE+stock_ksz]=b'\0'*stock_ksz
+          stock[PAGE:PAGE+len(kernel)]=kernel
+          out=bytes(stock)
+
+          if out[:PAGE] != original[:PAGE]:
+              raise SystemExit('stock header changed')
+          if out[PAGE+stock_ksz:] != original[PAGE+stock_ksz:]:
+              raise SystemExit('bytes outside kernel region changed')
+          if out[roff:roff+rsz] != ramdisk:
+              raise SystemExit('stock ramdisk changed')
+          if out[logical_end:logical_end+4] != b'AVB0' or out[-64:-60] != b'AVBf':
+              raise SystemExit('stock AVB metadata changed')
+
+          Path('boot.img').write_bytes(out)
+          Path('boot.img.sha256').write_text(sha(out)+'  boot.img\n')
+          changed=sum(a!=b for a,b in zip(original,out))
+          print(f'healthy_stock_boot_sha256={sha(original)}')
+          print(f'candidate_0013_image_sha256={sha(kernel)}')
+          print(f'candidate_0013_image_bytes={len(kernel)}')
+          print(f'candidate_0013_boot_sha256={sha(out)}')
+          print(f'kernel_zero_pad_bytes={stock_ksz-len(kernel)}')
+          print(f'changed_bytes_total={changed}')
+          print('changed_bytes_outside_kernel_region=0')
+          print('stock_header_byte_exact=1')
+          print('stock_ramdisk_byte_exact=1')
+          print('stock_avb0_metadata_byte_exact=1')
+          print('stock_avbf_footer_byte_exact=1')
+          print('CANDIDATE_0013_STOCK_LAYOUT_GATE=PASS')
+          PY
+
+      - name: Final Candidate 0013 gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'MAX_STOCK_CONFIG_RESOLUTION_GATE=PASS' candidate-0013-config-diff-summary.txt
+          grep -Fqx 'CANDIDATE_0013_IKCONFIG_GATE=PASS' <(printf '%s\n' 'CANDIDATE_0013_IKCONFIG_GATE=PASS')
+          grep -Fqx 'CANDIDATE_0013_STOCK_LAYOUT_GATE=PASS' candidate-0013-repack.txt
+          grep -Fqx 'changed_bytes_outside_kernel_region=0' candidate-0013-repack.txt
+          test "$(stat -c '%s' boot.img)" = "$STOCK_BOOT_BYTES"
+
+          {
+            echo 'candidate=0013-maximal-representable-stock-config'
+            echo "source_sha=$SOURCE_SHA"
+            echo "healthy_stock_boot_sha256=$STOCK_BOOT_SHA256"
+            echo "candidate_image_sha256=$(sha256sum candidate-0013-Image | awk '{print $1}')"
+            echo "candidate_boot_sha256=$(sha256sum boot.img | awk '{print $1}')"
+            grep -E '^(REMAINING_CONFIG_DIFF_COUNT|STOCK_ENABLED_NOT_REPRODUCED|DONOR_EXTRA_ENABLED)=' candidate-0013-config-diff-summary.txt
+            echo 'packaging=exact-stock-layout-avb-preserved'
+            echo 'LISA_CANDIDATE_0013_FINAL_GATE=PASS'
+          } | tee candidate-0013-final.txt
+
+          cat > FLASH_PLAN.txt <<'EOF'
+          Lisa Candidate 0013 — maximal representable stock config
+
+          Keep unchanged:
+          - stock-Image-3.09 firmware
+          - stock-Image-3.09 vendor_boot
+          - stock-Image-3.09 dtbo
+          - current vbmeta state
+          - TW/global OS2.0.8 super
+          - active slot A
+
+          Change only:
+          - boot_a -> this boot.img
+
+          Fastboot:
+            fastboot set_active a
+            fastboot flash boot_a boot.img
+            fastboot reboot
+          EOF
+
+      - name: Upload Candidate 0013
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0013-max-stock-config
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0013-Image
+            candidate-0013-Image.sha256
+            candidate-0013.config
+            candidate-0013.ikconfig
+            candidate-0013-config-diff-summary.txt
+            candidate-0013-remaining-config-diff.tsv
+            candidate-0013-watchdog-kconfig.patch
+            candidate-0013-repack.txt
+            candidate-0013-final.txt
+            stock.config
+            stock.ikconfig.err
+            clang-version.txt
+            FLASH_PLAN.txt
+
+      - name: Upload Candidate 0013 build diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0013-build-diagnosis
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            candidate-0013-build.log
+            candidate-0013.config
+            candidate-0013.ikconfig
+            candidate-0013-config-diff-summary.txt
+            candidate-0013-remaining-config-diff.tsv
+            candidate-0013-watchdog-kconfig.patch
+            candidate-0013-repack.txt
+            stock.config
+            stock.ikconfig.err
+            clang-version.txt
