@@ -1370,3 +1370,128 @@ The workflow must:
 7. package using Candidate 0012's exact stock-layout/AVB preservation method.
 
 This is Candidate 0013 maximal representable stock-config control. If it still fails, configuration mismatch is strongly reduced and the investigation should move to source/linkage differences in the reconstructed Image.
+
+
+## Iteration 0019 — 2026-09-24 16:45 +08:00
+
+- Candidate: Candidate 0013 maximal representable stock-config control
+- Tested boot SHA256: `7ee958e982fadc3a2f2340bd37baa039fdcc2dcbc6faa130e33686ce7911a0d7`
+- Candidate Image SHA256: `7ecf678c39ca38ad2d26fd49a0f73c57dd117f0f044fac5b059c1ecbffad492f`
+- Base/companion state: unchanged `stock-Image-3.09` firmware + vendor_boot + dtbo, current TW/global OS2.0.8 super, slot A
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Evidence package: `lisa-twrp-iter-0019_20260924-164506_boot_7ee958e982fa.zip`
+
+### Candidate 0013 static context
+
+Run `35972594913` completed successfully. Candidate 0013 used the complete healthy-stock embedded IKCONFIG as the donor input and then let the exact reconstructed source resolve it through `olddefconfig`.
+
+The resolved donor still could not reproduce 22 stock-enabled symbols:
+
+```text
+CONFIG_BQ2597X=y
+CONFIG_DEBUG_POLICY_STATUS=y
+CONFIG_DEBUG_POWER_MI=y
+CONFIG_F2FS_CP_OPT=y
+CONFIG_FASTBOOT_CMD_CTRL_UART=y
+CONFIG_IIO_TRIGGERED_BUFFER=y
+CONFIG_MIGT=y
+CONFIG_MILLET=y
+CONFIG_MIUI_ZRAM_MEMORY_TRACKING=y
+CONFIG_MIUS_PROXIMITY=y
+CONFIG_MI_UFS_FFU=y
+CONFIG_OEM_KERNEL=y
+CONFIG_PACKAGE_RUNTIME_INFO=y
+CONFIG_PASSTHROUGH_SYSTEM=y
+CONFIG_PERF_CRITICAL_RT_TASK=y
+CONFIG_PERF_HUMANTASK=y
+CONFIG_QCOM_MINIDUMP_ENCRYPT=y
+CONFIG_QTI_BATTERY_CHARGER_K8=m
+CONFIG_SF_BINDER=y
+CONFIG_UFSGKI=y
+CONFIG_UFS_WB=y
+CONFIG_XLOGCHAR=m
+```
+
+It also enabled six donor-side symbols not present in the stock IKCONFIG:
+
+```text
+CONFIG_ARM64_USE_LSE_ATOMICS=y
+CONFIG_COMPAT_VDSO=y
+CONFIG_GENERIC_COMPAT_VDSO=y
+CONFIG_RELR=y
+CONFIG_TOOLS_SUPPORT_RELR=y
+CONFIG_ZRAM_DEF_COMP_LZORLE=y
+```
+
+Static packaging continued to preserve the exact healthy stock boot layout and AVB metadata outside the kernel region.
+
+### Persistent evidence
+
+```text
+oops:
+  9040d25c5db21b867be5ee5ea206fd3d988150280483943f3e38798397607312
+
+logdump:
+  08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a
+
+minidump:
+  40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d
+
+mdcompress:
+  072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea
+
+rawdump:
+  605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c
+
+logfs:
+  ee922fd037a009934627ca5714b0ccf023a3e9809d5fce26b9d84bae1b174026
+```
+
+The `oops` ring is again byte-for-byte identical to healthy-stock Iteration 0014 and still tops out at the stock lineage counter 1303. No Candidate 0013 Linux build record is present.
+
+The minidump/rawdump/logdump/mdcompress hashes are also unchanged from the already-known stale payloads.
+
+### Recovery-history correction
+
+Iteration 0019 additionally captured `/cache/recovery/last_kmsg*`. Those files are historical recovery records, not the failed Candidate 0013 boot.
+
+Their embedded kernel lineages are only:
+
+- `5.4.210-qgki-g1b592ee9f70e`
+- `5.4.210-qgki-ga0625577f991`
+- `5.4.86-qgki-g7465f0a988eb`
+
+None contains the current Candidate 0013 `5.4.289-qgki-g5987d69e25da` build. They must therefore remain context-only and cannot be used to attribute a current Linux failure.
+
+### Fresh UEFI evidence
+
+Fresh `logfs` again shows the current candidate accepted by UEFI and handed off through ExitBootServices:
+
+```text
+Active Slot _a is bootable, retry count 6
+Booting from slot (_a)
+Load Image boot_a
+Load Image dtbo_a
+Load Image vendor_boot_a
+VB2: Authenticate complete! boot state is: orange
+fatal error is not set
+Shutting Down UEFI Boot Services
+Start EBS
+```
+
+Subsequent normal attempts decrement retry count `6 -> 5 -> 4 -> 3`.
+
+### Iteration 0019 conclusion
+
+Candidate 0013 still fails before leaving any new persistent Linux record even after using the maximal stock configuration that the current reconstructed donor can represent.
+
+Therefore further config-only guessing is not justified.
+
+The next diagnostic must classify the 22 stock-enabled-but-unreproduced symbols into:
+
+1. symbol/source truly absent from the reconstructed donor;
+2. symbol present but unreachable because required Kconfig dependencies/source pieces are missing;
+3. non-early/runtime feature unlikely to explain failure before persistent Linux logging.
+
+Priority should be given to storage / platform / early-device-path items such as `UFSGKI`, `UFS_WB`, `MI_UFS_FFU`, `IIO_TRIGGERED_BUFFER`, `OEM_KERNEL`, `PASSTHROUGH_SYSTEM`, and other symbols whose source implementation is missing from the donor. Reference lisa kernels should be used only to recover/document source gaps, not to blindly force undefined config symbols.
