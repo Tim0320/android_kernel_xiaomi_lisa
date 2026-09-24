@@ -1,0 +1,208 @@
+name: Diagnose Lisa Candidate 0015 early entry
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0015-early-entry.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0015-early-entry
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0015_ARTIFACT_ID: "10810774162"
+      C0015_IMAGE_SHA256: c40049716600f16d85e87abad8e7c4613dfbdb7dd8cef198cfb774674eef4ccc
+
+    steps:
+      - name: Checkout exact stock baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Install disassembly tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip binutils-aarch64-linux-gnu
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+          command -v vmlinux-to-elf
+
+      - name: Extract stock and Candidate 0015 Images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b=Path("reconstruction/stock/stock-Image/boot.img").read_bytes()
+          if b[:8] != b"ANDROID!":
+              raise SystemExit("bad stock boot")
+          ksz=struct.unpack_from("<I", b, 8)[0]
+          Path("stock-Image").write_bytes(b[4096:4096+ksz])
+          PY
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0015_ARTIFACT_ID}/zip" \
+            -o c0015.zip
+          mkdir c0015
+          unzip -q c0015.zip -d c0015
+          img="$(find c0015 -type f -name candidate-0015-Image -print -quit)"
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0015-Image
+          test "$(sha256sum candidate-0015-Image | awk '{print $1}')" = "$C0015_IMAGE_SHA256"
+          grep -Fqx '# CONFIG_RELR is not set' c0015/candidate-0015.ikconfig
+          echo C0015_INPUT_GATE=PASS
+
+      - name: Recover kallsyms and ELF
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder candidate-0015-Image > c0015.kallsyms
+          test -s stock.kallsyms
+          test -s c0015.kallsyms
+          vmlinux-to-elf stock-Image stock.elf >/tmp/stock-vmlinux-to-elf.log 2>&1
+          vmlinux-to-elf candidate-0015-Image c0015.elf >/tmp/c0015-vmlinux-to-elf.log 2>&1
+          test -s stock.elf
+          test -s c0015.elf
+
+      - name: Compare earliest entry functions
+        run: |
+          set -euo pipefail
+          mkdir -p early
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          targets=["stext","__enable_mmu","__primary_switch","__primary_switched","early_fixmap_init"]
+          rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+
+          def parse(path):
+              rows=[]
+              for line in Path(path).read_text(errors="replace").splitlines():
+                  m=rx.match(line)
+                  if m and m.group(2) in "Tt":
+                      rows.append((int(m.group(1),16),m.group(3)))
+              rows.sort()
+              return rows
+
+          def canon(n):
+              n=re.sub(r"\.cfi_jt$","",n)
+              n=re.sub(r"\.llvm\.[0-9A-Fa-f]+$","",n)
+              n=re.sub(r"\.(?:isra|constprop|part)\.\d+$","",n)
+              n=re.sub(r"\.\d{3,}$","",n)
+              return n
+
+          for label,path in [("stock","stock.kallsyms"),("c0015","c0015.kallsyms")]:
+              rows=parse(path)
+              addrs=sorted(set(a for a,_ in rows))
+              out=[]
+              for target in targets:
+                  cand=[r for r in rows if r[1]==target]
+                  if not cand:
+                      cand=[r for r in rows if canon(r[1])==target and not r[1].endswith(".cfi_jt")]
+                  if not cand:
+                      raise SystemExit(f"missing {label} {target}")
+                  start,name=cand[0]
+                  nexts=[a for a in addrs if a>start]
+                  stop=min(nexts[0] if nexts else start+0x10000,start+0x10000)
+                  out.append(f"{target}\t{start:016x}\t{stop:016x}\t{name}")
+              Path(f"early/{label}-ranges.tsv").write_text("\n".join(out)+"\n")
+          PY
+
+          for label in stock c0015; do
+            while IFS=$'\t' read -r fn start stop provider; do
+              aarch64-linux-gnu-objdump -d \
+                --start-address="0x${start}" \
+                --stop-address="0x${stop}" \
+                "${label}.elf" > "early/${label}-${fn}.S"
+            done < "early/${label}-ranges.tsv"
+          done
+
+          python3 - <<'PY' | tee c0015-early-entry-summary.txt
+          from pathlib import Path
+          import difflib,hashlib,re
+
+          fns=["stext","__enable_mmu","__primary_switch","__primary_switched","early_fixmap_init"]
+          insn=re.compile(r"^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+){4}(.*)$",re.I)
+          word=re.compile(r"^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+(.*)$",re.I)
+
+          def canon_symbol(n):
+              n=re.sub(r"\+0x[0-9a-f]+$","",n,flags=re.I)
+              n=re.sub(r"\.cfi_jt$","",n)
+              n=re.sub(r"\.llvm\.[0-9A-Fa-f]+$","",n)
+              n=re.sub(r"\.(?:isra|constprop|part)\.\d+$","",n)
+              n=re.sub(r"\.\d{3,}$","",n)
+              return n
+
+          def norm(path):
+              out=[]
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=insn.match(raw) or word.match(raw)
+                  if not m:
+                      continue
+                  t=m.group(1).strip()
+                  t=re.sub(r"<([^>]+)>",lambda m:"<"+canon_symbol(m.group(1))+">",t)
+                  t=re.sub(r"\b(?:0x)?f{4,}[0-9a-f]{6,}\b","<ADDR>",t,flags=re.I)
+                  t=re.sub(r"\b[0-9a-f]{12,16}\b","<ADDR>",t,flags=re.I)
+                  out.append(t)
+              return out
+
+          first=None
+          lines=[]
+          for fn in fns:
+              s=norm(f"early/stock-{fn}.S")
+              c=norm(f"early/c0015-{fn}.S")
+              eq=int(bool(s) and bool(c) and s==c)
+              lines += [
+                f"{fn}_STOCK_LINES={len(s)}",
+                f"{fn}_C0015_LINES={len(c)}",
+                f"{fn}_NORMALIZED_EQUAL={eq}",
+                f"{fn}_STOCK_SHA256={hashlib.sha256(chr(10).join(s).encode()).hexdigest()}",
+                f"{fn}_C0015_SHA256={hashlib.sha256(chr(10).join(c).encode()).hexdigest()}",
+              ]
+              Path(f"early/stock-{fn}.norm").write_text("\n".join(s)+"\n")
+              Path(f"early/c0015-{fn}.norm").write_text("\n".join(c)+"\n")
+              if not eq and first is None:
+                  first=fn
+              if fn=="__primary_switch" and not eq:
+                  diff=list(difflib.unified_diff(s,c,fromfile="stock",tofile="c0015",lineterm=""))
+                  Path("early/primary-switch.diff").write_text("\n".join(diff)+"\n")
+                  for d in diff[:80]:
+                      lines.append("PRIMARY_SWITCH_DIFF="+d)
+          lines.append(f"FIRST_C0015_EARLY_DIVERGENCE={first or '<none>'}")
+          lines.append("LISA_C0015_EARLY_ENTRY_DIAGNOSIS=PASS")
+          print("\n".join(lines))
+          PY
+
+      - name: Upload diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0015-early-entry-diagnosis
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            c0015-early-entry-summary.txt
+            early/
+            stock.kallsyms
+            c0015.kallsyms
