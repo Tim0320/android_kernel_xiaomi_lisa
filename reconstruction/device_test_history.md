@@ -1495,3 +1495,106 @@ The next diagnostic must classify the 22 stock-enabled-but-unreproduced symbols 
 3. non-early/runtime feature unlikely to explain failure before persistent Linux logging.
 
 Priority should be given to storage / platform / early-device-path items such as `UFSGKI`, `UFS_WB`, `MI_UFS_FFU`, `IIO_TRIGGERED_BUFFER`, `OEM_KERNEL`, `PASSTHROUGH_SYSTEM`, and other symbols whose source implementation is missing from the donor. Reference lisa kernels should be used only to recover/document source gaps, not to blindly force undefined config symbols.
+
+
+## Iteration 0020 — 2026-09-24 19:51 +08:00
+
+- Candidate: Candidate 0014 no-bootinfo control
+- Tested boot SHA256: `3a0977d81d7b4b2f29b1d06bbf52a1d7af9fa6db554b73652b8b1c812dd35dce`
+- Candidate Image SHA256: `47b1a9126866c31db49ae0bdf06bb7e0205ae516dcc65552d231914c126b7094`
+- Base/companion state: unchanged `stock-Image-3.09` firmware + vendor_boot + dtbo, current TW/global OS2.0.8 super, slot A
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Evidence package: `lisa-twrp-iter-0020_20260924-195142_boot_3a0977d81d7b.zip`
+
+### Persistent evidence
+
+```text
+oops:
+  9040d25c5db21b867be5ee5ea206fd3d988150280483943f3e38798397607312
+
+logdump:
+  08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a
+
+minidump:
+  40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d
+
+mdcompress:
+  072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea
+
+rawdump:
+  605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c
+
+logfs:
+  ff1d62c0587f871f3571d53df85becd032aef4eee8e2d71b7e4cb5eb692e8cc9
+```
+
+The `oops` hash is again byte-for-byte identical to healthy-stock Iteration 0014 and Iterations 0015/0016/0019. No Candidate 0014 Linux build marker is present. `pstore` is empty and the crash partitions remain the known stale payloads.
+
+The collector runs in a newer TWRP recovery kernel:
+
+```text
+Linux version 5.4.302-qgki-g46af56554ec5
+#1 SMP PREEMPT Mon Mar 16 21:34:23 CST 2026
+clang 21.0.0
+```
+
+This is the recovery environment used to collect evidence, not the failed Candidate 0014 Android boot, and must not be attributed to the candidate.
+
+The captured `/cache/recovery/last_kmsg*` remain historical recovery records (5.4.210 / 5.4.86) and are context-only.
+
+### Fresh UEFI evidence
+
+Fresh `logfs` records repeated accepted slot-A mission boots. The current records include:
+
+```text
+Active Slot _a is bootable, retry count 3
+Booting from slot (_a)
+Load Image boot_a
+Load Image dtbo_a
+Load Image vendor_boot_a
+VB2: Authenticate complete! boot state is: orange
+fatal error is not set
+Shutting Down UEFI Boot Services
+Start EBS
+
+Active Slot _a is bootable, retry count 2
+...
+Start EBS
+```
+
+Later records reset the retry budget and again show `5 -> 4`, still ending at `Start EBS`.
+
+### Candidate 0014 conclusion
+
+Candidate 0014 was a single-variable control derived from the Candidate 0013 configuration/source path with the donor-only `CONFIG_BOOT_INFO` / `bootinfo_init` path removed. Static gates proved `bootinfo_init` was not linked.
+
+The device still fails identically.
+
+Therefore the donor-only level-1 `bootinfo_init` initcall is **not sufficient to explain the failure** and is excluded as the current first blocker.
+
+### Next diagnostic priority
+
+The exact stock-vs-Candidate-0013 initcall graph contains:
+
+```text
+stock unique initcalls:      1197
+candidate unique initcalls:  1219
+true stock-only:               16
+true candidate-only:           38
+initcall level moves:           0
+```
+
+The only priority stock-only early initcall is `cpufreq_times_init`. Source inspection shows the reconstructed donor and public Lisa/SM7325 trees carry a newer `cpufreq_times.c` that lacks the older `cpufreq_times_init` proc-registration function. This is a real source-lineage difference, but the missing function only registers CPU-frequency time accounting proc state and is not yet strong enough to justify an immediate boot candidate.
+
+More suspiciously, Candidate 0013/0014 contain a large set of level-6 candidate-only initcalls absent from healthy stock, including:
+
+- `msm_drm_register`;
+- RMNET init paths;
+- many built-in Qualcomm audio techpack initcalls;
+- `us_prox_init`;
+- `lahaina_asoc_machine_driver_init`.
+
+This matters because the validated `stock-Image-3.09` vendor_boot ABI audit shows the active QGKI vendor module set contains `msm_drm.ko`. A built-in `msm_drm_register` in the reconstructed Image is therefore a concrete stock-vs-candidate execution-model mismatch.
+
+Before building another candidate, determine the exact Candidate initcall order relative to `mtdoops_init` / persistent-log initialization and identify which candidate-only built-in paths run before the first persistent Linux evidence would become writable.
