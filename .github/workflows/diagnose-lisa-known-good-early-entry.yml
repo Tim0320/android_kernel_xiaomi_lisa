@@ -1,0 +1,216 @@
+name: Diagnose Lisa known-good early entry path
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-known-good-early-entry.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-known-good-early-entry
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    env:
+      STOCK_BOOT: stock-main/reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0014_ARTIFACT_ID: "10802392237"
+      C0014_IMAGE_SHA256: 47b1a9126866c31db49ae0bdf06bb7e0205ae516dcc65552d231914c126b7094
+
+    steps:
+      - name: Checkout known-good stock boot
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: stock-main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Install recovery and disassembly tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip binutils-aarch64-linux-gnu
+          python3 -m pip install --break-system-packages             git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+          command -v vmlinux-to-elf
+
+      - name: Extract exact Images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b=Path("stock-main/reconstruction/stock/stock-Image/boot.img").read_bytes()
+          if b[:8] != b"ANDROID!":
+              raise SystemExit("bad stock boot")
+          ksz=struct.unpack_from("<I", b, 8)[0]
+          Path("stock-Image").write_bytes(b[4096:4096+ksz])
+          PY
+
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0014_ARTIFACT_ID}/zip"             -o c0014.zip
+          mkdir c0014
+          unzip -q c0014.zip -d c0014
+          img="$(find c0014 -type f -name candidate-0014-Image -print -quit)"
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0014-Image
+          test "$(sha256sum candidate-0014-Image | awk '{print $1}')" = "$C0014_IMAGE_SHA256"
+
+      - name: Recover kallsyms and ELF
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder candidate-0014-Image > c0014.kallsyms
+          test -s stock.kallsyms
+          test -s c0014.kallsyms
+
+          vmlinux-to-elf stock-Image stock.elf >/tmp/stock-vmlinux-to-elf.log 2>&1
+          vmlinux-to-elf candidate-0014-Image c0014.elf >/tmp/c0014-vmlinux-to-elf.log 2>&1
+          test -s stock.elf
+          test -s c0014.elf
+
+      - name: Compare early entry symbol anchors
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee early-entry-anchor-summary.txt
+          from pathlib import Path
+          import re
+
+          line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+
+          def parse(path):
+              out={}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=line_rx.match(raw)
+                  if m:
+                      out[m.group(3)]=(int(m.group(1),16),m.group(2))
+              return out
+
+          s=parse("stock.kallsyms")
+          c=parse("c0014.kallsyms")
+
+          targets=[
+            "_text","stext","__primary_switch","__primary_switched",
+            "__cpu_setup","__enable_mmu","__create_page_tables",
+            "start_kernel","setup_arch","setup_machine_fdt",
+            "early_fixmap_init","paging_init","bootmem_init",
+            "memblock_init","mm_init","trap_init","irqchip_init",
+            "time_init","console_init","rest_init"
+          ]
+
+          first_missing=None
+          lines=[]
+          for name in targets:
+              sv=s.get(name); cv=c.get(name)
+              lines.append(f"TARGET={name} STOCK_PRESENT={int(sv is not None)} C0014_PRESENT={int(cv is not None)}")
+              if sv:
+                  lines.append(f"STOCK_{name}_ADDR={sv[0]:016x}")
+              if cv:
+                  lines.append(f"C0014_{name}_ADDR={cv[0]:016x}")
+              if sv and not cv and first_missing is None:
+                  first_missing=name
+
+          common=[name for name in targets if name in s and name in c]
+          if common:
+              sbase=s[common[0]][0]; cbase=c[common[0]][0]
+              for name in common:
+                  so=s[name][0]-sbase
+                  co=c[name][0]-cbase
+                  lines.append(f"REL_{name}_STOCK={so}")
+                  lines.append(f"REL_{name}_C0014={co}")
+                  lines.append(f"REL_{name}_EQUAL={int(so==co)}")
+
+          lines.append(f"FIRST_MISSING_EARLY_ANCHOR={first_missing or '<none>'}")
+          lines.append("EARLY_ENTRY_SYMBOL_ANCHOR_GATE=PASS")
+          print("\n".join(lines))
+          PY
+
+      - name: Disassemble key early functions
+        run: |
+          set -euo pipefail
+          for fn in stext __primary_switch __primary_switched start_kernel setup_arch early_fixmap_init paging_init; do
+            aarch64-linux-gnu-objdump -d --disassemble="$fn" stock.elf > "stock-${fn}.S" 2>/dev/null || true
+            aarch64-linux-gnu-objdump -d --disassemble="$fn" c0014.elf > "c0014-${fn}.S" 2>/dev/null || true
+          done
+
+          python3 - <<'PY' | tee early-entry-disasm-summary.txt
+          from pathlib import Path
+          import re, hashlib
+
+          fns=["stext","__primary_switch","__primary_switched","start_kernel","setup_arch","early_fixmap_init","paging_init"]
+
+          def norm(path):
+              txt=Path(path).read_text(errors="replace")
+              out=[]
+              for line in txt.splitlines():
+                  if not re.search(r"\b[0-9a-f]+:\s+[0-9a-f]{8}\b",line):
+                      continue
+                  line=re.sub(r"^\s*[0-9a-f]+:", "ADDR:", line)
+                  line=re.sub(r"<[^>]+>", "<SYM>", line)
+                  line=re.sub(r"\b[0-9a-f]{8,16}\b", "IMM", line)
+                  out.append(line.strip())
+              return "\n".join(out)
+
+          lines=[]
+          first_diff=None
+          for fn in fns:
+              sp=Path(f"stock-{fn}.S"); cp=Path(f"c0014-{fn}.S")
+              sn=norm(sp) if sp.exists() else ""
+              cn=norm(cp) if cp.exists() else ""
+              sh=hashlib.sha256(sn.encode()).hexdigest()
+              ch=hashlib.sha256(cn.encode()).hexdigest()
+              eq=int(bool(sn) and sn==cn)
+              lines.append(f"DISASM_{fn}_STOCK_LINES={len(sn.splitlines()) if sn else 0}")
+              lines.append(f"DISASM_{fn}_C0014_LINES={len(cn.splitlines()) if cn else 0}")
+              lines.append(f"DISASM_{fn}_NORMALIZED_EQUAL={eq}")
+              lines.append(f"DISASM_{fn}_STOCK_SHA256={sh}")
+              lines.append(f"DISASM_{fn}_C0014_SHA256={ch}")
+              if not eq and first_diff is None:
+                  first_diff=fn
+
+          lines.append(f"FIRST_NORMALIZED_EARLY_DISASM_DIVERGENCE={first_diff or '<none>'}")
+          lines.append("EARLY_ENTRY_DISASM_GATE=PASS")
+          print("\n".join(lines))
+          PY
+
+      - name: Emit known-good decision matrix
+        run: |
+          set -euo pipefail
+          {
+            echo 'KNOWN_GOOD_REFERENCE=healthy-stock-boot-e6f8c978c2cf'
+            echo 'PASS_COMPANION_CHAIN=stock-Image-3.09'
+            echo 'PASS_USERSPACE=TW-global-OS2.0.8-super'
+            echo 'PASS_BOOT_LAYOUT=header-ramdisk-AVB-byte-preserved'
+            echo 'PASS_RAMOOPS_ANCHOR=level2-order8'
+            echo 'PASS_QCOM_SCM_ANCHOR=level4-order133'
+            echo 'PASS_MTDOOPS_ANCHOR=level6'
+            grep '^FIRST_' early-entry-anchor-summary.txt
+            grep '^FIRST_' early-entry-disasm-summary.txt
+            echo 'LISA_KNOWN_GOOD_EARLY_ENTRY_DIAGNOSIS=PASS'
+          } | tee known-good-early-entry.txt
+
+      - name: Upload diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-known-good-early-entry-diagnosis
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            known-good-early-entry.txt
+            early-entry-anchor-summary.txt
+            early-entry-disasm-summary.txt
+            stock-*.S
+            c0014-*.S
+            stock.kallsyms
+            c0014.kallsyms
