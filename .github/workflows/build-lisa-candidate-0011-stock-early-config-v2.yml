@@ -1,0 +1,343 @@
+name: Build Lisa Candidate 0011 stock early-config control v2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0011-stock-early-config-v2.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0011-stock-early-config-v2
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+      COMPAT_ARTIFACT_ID: "10678326339"
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+      FAILED_CANDIDATE_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
+      STOCK_WATCHDOG_BARK: "20000"
+      STOCK_WATCHDOG_PET: "15000"
+
+    steps:
+      - name: Checkout main metadata and healthy stock boot
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout exact failing reconstructed source lineage
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Authenticate source and force target SCM suffix
+        run: |
+          set -euo pipefail
+          cd kernel
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          printf '%s\n' '-g5987d69e25da' > .scmversion
+          echo 'SOURCE_SHA_EXACT=PASS'
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
+            python3 curl unzip git rsync kmod
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Download exact Candidate 0008 validated baseline config
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${COMPAT_ARTIFACT_ID}/zip" \
+            -o compat.zip
+          mkdir -p compat
+          unzip -q compat.zip -d compat
+          test -s compat/out/.config
+          cp compat/out/.config baseline.config
+          sha256sum baseline.config | tee baseline-config.sha256
+
+      - name: Align representable healthy-stock early config
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          rm -rf out
+          mkdir -p out
+          cp ../baseline.config out/.config
+
+          # Reproduce Candidate 0008 config lineage.
+          scripts/config --file out/.config --enable PERF_HELPER
+          scripts/config --file out/.config --disable DEBUG_FS
+          scripts/config --file out/.config --enable QTI_TZ_LOG
+          scripts/config --file out/.config --enable MILLET_CORE
+          scripts/config --file out/.config --enable MILLET_BINDER_GKI
+          scripts/config --file out/.config --enable MILLET_BINDER
+          scripts/config --file out/.config --enable MILLET_PKG
+          scripts/config --file out/.config --enable MILLET_HS
+          scripts/config --file out/.config --enable MILLET_SIG
+          scripts/config --file out/.config --enable MILLET_CGROUP
+
+          # Verify exact stock-era clang can assemble LSE instructions.
+          cat > ../lse-probe.S <<'EOF'
+          .text
+          .arch_extension lse
+          .global lisa_lse_probe
+          lisa_lse_probe:
+              cas x0, x1, [x2]
+              ret
+          EOF
+          clang --target=aarch64-linux-gnu -c ../lse-probe.S -o ../lse-probe.o \
+            >../lse-assembler-probe.stdout 2>../lse-assembler-probe.stderr
+          echo 'LSE_ASSEMBLER_PROBE=PASS' | tee ../lse-assembler-probe.txt
+
+          # QCOM_MINIDUMP_ENCRYPT exists in healthy stock IKCONFIG but not in this
+          # donor Kconfig schema. Record that explicitly rather than faking it.
+          if grep -RqsE --include='Kconfig*' \
+              '^[[:space:]]*config[[:space:]]+QCOM_MINIDUMP_ENCRYPT([[:space:]]|$)' .; then
+            HAVE_QCOM_MINIDUMP_ENCRYPT=1
+            scripts/config --file out/.config --enable QCOM_MINIDUMP_ENCRYPT
+          else
+            HAVE_QCOM_MINIDUMP_ENCRYPT=0
+          fi
+          printf 'HAVE_QCOM_MINIDUMP_ENCRYPT=%s\n' "$HAVE_QCOM_MINIDUMP_ENCRYPT" \
+            | tee ../candidate-0011-capabilities.env
+
+          # The donor hard-locks watchdog values to 11000/9360 through Kconfig
+          # ranges. Patch only those range/default constraints to the healthy-stock
+          # values before olddefconfig; otherwise Kconfig silently rewrites them.
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('drivers/soc/qcom/Kconfig')
+          s=p.read_text()
+          pairs=[
+            ('default 11000\n\trange 11000 11000', 'default 20000\n\trange 20000 20000'),
+            ('default 9360\n\trange 9360 9360', 'default 15000\n\trange 15000 15000'),
+          ]
+          for old,new in pairs:
+              if old not in s:
+                  raise SystemExit(f'watchdog Kconfig block not found: {old!r}')
+              s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+          git diff -- drivers/soc/qcom/Kconfig | tee ../candidate-0011-watchdog-kconfig.patch
+
+          scripts/config --file out/.config --enable ARM64_USE_LSE_ATOMICS
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_BARK_TIME "$STOCK_WATCHDOG_BARK"
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_PET_TIME "$STOCK_WATCHDOG_PET"
+
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+
+          {
+            grep -E '^(CONFIG_ARM64_(USE_)?LSE_ATOMICS|CONFIG_QCOM_MINIDUMP_ENCRYPT|CONFIG_QCOM_WATCHDOG_(BARK|PET)_TIME)=' out/.config || true
+            grep -E '^# CONFIG_ARM64_(USE_)?LSE_ATOMICS is not set|^# CONFIG_QCOM_MINIDUMP_ENCRYPT is not set' out/.config || true
+          } | tee ../stock-early-config-post-olddefconfig.txt
+
+          grep -Fqx 'CONFIG_ARM64_USE_LSE_ATOMICS=y' out/.config
+          grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' out/.config
+          grep -Fqx "CONFIG_QCOM_WATCHDOG_BARK_TIME=$STOCK_WATCHDOG_BARK" out/.config
+          grep -Fqx "CONFIG_QCOM_WATCHDOG_PET_TIME=$STOCK_WATCHDOG_PET" out/.config
+          if [[ "$HAVE_QCOM_MINIDUMP_ENCRYPT" == 1 ]]; then
+            grep -Fqx 'CONFIG_QCOM_MINIDUMP_ENCRYPT=y' out/.config
+          fi
+          cp out/.config ../candidate-0011.config
+          echo 'STOCK_EARLY_CONFIG_REPRESENTABILITY_GATE=PASS'
+
+      - name: Build Candidate 0011 Image
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          KBUILD_BUILD_USER: builder
+          KBUILD_BUILD_HOST: pangu-build-component-vendor
+          KBUILD_BUILD_VERSION: "1"
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out \
+            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- Image 2>&1 | tee ../candidate-0011-build.log
+          test -s out/arch/arm64/boot/Image
+          cp out/arch/arm64/boot/Image ../candidate-0011-Image
+          sha256sum ../candidate-0011-Image | tee ../candidate-0011-Image.sha256
+          grep -aFq "$TARGET_RELEASE" ../candidate-0011-Image
+          test "$(sha256sum ../candidate-0011-Image | awk '{print $1}')" != "$FAILED_CANDIDATE_IMAGE_SHA256"
+          echo 'CANDIDATE_0011_IMAGE_BUILD_GATE=PASS'
+
+      - name: Verify embedded IKCONFIG
+        run: |
+          set -euo pipefail
+          source candidate-0011-capabilities.env
+          extract='kernel/scripts/extract-ikconfig'
+          chmod +x "$extract" || true
+          "$extract" candidate-0011-Image > candidate-0011.ikconfig
+          test -s candidate-0011.ikconfig
+          grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' candidate-0011.ikconfig
+          grep -Fqx 'CONFIG_ARM64_USE_LSE_ATOMICS=y' candidate-0011.ikconfig
+          grep -Fqx "CONFIG_QCOM_WATCHDOG_BARK_TIME=$STOCK_WATCHDOG_BARK" candidate-0011.ikconfig
+          grep -Fqx "CONFIG_QCOM_WATCHDOG_PET_TIME=$STOCK_WATCHDOG_PET" candidate-0011.ikconfig
+          if [[ "$HAVE_QCOM_MINIDUMP_ENCRYPT" == 1 ]]; then
+            grep -Fqx 'CONFIG_QCOM_MINIDUMP_ENCRYPT=y' candidate-0011.ikconfig
+          else
+            ! grep -Fq 'CONFIG_QCOM_MINIDUMP_ENCRYPT=' candidate-0011.ikconfig
+          fi
+          echo 'CANDIDATE_0011_IKCONFIG_GATE=PASS'
+
+      - name: Repack healthy stock boot with Candidate 0011 kernel only
+        run: |
+          set -euo pipefail
+          test -s "$STOCK_BOOT"
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY' | tee candidate-0011-repack.txt
+          from pathlib import Path
+          import hashlib, os, struct
+          PAGE=4096
+          def align(v,a): return (v+a-1)//a*a
+          def sha(b): return hashlib.sha256(b).hexdigest()
+          stock=Path(os.environ['STOCK_BOOT']).read_bytes()
+          kernel=Path('candidate-0011-Image').read_bytes()
+          if stock[:8] != b'ANDROID!': raise SystemExit('bad stock boot magic')
+          if struct.unpack_from('<I',stock,40)[0] != 3: raise SystemExit('expected boot header v3')
+          if struct.unpack_from('<I',kernel,0x38)[0] != 0x644d5241: raise SystemExit('bad ARM64 Image magic')
+          if os.environ['TARGET_RELEASE'].encode() not in kernel: raise SystemExit('target release missing')
+          stock_ksz=struct.unpack_from('<I',stock,8)[0]
+          rsz=struct.unpack_from('<I',stock,12)[0]
+          stock_roff=align(PAGE+stock_ksz,PAGE)
+          ramdisk=stock[stock_roff:stock_roff+rsz]
+          if sha(ramdisk) != os.environ['STOCK_RAMDISK_SHA256']: raise SystemExit('stock ramdisk mismatch')
+          header=bytearray(stock[:PAGE]); struct.pack_into('<I',header,8,len(kernel))
+          out=bytearray(header); out.extend(kernel)
+          out.extend(b'\0'*(align(len(out),PAGE)-len(out)))
+          new_roff=len(out); out.extend(ramdisk)
+          out.extend(b'\0'*(align(len(out),PAGE)-len(out)))
+          logical_end=len(out)
+          if logical_end > len(stock): raise SystemExit('payload exceeds boot partition')
+          out.extend(b'\0'*(len(stock)-len(out))); out=bytes(out)
+          Path('boot.img').write_bytes(out)
+          checks={
+            'partition_size_preserved':len(out)==len(stock),
+            'ramdisk_exact':sha(ramdisk)==os.environ['STOCK_RAMDISK_SHA256'],
+            'header_except_kernel_size_exact':out[12:PAGE]==stock[12:PAGE],
+            'kernel_payload_exact':sha(out[PAGE:PAGE+len(kernel)])==sha(kernel),
+            'tail_zeroed':not any(out[logical_end:]),
+          }
+          print(f'healthy_stock_boot_sha256={sha(stock)}')
+          print(f'candidate_0011_image_sha256={sha(kernel)}')
+          print(f'candidate_0011_image_bytes={len(kernel)}')
+          print(f'candidate_0011_ramdisk_offset={new_roff}')
+          print(f'candidate_0011_logical_end={logical_end}')
+          print(f'candidate_0011_boot_sha256={sha(out)}')
+          for k,v in checks.items(): print(f'check_{k}={int(v)}')
+          failed=[k for k,v in checks.items() if not v]
+          if failed: raise SystemExit('repack gate failed: '+','.join(failed))
+          print('CANDIDATE_0011_REPACK_GATE=PASS')
+          PY
+          sha256sum boot.img | tee boot.img.sha256
+
+      - name: Final static gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'CANDIDATE_0011_REPACK_GATE=PASS' candidate-0011-repack.txt
+          test -s boot.img
+          test "$(stat -c '%s' boot.img)" = "$(stat -c '%s' "$STOCK_BOOT")"
+          {
+            echo 'candidate=0011-stock-early-config-v2'
+            echo "source_sha=$SOURCE_SHA"
+            echo "healthy_stock_boot_sha256=$STOCK_BOOT_SHA256"
+            echo "candidate_image_sha256=$(sha256sum candidate-0011-Image | awk '{print $1}')"
+            echo "candidate_boot_sha256=$(sha256sum boot.img | awk '{print $1}')"
+            echo 'single_variable=kernel_Image_with_LSE_and_stock_watchdog_timing'
+            echo 'LISA_CANDIDATE_0011_STATIC_GATE=PASS'
+          } | tee candidate-0011-final.txt
+
+      - name: Upload Candidate 0011 device-test package
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0011-stock-early-config-v2
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0011-Image
+            candidate-0011-Image.sha256
+            candidate-0011.config
+            candidate-0011.ikconfig
+            candidate-0011-final.txt
+            candidate-0011-repack.txt
+            candidate-0011-watchdog-kconfig.patch
+            stock-early-config-post-olddefconfig.txt
+            candidate-0011-capabilities.env
+            lse-assembler-probe.txt
+
+      - name: Upload build diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0011-v2-build-diagnosis
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            clang-version.txt
+            baseline-config.sha256
+            candidate-0011-build.log
+            candidate-0011.config
+            candidate-0011.ikconfig
+            candidate-0011-Image.sha256
+            candidate-0011-watchdog-kconfig.patch
+            stock-early-config-post-olddefconfig.txt
+            candidate-0011-capabilities.env
+            lse-assembler-probe.txt
+            lse-assembler-probe.stdout
+            lse-assembler-probe.stderr
+            candidate-0011-repack.txt
