@@ -1,0 +1,353 @@
+name: Diagnose Lisa healthy stock boot vs Candidate 0008
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-healthy-stock-vs-candidate0008.yml
+      - reconstruction/stock/stock-Image/boot.img
+      - .gitattributes
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-healthy-stock-vs-candidate0008
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+      CANDIDATE_ARTIFACT_ID: "10765228960"
+      CANDIDATE_ARTIFACT_SHA256: b248c0fc9edd03d26e3527973cd2aae1b25e6517aa6be167f9704c26d1116a0b
+      CANDIDATE_BOOT_SHA256: 585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063
+      CANDIDATE_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
+      STOCK_BUILD_MARKER: "Sun Dec 21 12:22:29 UTC 2025"
+      CANDIDATE_BUILD_MARKER: "Tue Sep 22 17:43:28 UTC 2026"
+
+    steps:
+      - name: Checkout metadata and healthy stock boot with Git LFS
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout reconstructed source tools
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          path: reconstructed-source
+          fetch-depth: 1
+          lfs: false
+
+      - name: Install diagnosis tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip file python3 binutils-aarch64-linux-gnu
+
+      - name: Authenticate healthy stock boot
+        run: |
+          set -euo pipefail
+          test -s "$STOCK_BOOT"
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          cp "$STOCK_BOOT" stock-boot.img
+          echo 'HEALTHY_STOCK_BOOT_HASH_GATE=PASS'
+
+      - name: Download exact Candidate 0008
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANDIDATE_ARTIFACT_ID}/zip" \
+            -o candidate0008.zip
+
+          test "$(sha256sum candidate0008.zip | awk '{print $1}')" = "$CANDIDATE_ARTIFACT_SHA256"
+
+          mkdir -p candidate0008
+          unzip -q candidate0008.zip -d candidate0008
+          candidate_boot="$(find candidate0008 -type f -name boot.img -print -quit)"
+          test -n "$candidate_boot"
+          test -s "$candidate_boot"
+          cp "$candidate_boot" candidate-boot.img
+          test "$(sha256sum candidate-boot.img | awk '{print $1}')" = "$CANDIDATE_BOOT_SHA256"
+          echo 'CANDIDATE_0008_BOOT_HASH_GATE=PASS'
+
+      - name: Extract both Android boot v3 payloads and prove single-variable scope
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee boot-payload-compare.txt
+          from pathlib import Path
+          import hashlib, os, struct
+
+          PAGE=4096
+          def align(v,a): return (v+a-1)//a*a
+          def sha(b): return hashlib.sha256(b).hexdigest()
+
+          def parse(path):
+              b=Path(path).read_bytes()
+              if b[:8] != b'ANDROID!':
+                  raise SystemExit(f'{path}: bad boot magic')
+              ksz=struct.unpack_from('<I',b,8)[0]
+              rsz=struct.unpack_from('<I',b,12)[0]
+              osver=struct.unpack_from('<I',b,16)[0]
+              hsz=struct.unpack_from('<I',b,20)[0]
+              reserved=struct.unpack_from('<4I',b,24)
+              hver=struct.unpack_from('<I',b,40)[0]
+              cmd=b[44:44+1536].split(b'\0',1)[0]
+              if hver != 3:
+                  raise SystemExit(f'{path}: expected header v3, got {hver}')
+              koff=PAGE
+              roff=align(koff+ksz,PAGE)
+              kernel=b[koff:koff+ksz]
+              ramdisk=b[roff:roff+rsz]
+              logical=align(roff+rsz,PAGE)
+              return b,{
+                  'kernel_size':ksz,'ramdisk_size':rsz,'os_version_raw':osver,
+                  'header_size':hsz,'reserved':reserved,'header_version':hver,
+                  'cmdline':cmd.decode('utf-8','replace'),
+                  'kernel_sha256':sha(kernel),'ramdisk_sha256':sha(ramdisk),
+                  'kernel':kernel,'ramdisk':ramdisk,'logical_end':logical,
+                  'tail_nonzero':sum(x!=0 for x in b[logical:]),
+                  'boot_sha256':sha(b),
+              }
+
+          sb,s=parse('stock-boot.img')
+          cb,c=parse('candidate-boot.img')
+
+          Path('stock-Image').write_bytes(s['kernel'])
+          Path('candidate-Image').write_bytes(c['kernel'])
+
+          print('[STOCK_BOOT]')
+          for k in ('boot_sha256','kernel_size','kernel_sha256','ramdisk_size','ramdisk_sha256','os_version_raw','header_size','header_version','reserved','cmdline','logical_end','tail_nonzero'):
+              print(f'{k}={s[k]}')
+          print('[CANDIDATE_BOOT]')
+          for k in ('boot_sha256','kernel_size','kernel_sha256','ramdisk_size','ramdisk_sha256','os_version_raw','header_size','header_version','reserved','cmdline','logical_end','tail_nonzero'):
+              print(f'{k}={c[k]}')
+
+          print('[SINGLE_VARIABLE_COMPARE]')
+          checks={
+              'ramdisk_byte_identical':s['ramdisk']==c['ramdisk'],
+              'ramdisk_expected_stock_hash':s['ramdisk_sha256']==os.environ['STOCK_RAMDISK_SHA256'],
+              'header_os_version_equal':s['os_version_raw']==c['os_version_raw'],
+              'header_size_equal':s['header_size']==c['header_size'],
+              'header_version_equal':s['header_version']==c['header_version'],
+              'header_reserved_equal':s['reserved']==c['reserved'],
+              'header_cmdline_equal':s['cmdline']==c['cmdline'],
+              'candidate_image_expected_hash':c['kernel_sha256']==os.environ['CANDIDATE_IMAGE_SHA256'],
+              'stock_and_candidate_kernel_different':s['kernel_sha256']!=c['kernel_sha256'],
+          }
+          for k,v in checks.items(): print(f'{k}={int(v)}')
+
+          # Header page differs only where kernel_size is allowed to differ.
+          allowed=set(range(8,12))
+          diff=[i for i,(a,b) in enumerate(zip(sb[:PAGE],cb[:PAGE])) if a!=b]
+          unexpected=[i for i in diff if i not in allowed]
+          print(f'header_page_diff_count={len(diff)}')
+          print('header_page_diff_offsets='+','.join(map(str,diff[:256])))
+          print(f'header_page_unexpected_diff_count={len(unexpected)}')
+
+          failed=[k for k,v in checks.items() if not v]
+          if unexpected: failed.append('header_page_only_kernel_size_delta')
+          if failed:
+              raise SystemExit('single-variable scope failed: '+','.join(failed))
+          print('BOOT_SINGLE_VARIABLE_ISOLATION_GATE=PASS')
+          PY
+
+          grep -Fqx 'BOOT_SINGLE_VARIABLE_ISOLATION_GATE=PASS' boot-payload-compare.txt
+
+      - name: Compare ARM64 Image headers entry points and build identity
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee arm64-image-compare.txt
+          from pathlib import Path
+          import hashlib, os, re, struct
+
+          def sha(b): return hashlib.sha256(b).hexdigest()
+          def btarget(w,off=4):
+              if w & 0x7c000000 != 0x14000000: return None
+              imm=w & 0x03ffffff
+              if imm & (1<<25): imm-=1<<26
+              return off+(imm<<2)
+
+          def parse(path):
+              b=Path(path).read_bytes()
+              if len(b)<64 or struct.unpack_from('<I',b,0x38)[0] != 0x644d5241:
+                  raise SystemExit(f'{path}: invalid ARM64 Image')
+              h={
+                  'bytes':len(b),'sha256':sha(b),
+                  'code0':struct.unpack_from('<I',b,0)[0],
+                  'code1':struct.unpack_from('<I',b,4)[0],
+                  'text_offset':struct.unpack_from('<Q',b,8)[0],
+                  'image_size':struct.unpack_from('<Q',b,16)[0],
+                  'flags':struct.unpack_from('<Q',b,24)[0],
+                  'res2':struct.unpack_from('<Q',b,32)[0],
+                  'res3':struct.unpack_from('<Q',b,40)[0],
+                  'res4':struct.unpack_from('<Q',b,48)[0],
+                  'magic':struct.unpack_from('<I',b,56)[0],
+                  'res5':struct.unpack_from('<I',b,60)[0],
+              }
+              h['branch_target']=btarget(h['code1'])
+              m=re.search(rb'Linux version ([^\x00\n]{1,600})',b)
+              h['version']=m.group(1).decode('utf-8','replace') if m else '<missing>'
+              return b,h
+
+          sb,s=parse('stock-Image'); cb,c=parse('candidate-Image')
+          for name,h in [('HEALTHY_STOCK',s),('CANDIDATE_0008',c)]:
+              print(f'[{name}]')
+              for k,v in h.items():
+                  print(f'{k}={v}')
+          print('[COMPARE]')
+          for k in ('code0','code1','text_offset','image_size','flags','res2','res3','res4','magic','res5','branch_target'):
+              print(f'{k}_equal={int(s[k]==c[k])}')
+          common=min(len(sb),len(cb))
+          first=next((i for i in range(common) if sb[i]!=cb[i]),common)
+          print(f'first_byte_diff_offset={first}')
+          print(f'first_64_equal={int(sb[:64]==cb[:64])}')
+          print(f'first_4096_equal={int(sb[:4096]==cb[:4096])}')
+          print(f'stock_build_marker_present={int(os.environ["STOCK_BUILD_MARKER"].encode() in sb)}')
+          print(f'candidate_build_marker_present={int(os.environ["CANDIDATE_BUILD_MARKER"].encode() in cb)}')
+          print(f'same_release_string={int(os.environ["TARGET_RELEASE"].encode() in sb and os.environ["TARGET_RELEASE"].encode() in cb)}')
+          print('ARM64_HEALTHY_VS_CANDIDATE_COMPARE=PASS')
+          PY
+
+      - name: Disassemble both Image entry targets
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' > entry.env
+          from pathlib import Path
+          import struct
+          def target(path):
+              b=Path(path).read_bytes()
+              w=struct.unpack_from('<I',b,4)[0]
+              imm=w & 0x03ffffff
+              if imm & (1<<25): imm-=1<<26
+              return 4+(imm<<2)
+          print(f'STOCK_ENTRY={target("stock-Image")}')
+          print(f'CANDIDATE_ENTRY={target("candidate-Image")}')
+          PY
+          source entry.env
+          {
+            echo "[HEALTHY_STOCK target=$STOCK_ENTRY]"
+            aarch64-linux-gnu-objdump -D -b binary -m aarch64               --start-address="$STOCK_ENTRY" --stop-address="$((STOCK_ENTRY+512))" stock-Image
+            echo
+            echo "[CANDIDATE_0008 target=$CANDIDATE_ENTRY]"
+            aarch64-linux-gnu-objdump -D -b binary -m aarch64               --start-address="$CANDIDATE_ENTRY" --stop-address="$((CANDIDATE_ENTRY+512))" candidate-Image
+          } | tee entry-disassembly.txt
+
+      - name: Extract and diff complete embedded IKCONFIG
+        run: |
+          set -euo pipefail
+          extract="reconstructed-source/scripts/extract-ikconfig"
+          test -x "$extract" || chmod +x "$extract"
+
+          "$extract" stock-Image > stock.config 2>stock.ikconfig.err
+          "$extract" candidate-Image > candidate.config 2>candidate.ikconfig.err
+          test -s stock.config
+          test -s candidate.config
+
+          python3 - <<'PY' | tee config-diff-summary.txt
+          from pathlib import Path
+
+          def cfg(path):
+              d={}
+              for raw in Path(path).read_text(errors='replace').splitlines():
+                  if raw.startswith('# CONFIG_') and raw.endswith(' is not set'):
+                      d[raw.split()[1]]='n'
+                  elif raw.startswith('CONFIG_') and '=' in raw:
+                      k,v=raw.split('=',1); d[k]=v
+              return d
+
+          s=cfg('stock.config'); c=cfg('candidate.config')
+          keys=sorted(set(s)|set(c))
+          diffs=[(k,s.get(k,'<missing>'),c.get(k,'<missing>')) for k in keys if s.get(k)!=c.get(k)]
+          Path('full-config-diff.tsv').write_text(
+              'config\tstock\tcandidate\n'+'\n'.join(f'{k}\t{a}\t{b}' for k,a,b in diffs)+'\n')
+
+          prefixes=(
+            'CONFIG_ARM64','CONFIG_ARM_','CONFIG_ARCH_','CONFIG_CPU_','CONFIG_EFI',
+            'CONFIG_PSCI','CONFIG_MMU','CONFIG_RANDOMIZE','CONFIG_RELOCATABLE',
+            'CONFIG_SMP','CONFIG_PREEMPT','CONFIG_VIRTUALIZATION','CONFIG_HYPERVISOR',
+            'CONFIG_QCOM','CONFIG_INTERCONNECT','CONFIG_ARM_SMMU','CONFIG_IOMMU',
+            'CONFIG_DMA','CONFIG_CMA','CONFIG_SPARSEMEM','CONFIG_ZONE','CONFIG_OF',
+            'CONFIG_CLK','CONFIG_COMMON_CLK','CONFIG_REGULATOR','CONFIG_PINCTRL',
+            'CONFIG_SERIAL','CONFIG_PRINTK','CONFIG_PSTORE','CONFIG_PANIC',
+            'CONFIG_CMDLINE','CONFIG_KASLR','CONFIG_MODULE','CONFIG_MODVERSION'
+          )
+          sensitive=[d for d in diffs if d[0].startswith(prefixes)]
+          Path('early-sensitive-config-diff.tsv').write_text(
+              'config\tstock\tcandidate\n'+'\n'.join(f'{k}\t{a}\t{b}' for k,a,b in sensitive)+'\n')
+
+          print(f'STOCK_CONFIG_KEYS={len(s)}')
+          print(f'CANDIDATE_CONFIG_KEYS={len(c)}')
+          print(f'FULL_CONFIG_DIFF_COUNT={len(diffs)}')
+          print(f'EARLY_SENSITIVE_CONFIG_DIFF_COUNT={len(sensitive)}')
+          for k,a,b in sensitive[:400]:
+              print(f'{k}\tstock={a}\tcandidate={b}')
+          print('IKCONFIG_DIFF_GATE=PASS')
+          PY
+
+      - name: Classify first current blocker
+        run: |
+          set -euo pipefail
+          grep -Fqx 'BOOT_SINGLE_VARIABLE_ISOLATION_GATE=PASS' boot-payload-compare.txt
+          grep -Fqx 'ARM64_HEALTHY_VS_CANDIDATE_COMPARE=PASS' arm64-image-compare.txt
+          grep -Fqx 'IKCONFIG_DIFF_GATE=PASS' config-diff-summary.txt
+
+          {
+            echo "healthy_stock_boot_sha256=$STOCK_BOOT_SHA256"
+            echo "candidate_0008_boot_sha256=$CANDIDATE_BOOT_SHA256"
+            echo "candidate_0008_image_sha256=$CANDIDATE_IMAGE_SHA256"
+            echo "device_control_result=healthy_stock_boots_candidate0008_fails_same_3_09_companion_same_tw_super"
+            echo "FIRST_CURRENT_BLOCKER=CANDIDATE_0008_KERNEL_IMAGE"
+            echo "NEXT_ACTION=use_exact_stock_vs_candidate_Image_header_entry_and_IKCONFIG_delta_to_choose_minimal_kernel_rebuild"
+            echo "LISA_HEALTHY_STOCK_VS_CANDIDATE0008_DIAGNOSIS_GATE=PASS"
+          } | tee final-gate.txt
+
+      - name: Write job summary
+        if: always()
+        run: |
+          {
+            echo '## Lisa healthy stock vs Candidate 0008'
+            echo
+            cat final-gate.txt 2>/dev/null || true
+            echo
+            cat boot-payload-compare.txt 2>/dev/null || true
+            echo
+            cat arm64-image-compare.txt 2>/dev/null || true
+            echo
+            cat config-diff-summary.txt 2>/dev/null || true
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload exact diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-healthy-stock-vs-candidate0008-diagnosis
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            final-gate.txt
+            boot-payload-compare.txt
+            arm64-image-compare.txt
+            entry.env
+            entry-disassembly.txt
+            config-diff-summary.txt
+            full-config-diff.tsv
+            early-sensitive-config-diff.tsv
+            stock.config
+            candidate.config
+            stock.ikconfig.err
+            candidate.ikconfig.err
