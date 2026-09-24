@@ -198,11 +198,16 @@ jobs:
           from pathlib import Path
           p=Path('arch/arm64/kernel/kaslr.c')
           s=p.read_text()
-          needle="\\tmodule_alloc_base = (u64)_etext - MODULES_VSIZE;\\n\\t__flush_dcache_area(&module_alloc_base, sizeof(module_alloc_base));\\n"
-          repl=needle+"\\t/* Lisa Candidate 0017 diagnostic control: hard-disable runtime KASLR after mandatory module base setup. */\\n\\treturn 0;\\n"
-          if s.count(needle) != 1:
-              raise SystemExit('kaslr insertion point not unique')
-          p.write_text(s.replace(needle,repl,1))
+          lines=s.splitlines(keepends=True)
+          hits=[i for i in range(len(lines)-1)
+                if lines[i].strip() == 'module_alloc_base = (u64)_etext - MODULES_VSIZE;'
+                and lines[i+1].strip() == '__flush_dcache_area(&module_alloc_base, sizeof(module_alloc_base));']
+          if len(hits) != 1:
+              raise SystemExit(f'kaslr semantic insertion point count={len(hits)}')
+          i=hits[0]
+          insert="    /* Lisa Candidate 0017 diagnostic control: hard-disable runtime KASLR after mandatory module base setup. */\\n    return 0;\\n"
+          lines.insert(i+2,insert)
+          p.write_text(''.join(lines))
           PY
           cp arch/arm64/kernel/kaslr.c ../candidate-0017-kaslr.c.after
           git diff -- arch/arm64/kernel/kaslr.c | tee ../candidate-0017-kaslr.patch
