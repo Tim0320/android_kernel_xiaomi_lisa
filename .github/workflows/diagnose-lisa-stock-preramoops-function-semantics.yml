@@ -47,7 +47,7 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y python3-pip curl unzip binutils-aarch64-linux-gnu
-          python3 -m pip install --break-system-packages \
+          python3 -m pip install --break-system-packages pyelftools \
             git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
           command -v kallsyms-finder
           command -v vmlinux-to-elf
@@ -105,6 +105,7 @@ jobs:
           import re
           import struct
           import subprocess
+          from elftools.elf.elffile import ELFFile
 
           targets = [
               "cpufreq_times_init",
@@ -124,12 +125,31 @@ jobs:
 
           stock = parse("stock.kallsyms")
           cand = parse("c0014.kallsyms")
-          image = Path("stock-Image").read_bytes()
           text_addrs = sorted({addr for addr, typ, _ in stock if typ in "TtWw"})
           if not text_addrs:
               raise SystemExit("no stock text symbols")
 
           image_base = text_addrs[0]
+
+          def read_u64_from_elf_vaddr(path, vaddr):
+              with open(path, "rb") as stream:
+                  elf = ELFFile(stream)
+                  for segment in elf.iter_segments():
+                      if segment["p_type"] != "PT_LOAD":
+                          continue
+                      start = int(segment["p_vaddr"])
+                      filesz = int(segment["p_filesz"])
+                      if start <= vaddr and vaddr + 8 <= start + filesz:
+                          file_off = int(segment["p_offset"]) + (vaddr - start)
+                          stream.seek(file_off)
+                          data = stream.read(8)
+                          if len(data) != 8:
+                              raise SystemExit(
+                                  f"short ELF read for vaddr 0x{vaddr:x} at file offset 0x{file_off:x}"
+                              )
+                          return struct.unpack("<Q", data)[0]
+              raise SystemExit(f"no PT_LOAD maps vaddr 0x{vaddr:x}")
+
           cand_init_targets = set()
           for _, _, name in cand:
               if name.startswith("__initcall_"):
@@ -148,14 +168,13 @@ jobs:
                   raise SystemExit(f"expected one stock initcall pointer for {target}, got {entries}")
 
               ptr_addr, init_symbol = entries[0]
-              raw_offset = ptr_addr - image_base
-              if raw_offset < 0 or raw_offset + 8 > len(image):
-                  raise SystemExit(f"initcall pointer outside raw Image for {target}: 0x{raw_offset:x}")
-
-              start = struct.unpack_from("<Q", image, raw_offset)[0]
-              if not (image_base <= start < image_base + len(image)):
+              # The raw Image contains relocation placeholders for this table.
+              # stock.elf has already had RELA relocations applied by vmlinux-to-elf,
+              # so read the pointer from the mapped PT_LOAD bytes instead.
+              start = read_u64_from_elf_vaddr("stock.elf", ptr_addr)
+              if not (image_base <= start < image_base + 0x40000000):
                   raise SystemExit(
-                      f"decoded target outside stock Image for {target}: "
+                      f"decoded relocated target outside expected stock kernel VA range for {target}: "
                       f"ptr=0x{ptr_addr:x} target=0x{start:x} base=0x{image_base:x}"
                   )
 
