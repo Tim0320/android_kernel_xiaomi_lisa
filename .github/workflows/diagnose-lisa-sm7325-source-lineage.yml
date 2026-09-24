@@ -1,0 +1,278 @@
+name: Diagnose Lisa SM7325 source-lineage gaps
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-sm7325-source-lineage.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: diagnose-lisa-sm7325-source-lineage
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      DONOR_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+      REF_REPO: Atom-X-Devs/android_kernel_xiaomi_sm7325
+      REF_SHA: 89bc524eb7d6819e14f6a97253baab8ab7ca4458
+
+    steps:
+      - name: Checkout exact reconstructed donor
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.DONOR_SHA }}
+          path: donor
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Checkout public SM7325 reference lineage
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.REF_REPO }}
+          ref: ${{ env.REF_SHA }}
+          path: sm7325-ref
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Authenticate exact source revisions
+        run: |
+          set -euo pipefail
+          test "$(git -C donor rev-parse HEAD)" = "$DONOR_SHA"
+          test "$(git -C sm7325-ref rev-parse HEAD)" = "$REF_SHA"
+          echo "DONOR_SHA=$DONOR_SHA"
+          echo "REF_REPO=$REF_REPO"
+          echo "REF_SHA=$REF_SHA"
+          echo 'SOURCE_REVISION_GATE=PASS'
+
+      - name: Classify stock-only symbols against SM7325 reference
+        run: |
+          set -euo pipefail
+          cat > unresolved-stock-configs.txt <<'EOF'
+          BQ2597X
+          DEBUG_POLICY_STATUS
+          DEBUG_POWER_MI
+          F2FS_CP_OPT
+          FASTBOOT_CMD_CTRL_UART
+          IIO_TRIGGERED_BUFFER
+          MIGT
+          MILLET
+          MIUI_ZRAM_MEMORY_TRACKING
+          MIUS_PROXIMITY
+          MI_UFS_FFU
+          OEM_KERNEL
+          PACKAGE_RUNTIME_INFO
+          PASSTHROUGH_SYSTEM
+          PERF_CRITICAL_RT_TASK
+          PERF_HUMANTASK
+          QCOM_MINIDUMP_ENCRYPT
+          QTI_BATTERY_CHARGER_K8
+          SF_BINDER
+          UFSGKI
+          UFS_WB
+          XLOGCHAR
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import csv, re, subprocess
+
+          symbols=[x.strip() for x in Path('unresolved-stock-configs.txt').read_text().splitlines() if x.strip()]
+          repos={'donor':'donor','sm7325_ref':'sm7325-ref'}
+
+          def grep(repo, pattern, extended=False, paths=None):
+              cmd=['git','-C',repo,'grep','-n']
+              if extended:
+                  cmd += ['-E', pattern]
+              else:
+                  cmd += ['-F', pattern]
+              if paths:
+                  cmd += ['--'] + paths
+              p=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL)
+              if p.returncode not in (0,1):
+                  raise SystemExit(f'git grep failed rc={p.returncode}: {cmd}')
+              return [x for x in p.stdout.splitlines() if x.strip()]
+
+          rows=[]
+          details=[]
+          for sym in symbols:
+              row={'symbol':f'CONFIG_{sym}'}
+              for label,repo in repos.items():
+                  declrx=rf'^[[:space:]]*(menu)?config[[:space:]]+{re.escape(sym)}([[:space:]]|$)'
+                  decl=grep(repo,declrx,True,['*Kconfig*'])
+                  refs=grep(repo,f'CONFIG_{sym}',False,['*.c','*.h','*.S','*.s','*Kconfig*','Makefile','Kbuild','*.mk'])
+                  src=[x for x in refs if not re.search(r'(?:^|/)Kconfig[^:]*:',x)]
+                  row[f'{label}_decl']=len(decl)
+                  row[f'{label}_source_refs']=len(src)
+                  details.append(f'===== CONFIG_{sym} :: {label} =====')
+                  details.append('-- declarations --')
+                  details.extend(decl[:80] or ['<none>'])
+                  details.append('-- source/build references --')
+                  details.extend(src[:160] or ['<none>'])
+                  details.append('')
+
+              ddecl=row['donor_decl']; dref=row['donor_source_refs']
+              rdecl=row['sm7325_ref_decl']; rref=row['sm7325_ref_source_refs']
+              if (not ddecl and not dref) and (rdecl or rref):
+                  cls='missing-from-donor-present-in-sm7325-ref'
+              elif (not ddecl and not dref) and (not rdecl and not rref):
+                  cls='absent-from-both-likely-stale-or-other-vendor-lineage'
+              elif (ddecl or dref) and (rdecl or rref):
+                  cls='present-in-both'
+              elif (ddecl or dref) and not (rdecl or rref):
+                  cls='donor-only-or-reference-dropped'
+              else:
+                  cls='mixed'
+              row['classification']=cls
+              rows.append(row)
+
+          # QCOM_MINIDUMP_ENCRYPT is a special case: the donor lacks the Kconfig
+          # symbol but already performs the stock-y behavior unconditionally.
+          donor_md=Path('donor/drivers/soc/qcom/msm_minidump.c').read_text(errors='replace')
+          ref_md=Path('sm7325-ref/drivers/soc/qcom/msm_minidump.c').read_text(errors='replace')
+          donor_unconditional=(
+              'md_ss_toc->encryption_status = MD_SS_ENCR_NONE;' in donor_md and
+              'md_ss_toc->encryption_required = MD_SS_ENCR_REQ;' in donor_md and
+              'IS_ENABLED(CONFIG_QCOM_MINIDUMP_ENCRYPT)' not in donor_md
+          )
+          ref_conditional=(
+              'IS_ENABLED(CONFIG_QCOM_MINIDUMP_ENCRYPT)' in ref_md and
+              'md_ss_toc->encryption_required = MD_SS_ENCR_REQ;' in ref_md
+          )
+
+          fields=['symbol','classification','donor_decl','donor_source_refs','sm7325_ref_decl','sm7325_ref_source_refs']
+          with open('sm7325-symbol-lineage.tsv','w',newline='') as f:
+              w=csv.DictWriter(f,fieldnames=fields,delimiter='\t')
+              w.writeheader(); w.writerows(rows)
+          Path('sm7325-symbol-hits.txt').write_text('\n'.join(details)+'\n')
+
+          counts={}
+          for r in rows:
+              counts[r['classification']]=counts.get(r['classification'],0)+1
+          with open('sm7325-symbol-summary.txt','w') as f:
+              f.write(f'TOTAL_SYMBOLS={len(rows)}\n')
+              for k in sorted(counts): f.write(f'CLASS_{k}={counts[k]}\n')
+              f.write(f'QCOM_MINIDUMP_ENCRYPT_DONOR_UNCONDITIONAL_EQUIVALENT={int(donor_unconditional)}\n')
+              f.write(f'QCOM_MINIDUMP_ENCRYPT_REF_CONDITIONAL={int(ref_conditional)}\n')
+              for r in rows:
+                  f.write('{symbol}\t{classification}\tdonor_decl={donor_decl}\tdonor_refs={donor_source_refs}\tref_decl={sm7325_ref_decl}\tref_refs={sm7325_ref_source_refs}\n'.format(**r))
+              f.write('SM7325_SYMBOL_LINEAGE_GATE=PASS\n')
+          print(Path('sm7325-symbol-summary.txt').read_text())
+          PY
+
+      - name: Compare early initcall source inventory
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          roots=[
+            'arch/arm64/kernel', 'init', 'drivers/firmware', 'drivers/soc/qcom',
+            'drivers/scsi/ufs', 'drivers/clk/qcom', 'drivers/regulator',
+            'drivers/irqchip', 'drivers/iommu'
+          ]
+          rx=re.compile(r'\b(early_initcall|pure_initcall|core_initcall|postcore_initcall|arch_initcall|subsys_initcall|fs_initcall|rootfs_initcall|device_initcall|late_initcall)(?:_sync)?\s*\(\s*([A-Za-z0-9_]+)\s*\)')
+
+          def inventory(base):
+              out=set()
+              for root in roots:
+                  p=Path(base)/root
+                  if not p.exists(): continue
+                  for f in p.rglob('*'):
+                      if not f.is_file() or f.suffix not in ('.c','.h','.S','.s'): continue
+                      try: text=f.read_text(errors='replace')
+                      except Exception: continue
+                      rel=f.relative_to(base).as_posix()
+                      for m in rx.finditer(text):
+                          out.add((m.group(1),m.group(2),rel))
+              return out
+
+          donor=inventory('donor')
+          ref=inventory('sm7325-ref')
+          donor_keys={(a,b) for a,b,_ in donor}
+          ref_keys={(a,b) for a,b,_ in ref}
+          ref_only=sorted(x for x in ref if (x[0],x[1]) not in donor_keys)
+          donor_only=sorted(x for x in donor if (x[0],x[1]) not in ref_keys)
+
+          def dump(path, rows):
+              Path(path).write_text('type\tfunction\tpath\n' + ''.join(f'{a}\t{b}\t{c}\n' for a,b,c in rows))
+          dump('sm7325-ref-only-early-initcalls.tsv',ref_only)
+          dump('donor-only-early-initcalls.tsv',donor_only)
+          with open('sm7325-early-initcall-summary.txt','w') as f:
+              f.write(f'DONOR_EARLY_INITCALLS={len(donor)}\n')
+              f.write(f'SM7325_REF_EARLY_INITCALLS={len(ref)}\n')
+              f.write(f'SM7325_REF_ONLY_EARLY_INITCALLS={len(ref_only)}\n')
+              f.write(f'DONOR_ONLY_EARLY_INITCALLS={len(donor_only)}\n')
+              f.write('SM7325_EARLY_INITCALL_INVENTORY_GATE=PASS\n')
+          print(Path('sm7325-early-initcall-summary.txt').read_text())
+          print('--- first 120 SM7325-reference-only initcalls ---')
+          for row in ref_only[:120]: print('\t'.join(row))
+          PY
+
+      - name: Compare critical Kbuild object selections
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          roots=['drivers/soc/qcom','drivers/scsi/ufs','drivers/clk/qcom','drivers/regulator','drivers/irqchip','drivers/iommu','arch/arm64/kernel']
+          rx=re.compile(r'^\s*(obj|[A-Za-z0-9_.-]+-y|[A-Za-z0-9_.-]+-objs)\s*[-+:]?=\s*(.+)$')
+          def rows(base):
+              out=set()
+              for root in roots:
+                  p=Path(base)/root
+                  if not p.exists(): continue
+                  for f in list(p.rglob('Makefile'))+list(p.rglob('Kbuild')):
+                      rel=f.relative_to(base).as_posix()
+                      for raw in f.read_text(errors='replace').splitlines():
+                          line=' '.join(raw.strip().split())
+                          if not line or line.startswith('#'): continue
+                          if 'obj-$(' in line or rx.match(line): out.add((rel,line))
+              return out
+          d=rows('donor'); r=rows('sm7325-ref')
+          ro=sorted(r-d); do=sorted(d-r)
+          Path('sm7325-ref-only-kbuild.tsv').write_text('path\tline\n'+''.join(f'{p}\t{l}\n' for p,l in ro))
+          Path('donor-only-kbuild.tsv').write_text('path\tline\n'+''.join(f'{p}\t{l}\n' for p,l in do))
+          with open('sm7325-kbuild-summary.txt','w') as f:
+              f.write(f'SM7325_REF_ONLY_KBUILD_LINES={len(ro)}\n')
+              f.write(f'DONOR_ONLY_KBUILD_LINES={len(do)}\n')
+              f.write('SM7325_KBUILD_INVENTORY_GATE=PASS\n')
+          print(Path('sm7325-kbuild-summary.txt').read_text())
+          print('--- first 160 SM7325-reference-only Kbuild lines ---')
+          for p,l in ro[:160]: print(f'{p}\t{l}')
+          PY
+
+      - name: Final source-lineage diagnostic gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'SM7325_SYMBOL_LINEAGE_GATE=PASS' sm7325-symbol-summary.txt
+          grep -Fqx 'SM7325_EARLY_INITCALL_INVENTORY_GATE=PASS' sm7325-early-initcall-summary.txt
+          grep -Fqx 'SM7325_KBUILD_INVENTORY_GATE=PASS' sm7325-kbuild-summary.txt
+          grep -Fqx 'QCOM_MINIDUMP_ENCRYPT_DONOR_UNCONDITIONAL_EQUIVALENT=1' sm7325-symbol-summary.txt
+          echo 'LISA_SM7325_SOURCE_LINEAGE_DIAGNOSIS=PASS'
+
+      - name: Upload source-lineage diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-sm7325-source-lineage-diagnosis
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            unresolved-stock-configs.txt
+            sm7325-symbol-lineage.tsv
+            sm7325-symbol-summary.txt
+            sm7325-symbol-hits.txt
+            sm7325-ref-only-early-initcalls.tsv
+            donor-only-early-initcalls.tsv
+            sm7325-early-initcall-summary.txt
+            sm7325-ref-only-kbuild.tsv
+            donor-only-kbuild.tsv
+            sm7325-kbuild-summary.txt
