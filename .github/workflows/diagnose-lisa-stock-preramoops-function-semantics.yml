@@ -100,7 +100,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY' | tee bounded-ranges.txt
           from pathlib import Path
-          import re
+          import re, struct
 
           targets=["cpufreq_times_init","pm_debug_init","alarm_record_init","uevent_record_init"]
           line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
@@ -117,34 +117,179 @@ jobs:
 
           stock=parse("stock.kallsyms")
           cand=parse("c0014.kallsyms")
-          cand_names={name for _,_,name in cand}
+          image=Path("stock-Image").read_bytes()
+
+          # The healthy stock may omit a local static function name from kallsyms
+          # while retaining the generated __initcall_* pointer symbol. Resolve the
+          # function entry from that pointer instead of requiring an exact function
+          # symbol. ARM64 Image is a flat linked image, so VMA - image_base maps to
+          # the raw Image file offset.
           text=sorted({addr for addr,typ,name in stock if typ in "TtWw"})
-          by_name={}
-          for addr,typ,name in stock:
-              by_name.setdefault(name,[]).append((addr,typ))
+          if not text:
+              raise SystemExit("no stock text symbols")
+          image_base=min(text)
+
+          cand_init_targets=set()
+          for _,_,name in cand:
+              if name.startswith("__initcall_"):
+                  for fn in targets:
+                      if fn in name:
+                          cand_init_targets.add(fn)
 
           lines=[]
           for fn in targets:
-              entries=by_name.get(fn,[])
-              if not entries:
-                  raise SystemExit(f"missing stock target {fn}")
-              start=min(addr for addr,_ in entries)
+              init_entries=[
+                  (addr,name) for addr,typ,name in stock
+                  if name.startswith("__initcall_") and fn in name
+              ]
+              if len(init_entries)!=1:
+                  raise SystemExit(f"expected one stock initcall pointer for {fn}, got {init_entries}")
+
+              ptr_addr,init_name=init_entries[0]
+              off=ptr_addr-image_base
+              if off < 0 or off+8 > len(image):
+                  raise SystemExit(f"initcall pointer outside raw Image for {fn}: off=0x{off:x}")
+
+              start=struct.unpack_from("<Q",image,off)[0]
+              if not (image_base <= start < image_base+len(image)):
+                  raise SystemExit(
+                      f"decoded init target outside stock Image for {fn}: "
+                      f"ptr=0x{ptr_addr:x} target=0x{start:x} base=0x{image_base:x}"
+                  )
+
               next_addrs=[a for a in text if a>start]
-              if not next_addrs:
-                  raise SystemExit(f"no next text symbol after {fn}")
-              next_addr=next_addrs[0]
-              # Bound pathological symbol gaps while still covering normal init funcs.
-              stop=min(next_addr,start+0x1000)
+              stop=min(next_addrs[0] if next_addrs else start+0x1000,start+0x1000)
               if stop<=start:
-                  raise SystemExit(f"bad range for {fn}")
-              lines.append(f"{fn}\t0x{start:x}\t0x{stop:x}\t{stop-start}\t{int(fn in cand_names)}")
-          print("function\tstart\tstop\tbytes\tpresent_in_c0014")
+                  raise SystemExit(f"bad decoded range for {fn}")
+
+              exact_names=sorted(name for addr,typ,name in stock if addr==start and typ in "TtWw")
+              lines.append(
+                  f"{fn}\t0x{start:x}\t0x{stop:x}\t{stop-start}\t"
+                  f"{int(fn in cand_init_targets)}\t0x{ptr_addr:x}\t{init_name}\t"
+                  f"{','.join(exact_names) if exact_names else '<no-exact-kallsyms-name>'}"
+              )
+
+          header=(
+              "function\tstart\tstop\tbytes\tpresent_in_c0014\t"
+              "stock_initcall_ptr\tstock_initcall_symbol\tstock_exact_text_symbol"
+          )
+          print(header)
           print("\n".join(lines))
-          Path("bounded-ranges.tsv").write_text("function\tstart\tstop\tbytes\tpresent_in_c0014\n"+"\n".join(lines)+"\n")
+          Path("bounded-ranges.tsv").write_text(header+"\n"+"\n".join(lines)+"\n")
+          print("INITCALL_POINTER_RANGE_RESOLUTION=PASS")
           PY
 
-          tail -n +2 bounded-ranges.tsv | while IFS=$'\t' read -r fn start stop bytes present; do
-            echo "DISASSEMBLE ${fn} ${start}..${stop} (${bytes} bytes)"
+          tail -n +2 bounded-ranges.tsv | while IFS=
+      - name: Extract direct call targets and classify likely semantic role
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee function-semantics-summary.txt
+          from pathlib import Path
+          import re
+
+          targets=["cpufreq_times_init","pm_debug_init","alarm_record_init","uevent_record_init"]
+          branch_rx=re.compile(r"\b(?:bl|b)\s+[0-9a-fx]+\s+<([^>]+)>")
+          c_line=re.compile(r"^[0-9a-fA-F]+\s+[A-Za-z?]\s+(.+?)\s*$")
+
+          cand=set()
+          for raw in Path("c0014.kallsyms").read_text(errors="replace").splitlines():
+              m=c_line.match(raw)
+              if m:
+                  cand.add(m.group(1))
+
+          debug_terms=("proc_","debug","trace","record","log","sysfs","seq_","kobject","uevent","alarm","time_in_state","uid_")
+          critical_terms=("panic","restart","reboot","poweroff","power_off","watchdog","psci","scm","smmu","iommu","irq","gic","mmu","clk","regulator","ufs","qcom")
+
+          out=[]
+          for fn in targets:
+              txt=Path(f"stock-{fn}.S").read_text(errors="replace")
+              calls=[]
+              for line in txt.splitlines():
+                  m=branch_rx.search(line)
+                  if m:
+                      callee=m.group(1).split('+',1)[0]
+                      if callee not in calls:
+                          calls.append(callee)
+              low=" ".join([fn]+calls).lower()
+              debug_hits=sorted({t for t in debug_terms if t in low})
+              critical_hits=sorted({t for t in critical_terms if t in low})
+              missing=[c for c in calls if c not in cand]
+              out.append(f"TARGET={fn}")
+              out.append(f"DIRECT_CALL_COUNT={len(calls)}")
+              out.append("DIRECT_CALLS="+",".join(calls))
+              out.append(f"DIRECT_CALLS_MISSING_IN_C0014={len(missing)}")
+              out.append("MISSING_CALLEES="+",".join(missing))
+              out.append("DEBUG_RECORD_HINTS="+",".join(debug_hits))
+              out.append("PLATFORM_CRITICAL_HINTS="+",".join(critical_hits))
+              if critical_hits:
+                  role="needs-critical-review"
+              elif debug_hits:
+                  role="likely-observability-accounting"
+              else:
+                  role="undetermined"
+              out.append(f"SEMANTIC_ROLE={role}")
+              out.append("")
+          print("\n".join(out))
+          Path("function-semantics-summary.txt").write_text("\n".join(out)+"\n")
+          PY
+
+      - name: Cross-check reconstructed source lineage
+        run: |
+          set -euo pipefail
+          {
+            echo '### reconstructed-source SHA'
+            git -C reconstructed-source rev-parse HEAD
+            echo
+            echo '### cpufreq_times source tail'
+            tail -n 60 reconstructed-source/drivers/cpufreq/cpufreq_times.c
+            echo
+            echo '### exact target search'
+            for fn in cpufreq_times_init pm_debug_init alarm_record_init uevent_record_init; do
+              echo "## $fn"
+              git -C reconstructed-source grep -n -F "$fn" -- '*.c' '*.h' '*.S' '*Kconfig*' '*Makefile*' || true
+            done
+          } | tee reconstructed-lineage.txt
+
+      - name: Final gate
+        run: |
+          set -euo pipefail
+          grep -Fq $'cpufreq_times_init\t' bounded-ranges.tsv
+          grep -Fq $'pm_debug_init\t' bounded-ranges.tsv
+          grep -Fq $'alarm_record_init\t' bounded-ranges.tsv
+          grep -Fq $'uevent_record_init\t' bounded-ranges.tsv
+          for fn in cpufreq_times_init pm_debug_init alarm_record_init uevent_record_init; do
+            grep -Fq "TARGET=${fn}" function-semantics-summary.txt
+            test -s "stock-${fn}.S"
+          done
+          {
+            cat bounded-ranges.tsv
+            cat function-semantics-summary.txt
+            echo 'LISA_STOCK_PRERAMOOPS_FUNCTION_SEMANTICS=PASS'
+          } | tee final.txt
+
+      - name: Upload diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-preramoops-function-semantics
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            final.txt
+            bounded-ranges.txt
+            bounded-ranges.tsv
+            function-semantics-summary.txt
+            reconstructed-lineage.txt
+            stock-cpufreq_times_init.S
+            stock-pm_debug_init.S
+            stock-alarm_record_init.S
+            stock-uevent_record_init.S
+            stock.kallsyms
+            c0014.kallsyms
+            stock-vmlinux-to-elf.log
+            c0014-vmlinux-to-elf.log
+\t' read -r fn start stop bytes present ptr initsym textsym; do
+            echo "DISASSEMBLE ${fn} ${start}..${stop} (${bytes} bytes) via ${initsym}"
             aarch64-linux-gnu-objdump -d --start-address="$start" --stop-address="$stop" stock.elf > "stock-${fn}.S"
             test -s "stock-${fn}.S"
           done
