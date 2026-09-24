@@ -1,0 +1,177 @@
+name: Diagnose Lisa exact stock vs Candidate 0013 initcall delta v2
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-exact-initcall-delta-v2.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-exact-initcall-delta-v2
+  cancel-in-progress: true
+
+env:
+  SOURCE_ARTIFACT_ID: "10800672846"
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download authenticated kallsyms inputs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${SOURCE_ARTIFACT_ID}/zip" \
+            -o prior.zip
+          unzip -q prior.zip -d prior
+          test -s prior/stock.kallsyms
+          test -s prior/c0013.kallsyms
+          cp prior/stock.kallsyms stock.kallsyms
+          cp prior/c0013.kallsyms c0013.kallsyms
+          echo 'INPUT_REUSE_GATE=PASS'
+
+      - name: Reparse initcalls without compiler-suffix false positives
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          line_rx=re.compile(r'^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$')
+          generated_prefix=re.compile(r'^\d+_\d+_')
+          compiler_suffixes=[
+              re.compile(r'\.llvm\.[0-9A-Fa-f]+$'),
+              re.compile(r'\.(?:isra|constprop|part|cold)\.\d+$'),
+              re.compile(r'\.cfi_jt$'),
+              re.compile(r'\.\d+$'),
+          ]
+
+          def strip_suffixes(s):
+              prev=None
+              while s != prev:
+                  prev=s
+                  for rx in compiler_suffixes:
+                      s=rx.sub('', s)
+              return s
+
+          def parse(path):
+              rows=[]
+              seen=set()
+              for raw in Path(path).read_text(errors='replace').splitlines():
+                  m=line_rx.match(raw)
+                  if not m:
+                      continue
+                  addr_s, typ, name=m.groups()
+                  if not name.startswith('__initcall_'):
+                      continue
+                  body=name[len('__initcall_'):]
+                  body=generated_prefix.sub('', body)
+                  # IMPORTANT: compiler clone suffixes such as .12170 are not
+                  # initcall levels. Strip them before parsing the terminal level.
+                  body=strip_suffixes(body)
+                  level=None
+                  fn=None
+                  if body.endswith('early'):
+                      level='early'; fn=body[:-5]
+                  elif body.endswith('rootfs'):
+                      level='rootfs'; fn=body[:-6]
+                  else:
+                      mm=re.match(r'^(.*?)([0-7]s?)$', body)
+                      if mm:
+                          fn,level=mm.groups()
+                  if level is None or not fn:
+                      continue
+                  fn=strip_suffixes(fn)
+                  key=(fn,level)
+                  if key in seen:
+                      continue
+                  seen.add(key)
+                  rows.append({'addr':int(addr_s,16),'addr_s':addr_s,'raw':name,'fn':fn,'level':level})
+              rows.sort(key=lambda x:x['addr'])
+              bylevel={}
+              for r in rows:
+                  bylevel.setdefault(r['level'],[]).append(r)
+              for level,rs in bylevel.items():
+                  for i,r in enumerate(rs): r['level_order']=i
+              return rows
+
+          s=parse('stock.kallsyms')
+          c=parse('c0013.kallsyms')
+          levels=['early','0','0s','1','1s','2','2s','3','3s','4','4s','5','5s','rootfs','6','6s','7','7s']
+          sm={(r['fn'],r['level']):r for r in s}
+          cm={(r['fn'],r['level']):r for r in c}
+          sf={r['fn'] for r in s}; cf={r['fn'] for r in c}
+          stock_only=sorted(k for k in set(sm)-set(cm) if k[0] not in cf)
+          cand_only=sorted(k for k in set(cm)-set(sm) if k[0] not in sf)
+          moves=[]
+          for fn in sorted(sf & cf):
+              sl=sorted({r['level'] for r in s if r['fn']==fn})
+              cl=sorted({r['level'] for r in c if r['fn']==fn})
+              if sl != cl: moves.append((fn,','.join(sl),','.join(cl)))
+          priority_rx=re.compile(r'(qcom|msm|yupik|scm|rpmh|llcc|icc|interconnect|ufs|ufshcd|scsi|gic|irq|timer|watchdog|wdog|smmu|iommu|clk|clock|gdsc|regulator|pinctrl|tlmm|gpio|cpufreq|opp|psci|smp|cpu|memblock|ramoops|pstore)', re.I)
+          priority=[k for k in stock_only if priority_rx.search(k[0])]
+
+          def dump(path, pairs, mp):
+              out=['level\taddress\tlevel_order\tfunction\traw_symbol']
+              for k in sorted(pairs,key=lambda x:(levels.index(x[1]) if x[1] in levels else 99,mp[x]['level_order'],x[0])):
+                  r=mp[k]; out.append(f"{r['level']}\t{r['addr_s']}\t{r['level_order']}\t{r['fn']}\t{r['raw']}")
+              Path(path).write_text('\n'.join(out)+'\n')
+
+          dump('true-stock-only-initcalls-v2.tsv',stock_only,sm)
+          dump('true-candidate-only-initcalls-v2.tsv',cand_only,cm)
+          dump('priority-stock-only-initcalls-v2.tsv',priority,sm)
+          Path('initcall-level-moves-v2.tsv').write_text('function\tstock_levels\tcandidate_levels\n'+''.join(f'{a}\t{b}\t{d}\n' for a,b,d in moves))
+          counts=['level\tstock\tcandidate\tdelta']
+          for lv in levels:
+              sn=sum(r['level']==lv for r in s); cn=sum(r['level']==lv for r in c)
+              counts.append(f'{lv}\t{sn}\t{cn}\t{cn-sn:+d}')
+          Path('initcall-level-counts-v2.tsv').write_text('\n'.join(counts)+'\n')
+          summary=[
+              f'STOCK_INITCALL_UNIQUE={len(s)}',
+              f'C0013_INITCALL_UNIQUE={len(c)}',
+              f'TRUE_STOCK_ONLY_INITCALLS={len(stock_only)}',
+              f'TRUE_C0013_ONLY_INITCALLS={len(cand_only)}',
+              f'INITCALL_LEVEL_MOVES={len(moves)}',
+              f'PRIORITY_TRUE_STOCK_ONLY_INITCALLS={len(priority)}',
+              'REGULATOR_FALSE_POSITIVE_PRESENT='+('1' if ('regulator_fixed_voltage_init4','0') in stock_only else '0'),
+              'EXACT_INITCALL_DELTA_V2=PASS',
+          ]
+          Path('summary-v2.txt').write_text('\n'.join(summary)+'\n')
+          print('\n'.join(summary))
+          print('PRIORITY_STOCK_ONLY_BEGIN')
+          for fn,lv in priority: print(f'{lv}\t{fn}')
+          print('PRIORITY_STOCK_ONLY_END')
+          PY
+
+      - name: Final gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'EXACT_INITCALL_DELTA_V2=PASS' summary-v2.txt
+          grep -Fqx 'REGULATOR_FALSE_POSITIVE_PRESENT=0' summary-v2.txt
+          cat summary-v2.txt
+          cat initcall-level-counts-v2.tsv
+
+      - name: Upload corrected diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-exact-stock-vs-c0013-initcall-delta-v2
+          retention-days: 14
+          path: |
+            summary-v2.txt
+            initcall-level-counts-v2.tsv
+            true-stock-only-initcalls-v2.tsv
+            true-candidate-only-initcalls-v2.tsv
+            priority-stock-only-initcalls-v2.tsv
+            initcall-level-moves-v2.tsv
