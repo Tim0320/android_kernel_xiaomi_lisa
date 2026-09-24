@@ -1,0 +1,360 @@
+name: Diagnose Lisa Candidate 0015 pre-ramoops shared semantics
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0015-preramoops-shared-semantics.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0015-preramoops-shared-semantics
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      STOCK_BOOT: stock-main/reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0015_ARTIFACT_ID: "10810774162"
+      C0015_IMAGE_SHA256: c40049716600f16d85e87abad8e7c4613dfbdb7dd8cef198cfb774674eef4ccc
+
+    steps:
+      - name: Checkout known-good stock baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: stock-main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Install recovery and disassembly tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip binutils-aarch64-linux-gnu
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+          command -v vmlinux-to-elf
+          command -v aarch64-linux-gnu-objdump
+
+      - name: Extract exact stock and Candidate 0015 Images
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b=Path("stock-main/reconstruction/stock/stock-Image/boot.img").read_bytes()
+          if b[:8] != b"ANDROID!":
+              raise SystemExit("bad stock boot")
+          ksz=struct.unpack_from("<I",b,8)[0]
+          Path("stock-Image").write_bytes(b[4096:4096+ksz])
+          print(f"STOCK_IMAGE_BYTES={ksz}")
+          PY
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/\${GITHUB_REPOSITORY}/actions/artifacts/\${C0015_ARTIFACT_ID}/zip" \
+            -o c0015.zip
+          mkdir -p c0015
+          unzip -q c0015.zip -d c0015
+          img="$(find c0015 -type f -name candidate-0015-Image -print -quit)"
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0015-Image
+          test "$(sha256sum candidate-0015-Image | awk '{print $1}')" = "$C0015_IMAGE_SHA256"
+
+      - name: Recover kallsyms and reconstructed ELF
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder candidate-0015-Image > c0015.kallsyms
+          test -s stock.kallsyms
+          test -s c0015.kallsyms
+          vmlinux-to-elf stock-Image stock.elf > stock-vmlinux-to-elf.log 2>&1
+          vmlinux-to-elf candidate-0015-Image c0015.elf > c0015-vmlinux-to-elf.log 2>&1
+          test -s stock.elf
+          test -s c0015.elf
+
+      - name: Enumerate shared initcalls before ramoops
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee preramoops-initcall-summary.txt
+          from pathlib import Path
+          import re
+
+          line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+          init_rx=re.compile(r"^__initcall_\d+_\d+_(.+?)(early|rootfs|[0-7]s?)$")
+          levels=["early","0","0s","1","1s","2","2s","3","3s","4","4s","5","5s","rootfs","6","6s","7","7s"]
+          rank={v:i for i,v in enumerate(levels)}
+
+          def canon_fn(name):
+              name=re.sub(r"\.\d+$","",name)
+              return name
+
+          def parse(path):
+              rows=[]
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=line_rx.match(raw)
+                  if not m:
+                      continue
+                  addr=int(m.group(1),16)
+                  name=m.group(3)
+                  im=init_rx.match(name)
+                  if not im:
+                      continue
+                  fn,lvl=im.groups()
+                  rows.append((rank.get(lvl,999),lvl,addr,canon_fn(fn),name))
+              rows.sort(key=lambda x:(x[0],x[2]))
+              return rows
+
+          stock=parse("stock.kallsyms")
+          cand=parse("c0015.kallsyms")
+          sm=[x for x in stock if x[3]=="ramoops_init"]
+          cm=[x for x in cand if x[3]=="ramoops_init"]
+          if len(sm)!=1 or len(cm)!=1:
+              raise SystemExit(f"ramoops anchor is not unique stock={sm} cand={cm}")
+          srank,slvl,saddr,_,_=sm[0]
+          crank,clvl,caddr,_,_=cm[0]
+
+          stock_pre=[x for x in stock if x[0]<srank or (x[0]==srank and x[2]<saddr)]
+          cand_pre=[x for x in cand if x[0]<crank or (x[0]==crank and x[2]<caddr)]
+          stock_keys={(lvl,fn) for _,lvl,_,fn,_ in stock_pre}
+          cand_keys={(lvl,fn) for _,lvl,_,fn,_ in cand_pre}
+          shared_keys=stock_keys & cand_keys
+
+          shared=[x for x in stock_pre if (x[1],x[3]) in shared_keys]
+          stock_only=[x for x in stock_pre if (x[1],x[3]) not in cand_keys]
+          cand_only=[x for x in cand_pre if (x[1],x[3]) not in stock_keys]
+
+          Path("shared-pre-ramoops.tsv").write_text(
+              "order\tlevel\tstock_ptr\tfunction\tstock_raw\n"+
+              "".join(f"{i}\t{lvl}\t{addr:016x}\t{fn}\t{raw}\n"
+                      for i,(_,lvl,addr,fn,raw) in enumerate(shared))
+          )
+          Path("stock-only-pre-ramoops.tsv").write_text(
+              "level\taddress\tfunction\traw\n"+
+              "".join(f"{lvl}\t{addr:016x}\t{fn}\t{raw}\n" for _,lvl,addr,fn,raw in stock_only)
+          )
+          Path("c0015-only-pre-ramoops.tsv").write_text(
+              "level\taddress\tfunction\traw\n"+
+              "".join(f"{lvl}\t{addr:016x}\t{fn}\t{raw}\n" for _,lvl,addr,fn,raw in cand_only)
+          )
+
+          print(f"STOCK_RAMOOPS_LEVEL={slvl}")
+          print(f"C0015_RAMOOPS_LEVEL={clvl}")
+          print(f"STOCK_PRE_RAMOOPS_COUNT={len(stock_pre)}")
+          print(f"C0015_PRE_RAMOOPS_COUNT={len(cand_pre)}")
+          print(f"SHARED_PRE_RAMOOPS_COUNT={len(shared)}")
+          print(f"STOCK_ONLY_PRE_RAMOOPS_COUNT={len(stock_only)}")
+          print(f"C0015_ONLY_PRE_RAMOOPS_COUNT={len(cand_only)}")
+          print("PRERAMOOPS_INITCALL_ENUM_GATE=PASS")
+          PY
+
+      - name: Compare bounded shared initcall implementations
+        run: |
+          set -euo pipefail
+          mkdir -p bounded
+          python3 - <<'PY' | tee preramoops-body-summary.txt
+          from pathlib import Path
+          import hashlib
+          import re
+          import subprocess
+
+          line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+          branch_rx=re.compile(r"\b(?:b|bl|cbz|cbnz|tbz|tbnz)\s+([^<]*?)(?:<([^>]+)>)?$")
+          insn_rx1=re.compile(r"^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+){4}(.*)$",re.I)
+          insn_rx2=re.compile(r"^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+(.*)$",re.I)
+
+          def canon(name):
+              name=name.split("+",1)[0]
+              name=re.sub(r"\.cfi_jt$","",name)
+              name=re.sub(r"\.llvm\.[0-9A-Fa-f]+$","",name)
+              name=re.sub(r"\.(?:isra|constprop|part)\.\d+$","",name)
+              name=re.sub(r"\.\d{3,}$","",name)
+              return name
+
+          def parse_symbols(path):
+              rows=[]
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=line_rx.match(raw)
+                  if not m or m.group(2) not in "TtWw":
+                      continue
+                  rows.append((int(m.group(1),16),m.group(2),m.group(3)))
+              rows.sort(key=lambda x:(x[0],x[2]))
+              return rows
+
+          def disasm(elf,start,stop):
+              return subprocess.run(
+                  ["aarch64-linux-gnu-objdump","-d",
+                   f"--start-address=0x{start:x}",f"--stop-address=0x{stop:x}",elf],
+                  check=True,capture_output=True,text=True
+              ).stdout
+
+          def choose_body(rows,elf,target):
+              # Prefer an actual implementation over a CFI jump-table alias.
+              exact=[r for r in rows if r[2]==target and not r[2].endswith(".cfi_jt")]
+              cands=exact or [r for r in rows if canon(r[2])==target and not r[2].endswith(".cfi_jt")]
+              if cands:
+                  return cands[0], "direct"
+
+              stubs=[r for r in rows if canon(r[2])==target and r[2].endswith(".cfi_jt")]
+              if not stubs:
+                  return None, "missing"
+              stub=stubs[0]
+              addrs=sorted({a for a,_,_ in rows})
+              greater=[a for a in addrs if a>stub[0]]
+              stop=min(greater[0] if greater else stub[0]+0x40,stub[0]+0x40)
+              text=disasm(elf,stub[0],stop)
+              # A CFI JT is expected to branch directly to the implementation.
+              m=re.search(r"\b(?:b|bl)\s+([0-9a-fA-F]+)\s+<([^>]+)>",text)
+              if not m:
+                  return None, "cfi-unresolved"
+              addr=int(m.group(1),16)
+              names=[r for r in rows if r[0]==addr and not r[2].endswith(".cfi_jt")]
+              if names:
+                  return names[0], f"cfi:{m.group(2)}"
+              return (addr,"t",m.group(2)),f"cfi:{m.group(2)}"
+
+          def bound(rows,start):
+              addrs=sorted({a for a,_,_ in rows})
+              greater=[a for a in addrs if a>start]
+              stop=greater[0] if greater else start+0x10000
+              return min(stop,start+0x10000)
+
+          def normalize(text):
+              out=[]
+              for raw in text.splitlines():
+                  m=insn_rx1.match(raw) or insn_rx2.match(raw)
+                  if not m:
+                      continue
+                  s=m.group(1).strip()
+                  s=re.sub(r"<([^>]+)>",lambda x:"<"+canon(x.group(1))+">",s)
+                  # Mask layout-dependent absolute addresses and local branch targets.
+                  s=re.sub(r"\b(?:0x)?f{4,}[0-9a-f]{6,}\b","<ADDR>",s,flags=re.I)
+                  s=re.sub(r"\b[0-9a-f]{12,16}\b","<ADDR>",s,flags=re.I)
+                  if re.match(r"^(?:b|bl|cbz|cbnz|tbz|tbnz)\b",s):
+                      if "<" not in s:
+                          s=re.sub(r"\b[0-9a-f]{5,}\b","<LOC>",s,flags=re.I)
+                  if s=="nop":
+                      continue
+                  out.append(s)
+              return "\n".join(out)
+
+          stock=parse_symbols("stock.kallsyms")
+          cand=parse_symbols("c0015.kallsyms")
+          shared=[]
+          for raw in Path("shared-pre-ramoops.tsv").read_text().splitlines()[1:]:
+              if not raw.strip():
+                  continue
+              order,lvl,ptr,fn,rawname=raw.split("\t",4)
+              shared.append((int(order),lvl,fn))
+
+          rows=[]
+          mismatch_files=[]
+          unresolved=0
+          first_diff=None
+          first_critical=None
+          critical_terms=("watchdog","scm","smmu","iommu","irq","gic","mmu","clk","regulator",
+                          "ufs","qcom","rpmh","spmi","thermal","psci","pinctrl","interconnect","icc")
+
+          for order,lvl,fn in shared:
+              sr,ssrc=choose_body(stock,"stock.elf",fn)
+              cr,csrc=choose_body(cand,"c0015.elf",fn)
+              if sr is None or cr is None:
+                  unresolved+=1
+                  rows.append((order,lvl,fn,"UNRESOLVED",ssrc,csrc,0,0,"",""))
+                  continue
+
+              ss=sr[0]; cs=cr[0]
+              se=bound(stock,ss); ce=bound(cand,cs)
+              sd=disasm("stock.elf",ss,se)
+              cd=disasm("c0015.elf",cs,ce)
+              sn=normalize(sd); cn=normalize(cd)
+              sh=hashlib.sha256(sn.encode()).hexdigest()
+              ch=hashlib.sha256(cn.encode()).hexdigest()
+              status="EQUAL" if sn and cn and sn==cn else "DIFF"
+              rows.append((order,lvl,fn,status,ssrc,csrc,len(sn.splitlines()),len(cn.splitlines()),sh,ch))
+              if status=="DIFF":
+                  if first_diff is None:
+                      first_diff=(order,lvl,fn)
+                  joined=(fn+" "+sn+" "+cn).lower()
+                  if first_critical is None and any(term in joined for term in critical_terms):
+                      first_critical=(order,lvl,fn)
+                  if len(mismatch_files)<24:
+                      Path(f"bounded/{order:04d}-{fn}-stock.S").write_text(sd)
+                      Path(f"bounded/{order:04d}-{fn}-c0015.S").write_text(cd)
+                      Path(f"bounded/{order:04d}-{fn}-stock.norm").write_text(sn+"\n")
+                      Path(f"bounded/{order:04d}-{fn}-c0015.norm").write_text(cn+"\n")
+                      mismatch_files.append(fn)
+
+          Path("preramoops-body-compare.tsv").write_text(
+              "order\tlevel\tfunction\tstatus\tstock_source\tc0015_source\tstock_lines\tc0015_lines\tstock_sha256\tc0015_sha256\n"+
+              "".join("\t".join(map(str,row))+"\n" for row in rows)
+          )
+
+          equal=sum(1 for row in rows if row[3]=="EQUAL")
+          diff=sum(1 for row in rows if row[3]=="DIFF")
+          print(f"SHARED_BODY_EQUAL_COUNT={equal}")
+          print(f"SHARED_BODY_DIFF_COUNT={diff}")
+          print(f"SHARED_BODY_UNRESOLVED_COUNT={unresolved}")
+          if first_diff:
+              print(f"FIRST_SHARED_BODY_DIVERGENCE_ORDER={first_diff[0]}")
+              print(f"FIRST_SHARED_BODY_DIVERGENCE_LEVEL={first_diff[1]}")
+              print(f"FIRST_SHARED_BODY_DIVERGENCE_FUNCTION={first_diff[2]}")
+          else:
+              print("FIRST_SHARED_BODY_DIVERGENCE_FUNCTION=<none>")
+          if first_critical:
+              print(f"FIRST_PLATFORM_HINT_DIVERGENCE_ORDER={first_critical[0]}")
+              print(f"FIRST_PLATFORM_HINT_DIVERGENCE_LEVEL={first_critical[1]}")
+              print(f"FIRST_PLATFORM_HINT_DIVERGENCE_FUNCTION={first_critical[2]}")
+          else:
+              print("FIRST_PLATFORM_HINT_DIVERGENCE_FUNCTION=<none>")
+          print("PRERAMOOPS_SHARED_BODY_COMPARE_GATE=PASS")
+          PY
+
+      - name: Emit decision matrix
+        run: |
+          set -euo pipefail
+          {
+            echo 'KNOWN_GOOD_REFERENCE=healthy-stock-boot-e6f8c978c2cf'
+            echo 'CANDIDATE_REFERENCE=c0015-image-c40049716600'
+            echo 'PASS_COMPANION_CHAIN=stock-Image-3.09'
+            echo 'PASS_UEFI_HANDOFF=Start-EBS'
+            echo 'CURRENT_PERSISTENT_DUMPS=stale-no-fresh-c0015-record'
+            cat preramoops-initcall-summary.txt
+            cat preramoops-body-summary.txt
+            echo 'LISA_C0015_PRERAMOOPS_SHARED_SEMANTICS=PASS'
+          } | tee final.txt
+
+      - name: Upload diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0015-preramoops-shared-semantics
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            final.txt
+            preramoops-initcall-summary.txt
+            preramoops-body-summary.txt
+            shared-pre-ramoops.tsv
+            stock-only-pre-ramoops.tsv
+            c0015-only-pre-ramoops.tsv
+            preramoops-body-compare.tsv
+            bounded/
+            stock.kallsyms
+            c0015.kallsyms
+            stock-vmlinux-to-elf.log
+            c0015-vmlinux-to-elf.log
