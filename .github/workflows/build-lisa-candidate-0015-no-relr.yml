@@ -55,13 +55,16 @@ jobs:
           test "$(stat -c '%s' "$HEALTHY_STOCK_BOOT")" = "$STOCK_BOOT_BYTES"
           test "$(sha256sum "$HEALTHY_STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
           for f in vendor_boot.img dtbo.img vbmeta.img vbmeta_system.img; do
-            test -s "$COMPANION_BASE/$f"
-            size="$(stat -c '%s' "$COMPANION_BASE/$f")"
-            if [ "$size" -le 4096 ]; then
-              echo "$COMPANION_BASE/$f is unexpectedly small ($size bytes); LFS/baseline checkout is not usable" >&2
+            path="$COMPANION_BASE/$f"
+            test -s "$path"
+            if head -c 96 "$path" | grep -aFq 'version https://git-lfs.github.com/spec/v1'; then
+              echo "$path is still a Git LFS pointer after checkout" >&2
               exit 1
             fi
+            printf '%s size=%s sha256=%s\n' "$path" "$(stat -c '%s' "$path")" "$(sha256sum "$path" | awk '{print $1}')"
           done
+          test "$(head -c 4 "$COMPANION_BASE/vbmeta.img")" = 'AVB0'
+          test "$(head -c 4 "$COMPANION_BASE/vbmeta_system.img")" = 'AVB0'
           cd kernel
           test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
           grep -Fqx 'CONFIG_BOOT_INFO=y' techpack/bootinfo/bootinfo.conf
