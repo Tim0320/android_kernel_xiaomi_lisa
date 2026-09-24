@@ -1,0 +1,259 @@
+name: Diagnose Lisa stock pre-ramoops function semantics
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/diagnose-lisa-stock-preramoops-function-semantics.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-stock-preramoops-function-semantics
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      STOCK_BOOT: stock-main/reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0014_ARTIFACT_ID: "10802392237"
+      C0014_IMAGE_SHA256: 47b1a9126866c31db49ae0bdf06bb7e0205ae516dcc65552d231914c126b7094
+
+    steps:
+      - name: Checkout healthy stock boot
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: stock-main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Checkout reconstructed source
+        uses: actions/checkout@v4
+        with:
+          ref: reconstruction/5.4.289-qgki
+          path: reconstructed-source
+          fetch-depth: 1
+
+      - name: Install recovery and disassembly tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip binutils-aarch64-linux-gnu
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+          command -v vmlinux-to-elf
+          command -v aarch64-linux-gnu-objdump
+
+      - name: Extract exact stock and Candidate 0014 Images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct
+          b=Path("stock-main/reconstruction/stock/stock-Image/boot.img").read_bytes()
+          if b[:8] != b"ANDROID!":
+              raise SystemExit("bad stock boot magic")
+          ksz=struct.unpack_from("<I", b, 8)[0]
+          Path("stock-Image").write_bytes(b[4096:4096+ksz])
+          print(f"STOCK_IMAGE_BYTES={ksz}")
+          PY
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0014_ARTIFACT_ID}/zip" \
+            -o c0014.zip
+          mkdir c0014
+          unzip -q c0014.zip -d c0014
+          img="$(find c0014 -type f -name candidate-0014-Image -print -quit)"
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0014-Image
+          test "$(sha256sum candidate-0014-Image | awk '{print $1}')" = "$C0014_IMAGE_SHA256"
+
+      - name: Recover kallsyms and ELF
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder candidate-0014-Image > c0014.kallsyms
+          test -s stock.kallsyms
+          test -s c0014.kallsyms
+          vmlinux-to-elf stock-Image stock.elf > stock-vmlinux-to-elf.log 2>&1
+          vmlinux-to-elf candidate-0014-Image c0014.elf > c0014-vmlinux-to-elf.log 2>&1
+          test -s stock.elf
+          test -s c0014.elf
+
+      - name: Compute strict bounded ranges for stock-only pre-ramoops init functions
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee bounded-ranges.txt
+          from pathlib import Path
+          import re
+
+          targets=["cpufreq_times_init","pm_debug_init","alarm_record_init","uevent_record_init"]
+          line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+
+          def parse(path):
+              rows=[]
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=line_rx.match(raw)
+                  if not m:
+                      continue
+                  addr=int(m.group(1),16); typ=m.group(2); name=m.group(3)
+                  rows.append((addr,typ,name))
+              return rows
+
+          stock=parse("stock.kallsyms")
+          cand=parse("c0014.kallsyms")
+          cand_names={name for _,_,name in cand}
+          text=sorted({addr for addr,typ,name in stock if typ in "TtWw"})
+          by_name={}
+          for addr,typ,name in stock:
+              by_name.setdefault(name,[]).append((addr,typ))
+
+          lines=[]
+          for fn in targets:
+              entries=by_name.get(fn,[])
+              if not entries:
+                  raise SystemExit(f"missing stock target {fn}")
+              start=min(addr for addr,_ in entries)
+              next_addrs=[a for a in text if a>start]
+              if not next_addrs:
+                  raise SystemExit(f"no next text symbol after {fn}")
+              next_addr=next_addrs[0]
+              # Bound pathological symbol gaps while still covering normal init funcs.
+              stop=min(next_addr,start+0x1000)
+              if stop<=start:
+                  raise SystemExit(f"bad range for {fn}")
+              lines.append(f"{fn}\t0x{start:x}\t0x{stop:x}\t{stop-start}\t{int(fn in cand_names)}")
+          print("function\tstart\tstop\tbytes\tpresent_in_c0014")
+          print("\n".join(lines))
+          Path("bounded-ranges.tsv").write_text("function\tstart\tstop\tbytes\tpresent_in_c0014\n"+"\n".join(lines)+"\n")
+          PY
+
+          tail -n +2 bounded-ranges.tsv | while IFS=$'\t' read -r fn start stop bytes present; do
+            echo "DISASSEMBLE ${fn} ${start}..${stop} (${bytes} bytes)"
+            aarch64-linux-gnu-objdump -d --start-address="$start" --stop-address="$stop" stock.elf > "stock-${fn}.S"
+            test -s "stock-${fn}.S"
+          done
+
+      - name: Extract direct call targets and classify likely semantic role
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee function-semantics-summary.txt
+          from pathlib import Path
+          import re
+
+          targets=["cpufreq_times_init","pm_debug_init","alarm_record_init","uevent_record_init"]
+          branch_rx=re.compile(r"\b(?:bl|b)\s+[0-9a-fx]+\s+<([^>]+)>")
+          c_line=re.compile(r"^[0-9a-fA-F]+\s+[A-Za-z?]\s+(.+?)\s*$")
+
+          cand=set()
+          for raw in Path("c0014.kallsyms").read_text(errors="replace").splitlines():
+              m=c_line.match(raw)
+              if m:
+                  cand.add(m.group(1))
+
+          debug_terms=("proc_","debug","trace","record","log","sysfs","seq_","kobject","uevent","alarm","time_in_state","uid_")
+          critical_terms=("panic","restart","reboot","poweroff","power_off","watchdog","psci","scm","smmu","iommu","irq","gic","mmu","clk","regulator","ufs","qcom")
+
+          out=[]
+          for fn in targets:
+              txt=Path(f"stock-{fn}.S").read_text(errors="replace")
+              calls=[]
+              for line in txt.splitlines():
+                  m=branch_rx.search(line)
+                  if m:
+                      callee=m.group(1).split('+',1)[0]
+                      if callee not in calls:
+                          calls.append(callee)
+              low=" ".join([fn]+calls).lower()
+              debug_hits=sorted({t for t in debug_terms if t in low})
+              critical_hits=sorted({t for t in critical_terms if t in low})
+              missing=[c for c in calls if c not in cand]
+              out.append(f"TARGET={fn}")
+              out.append(f"DIRECT_CALL_COUNT={len(calls)}")
+              out.append("DIRECT_CALLS="+",".join(calls))
+              out.append(f"DIRECT_CALLS_MISSING_IN_C0014={len(missing)}")
+              out.append("MISSING_CALLEES="+",".join(missing))
+              out.append("DEBUG_RECORD_HINTS="+",".join(debug_hits))
+              out.append("PLATFORM_CRITICAL_HINTS="+",".join(critical_hits))
+              if critical_hits:
+                  role="needs-critical-review"
+              elif debug_hits:
+                  role="likely-observability-accounting"
+              else:
+                  role="undetermined"
+              out.append(f"SEMANTIC_ROLE={role}")
+              out.append("")
+          print("\n".join(out))
+          Path("function-semantics-summary.txt").write_text("\n".join(out)+"\n")
+          PY
+
+      - name: Cross-check reconstructed source lineage
+        run: |
+          set -euo pipefail
+          {
+            echo '### reconstructed-source SHA'
+            git -C reconstructed-source rev-parse HEAD
+            echo
+            echo '### cpufreq_times source tail'
+            tail -n 60 reconstructed-source/drivers/cpufreq/cpufreq_times.c
+            echo
+            echo '### exact target search'
+            for fn in cpufreq_times_init pm_debug_init alarm_record_init uevent_record_init; do
+              echo "## $fn"
+              git -C reconstructed-source grep -n -F "$fn" -- '*.c' '*.h' '*.S' '*Kconfig*' '*Makefile*' || true
+            done
+          } | tee reconstructed-lineage.txt
+
+      - name: Final gate
+        run: |
+          set -euo pipefail
+          grep -Fq $'cpufreq_times_init\t' bounded-ranges.tsv
+          grep -Fq $'pm_debug_init\t' bounded-ranges.tsv
+          grep -Fq $'alarm_record_init\t' bounded-ranges.tsv
+          grep -Fq $'uevent_record_init\t' bounded-ranges.tsv
+          for fn in cpufreq_times_init pm_debug_init alarm_record_init uevent_record_init; do
+            grep -Fq "TARGET=${fn}" function-semantics-summary.txt
+            test -s "stock-${fn}.S"
+          done
+          {
+            cat bounded-ranges.tsv
+            cat function-semantics-summary.txt
+            echo 'LISA_STOCK_PRERAMOOPS_FUNCTION_SEMANTICS=PASS'
+          } | tee final.txt
+
+      - name: Upload diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-preramoops-function-semantics
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            final.txt
+            bounded-ranges.txt
+            bounded-ranges.tsv
+            function-semantics-summary.txt
+            reconstructed-lineage.txt
+            stock-cpufreq_times_init.S
+            stock-pm_debug_init.S
+            stock-alarm_record_init.S
+            stock-uevent_record_init.S
+            stock.kallsyms
+            c0014.kallsyms
+            stock-vmlinux-to-elf.log
+            c0014-vmlinux-to-elf.log
