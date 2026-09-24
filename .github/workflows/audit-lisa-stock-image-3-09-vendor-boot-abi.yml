@@ -27,8 +27,7 @@ jobs:
       EXPECT_VENDOR_BOOT_SHA256: a94ecc2b8e53666693fd3cfc99ad07b5f24f586e85841728bf1d41333bc4b053
       EXPECT_DTBO_SHA256: 537655919c72edcba2e1dcbc83edb45fe92484263f3b8d5b29e8c1408282a35c
       CANDIDATE_RELEASE: 5.4.289-qgki-g5987d69e25da
-      CANDIDATE_0008_ARTIFACT_ID: "10765228960"
-      CANDIDATE_0008_ARTIFACT_SHA256: b248c0fc9edd03d26e3527973cd2aae1b25e6517aa6be167f9704c26d1116a0b
+      EXPECT_QGKI_MODULE_LAYOUT: ba39cbb8
 
     steps:
       - name: Checkout exact stock-Image-3.09 with Git LFS
@@ -41,7 +40,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y cpio file lz4 zstd xz-utils gzip python3 python3-pyelftools unzip curl
+          sudo apt-get install -y cpio file lz4 zstd xz-utils gzip python3 python3-pyelftools
 
       - name: Authenticate exact 3.09 companion images
         run: |
@@ -50,7 +49,7 @@ jobs:
           test "$(sha256sum "$BASE/dtbo.img" | awk '{print $1}')" = "$EXPECT_DTBO_SHA256"
           echo 'STOCK_IMAGE_3_09_COMPANION_HASH_GATE=PASS'
 
-      - name: Parse vendor_boot and extract ramdisk fragments
+      - name: Parse vendor_boot and extract ramdisk
         run: |
           set -euo pipefail
           rm -rf vendor-ramdisks vendor-root audit
@@ -63,23 +62,15 @@ jobs:
           out = Path(sys.argv[2])
           if data[:8] != b'VNDRBOOT':
               raise SystemExit(f'bad vendor_boot magic: {data[:8]!r}')
-
           def u32(o): return struct.unpack_from('<I', data, o)[0]
           def align(v, a): return (v + a - 1) // a * a
-
-          version = u32(8)
-          page = u32(12)
-          ramdisk_size = u32(24)
-          header_size = u32(2096)
-          dtb_size = u32(2100)
+          version = u32(8); page = u32(12); ramdisk_size = u32(24)
+          header_size = u32(2096); dtb_size = u32(2100)
           ramdisk_off = align(header_size, page)
           dtb_off = align(ramdisk_off + ramdisk_size, page)
-
           frags = []
           if version >= 4 and header_size >= 2128:
-              table_size = u32(2112)
-              count = u32(2116)
-              entry_size = u32(2120)
+              count = u32(2116); entry_size = u32(2120)
               table_off = align(dtb_off + dtb_size, page)
               if count and entry_size >= 108:
                   for i in range(count):
@@ -89,15 +80,9 @@ jobs:
                       frags.append((i, name, typ, rel, size))
           if not frags:
               frags = [(0, 'vendor_ramdisk', 0, 0, ramdisk_size)]
-
-          lines = [
-              f'header_version={version}', f'page_size={page}',
-              f'vendor_ramdisk_size={ramdisk_size}', f'dtb_size={dtb_size}',
-              f'fragment_count={len(frags)}'
-          ]
+          lines = [f'header_version={version}', f'page_size={page}', f'vendor_ramdisk_size={ramdisk_size}', f'dtb_size={dtb_size}', f'fragment_count={len(frags)}']
           for i, name, typ, rel, size in frags:
-              start = ramdisk_off + rel
-              end = start + size
+              start = ramdisk_off + rel; end = start + size
               if end > ramdisk_off + ramdisk_size or end > len(data):
                   raise SystemExit(f'fragment {i} exceeds vendor ramdisk section')
               safe = ''.join(c if c.isalnum() or c in '._-' else '_' for c in name)
@@ -107,7 +92,7 @@ jobs:
           print('\n'.join(lines))
           PY
 
-      - name: Unpack ramdisks and collect modules.load plan
+      - name: Unpack ramdisk and classify module load plans
         run: |
           set -euo pipefail
           idx=0
@@ -130,40 +115,44 @@ jobs:
           done
 
           find vendor-root -type f -name '*.ko' -print | sort > audit/modules.txt
+          find vendor-root -type f -name 'modules.load*' -print | sort > audit/load-files-all.txt
           test -s audit/modules.txt
-          find vendor-root -type f -name 'modules.load*' -print | sort > audit/load-files.txt
-          : > audit/load-plan.txt
+          test -s audit/load-files-all.txt
+
+          : > audit/load-files-active.txt
+          : > audit/load-files-alternate.txt
           while IFS= read -r f; do
             [ -n "$f" ] || continue
-            sed '/^[[:space:]]*$/d' "$f" >> audit/load-plan.txt
-          done < audit/load-files.txt
-          sort -u audit/load-plan.txt -o audit/load-plan.txt
-          echo "module_files=$(wc -l < audit/modules.txt)"
-          echo "load_entries=$(wc -l < audit/load-plan.txt)"
+            rel="${f#*/lib/modules/}"
+            if [[ "$rel" == modules.load* ]]; then
+              echo "$f" >> audit/load-files-active.txt
+            else
+              echo "$f" >> audit/load-files-alternate.txt
+            fi
+          done < audit/load-files-all.txt
 
-      - name: Download Candidate 0008 build evidence
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${CANDIDATE_0008_ARTIFACT_ID}/zip" \
-            -o candidate0008.zip
-          echo "$CANDIDATE_0008_ARTIFACT_SHA256  candidate0008.zip" | sha256sum -c -
-          mkdir -p candidate0008
-          unzip -q candidate0008.zip -d candidate0008
-          symvers="$(find candidate0008 -type f -name Module.symvers -print -quit || true)"
-          if [ -n "$symvers" ]; then
-            cp "$symvers" audit/candidate.Module.symvers
-            echo 'candidate_symvers_present=1' | tee audit/candidate-evidence.txt
-          else
-            echo 'candidate_symvers_present=0' | tee audit/candidate-evidence.txt
-          fi
+          test -s audit/load-files-active.txt
+          : > audit/load-plan-active.txt
+          while IFS= read -r f; do
+            sed '/^[[:space:]]*$/d;/^[[:space:]]*#/d' "$f" >> audit/load-plan-active.txt
+          done < audit/load-files-active.txt
+          sort -u audit/load-plan-active.txt -o audit/load-plan-active.txt
 
-      - name: Audit load-critical module ABI against Candidate 0008
+          : > audit/load-plan-alternate.txt
+          while IFS= read -r f; do
+            [ -n "$f" ] || continue
+            sed '/^[[:space:]]*$/d;/^[[:space:]]*#/d' "$f" >> audit/load-plan-alternate.txt
+          done < audit/load-files-alternate.txt
+          sort -u audit/load-plan-alternate.txt -o audit/load-plan-alternate.txt
+
+          echo 'ACTIVE LOAD FILES:'
+          cat audit/load-files-active.txt
+          echo 'ACTIVE LOAD PLAN:'
+          cat audit/load-plan-active.txt
+          echo 'ALTERNATE LOAD FILES:'
+          cat audit/load-files-alternate.txt || true
+
+      - name: Audit active QGKI cohort and alternate 5.4-gki cohort
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -173,21 +162,12 @@ jobs:
           import os
 
           release = os.environ['CANDIDATE_RELEASE']
+          expected_layout = os.environ['EXPECT_QGKI_MODULE_LAYOUT'].lower()
           modules = [Path(x) for x in Path('audit/modules.txt').read_text().splitlines() if x.strip()]
-          load_names = {Path(x.strip()).name for x in Path('audit/load-plan.txt').read_text(errors='replace').splitlines() if x.strip() and not x.lstrip().startswith('#')}
+          active_names = {Path(x.strip()).name for x in Path('audit/load-plan-active.txt').read_text(errors='replace').splitlines() if x.strip()}
+          alternate_names = {Path(x.strip()).name for x in Path('audit/load-plan-alternate.txt').read_text(errors='replace').splitlines() if x.strip()}
 
-          candidate_layout = None
-          symvers = Path('audit/candidate.Module.symvers')
-          if symvers.exists():
-              for raw in symvers.read_text(errors='replace').splitlines():
-                  p = raw.split()
-                  if len(p) >= 2 and p[1] == 'module_layout':
-                      candidate_layout = p[0].lower().replace('0x','')
-                      break
-
-          rows=[]
-          cohorts=Counter()
-          loaded=[]
+          rows=[]; cohorts=Counter(); active=[]
           for path in modules:
               vermagic='-'; layout=None; status='OK'
               try:
@@ -197,8 +177,7 @@ jobs:
                       if modinfo is not None:
                           for field in modinfo.data().split(b'\0'):
                               if field.startswith(b'vermagic='):
-                                  vermagic=field.split(b'=',1)[1].decode('utf-8','replace')
-                                  break
+                                  vermagic=field.split(b'=',1)[1].decode('utf-8','replace'); break
                       sec=elf.get_section_by_name('__versions')
                       if sec is not None:
                           data=sec.data()
@@ -207,47 +186,45 @@ jobs:
                               if len(chunk)<64: break
                               name=chunk[8:].split(b'\0',1)[0].decode('ascii','replace')
                               if name=='module_layout':
-                                  layout=f'{int.from_bytes(chunk[:8],"little") & 0xffffffff:08x}'
-                                  break
+                                  layout=f'{int.from_bytes(chunk[:8],"little") & 0xffffffff:08x}'; break
               except Exception as e:
                   status=f'ERROR:{e!r}'
+              is_active=int(path.name in active_names)
+              is_alt=int(path.name in alternate_names)
               release_ok=int(vermagic.startswith(release+' '))
-              layout_ok='NA' if candidate_layout is None or layout is None else str(int(layout==candidate_layout[-8:]))
-              is_loaded=int(path.name in load_names)
-              rows.append((str(path),path.name,vermagic,layout or 'MISSING',str(release_ok),layout_ok,str(is_loaded),status))
-              cohorts[(vermagic,layout or 'MISSING')]+=1
-              if is_loaded: loaded.append(rows[-1])
+              layout_ok=int(layout == expected_layout)
+              row=(str(path),path.name,vermagic,layout or 'MISSING',str(release_ok),str(layout_ok),str(is_active),str(is_alt),status)
+              rows.append(row); cohorts[(vermagic,layout or 'MISSING')]+=1
+              if is_active: active.append(row)
 
-          Path('audit/module-abi.tsv').write_text('path\tname\tvermagic\tmodule_layout_crc\trelease_match\tlayout_match\tload_critical\tstatus\n' + '\n'.join('\t'.join(r) for r in rows)+'\n')
+          Path('audit/module-abi.tsv').write_text('path\tname\tvermagic\tmodule_layout_crc\trelease_match\tlayout_match\tactive_qgki_plan\talternate_plan\tstatus\n' + '\n'.join('\t'.join(r) for r in rows)+'\n')
           Path('audit/cohorts.txt').write_text('\n'.join(f'{n}\tmodule_layout={layout}\tvermagic={vm}' for (vm,layout),n in sorted(cohorts.items(),key=lambda x:(-x[1],x[0])))+'\n')
 
-          loaded_release_bad=[r for r in loaded if r[4]!='1']
-          loaded_layout_bad=[r for r in loaded if r[5]=='0']
-          missing_loaded=sorted(load_names-{p.name for p in modules})
-          total_release_match=sum(r[4]=='1' for r in rows)
-          loaded_release_match=sum(r[4]=='1' for r in loaded)
-
+          missing_active=sorted(active_names-{p.name for p in modules})
+          bad_release=[r for r in active if r[4]!='1']
+          bad_layout=[r for r in active if r[5]!='1']
           summary=[
               f'module_count={len(rows)}',
-              f'load_plan_unique_entries={len(load_names)}',
-              f'load_critical_found={len(loaded)}',
-              f'load_critical_missing={len(missing_loaded)}',
-              f'all_modules_candidate_release_match={total_release_match}',
-              f'load_critical_candidate_release_match={loaded_release_match}',
-              f'candidate_module_layout_crc={candidate_layout or "UNAVAILABLE"}',
-              f'load_critical_release_mismatch={len(loaded_release_bad)}',
-              f'load_critical_layout_mismatch={len(loaded_layout_bad)}',
-              'missing_load_entries=' + ','.join(missing_loaded),
+              f'active_qgki_load_entries={len(active_names)}',
+              f'active_qgki_found={len(active)}',
+              f'active_qgki_missing={len(missing_active)}',
+              f'active_qgki_release_mismatch={len(bad_release)}',
+              f'active_qgki_layout_mismatch={len(bad_layout)}',
+              f'alternate_load_entries={len(alternate_names)}',
+              'active_modules=' + ','.join(sorted(r[1] for r in active)),
+              'missing_active=' + ','.join(missing_active),
           ]
-          if loaded and not loaded_release_bad and not missing_loaded and not loaded_layout_bad:
-              summary.append('STOCK_IMAGE_3_09_VENDOR_BOOT_CANDIDATE_0008_ABI=PASS')
+          if active and not missing_active and not bad_release and not bad_layout:
+              summary.append('STOCK_IMAGE_3_09_ACTIVE_QGKI_ABI=PASS')
           else:
-              summary.append('STOCK_IMAGE_3_09_VENDOR_BOOT_CANDIDATE_0008_ABI=BLOCKED')
+              summary.append('STOCK_IMAGE_3_09_ACTIVE_QGKI_ABI=BLOCKED')
           Path('audit/final-gate.txt').write_text('\n'.join(summary)+'\n')
           print('\n'.join(summary))
           print('\nCOHORTS:')
           print(Path('audit/cohorts.txt').read_text())
           PY
+
+          grep -Fqx 'STOCK_IMAGE_3_09_ACTIVE_QGKI_ABI=PASS' audit/final-gate.txt
 
       - name: Upload ABI audit
         uses: actions/upload-artifact@v4
