@@ -1,0 +1,334 @@
+name: Diagnose Lisa Candidate 0015 core boot spine
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0015-core-boot-spine.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0015-core-boot-spine
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      HEALTHY_STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0015_ARTIFACT_ID: "10810774162"
+      C0015_IMAGE_SHA256: c40049716600f16d85e87abad8e7c4613dfbdb7dd8cef198cfb774674eef4ccc
+
+    steps:
+      - name: Checkout exact user baseline metadata
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          lfs: true
+          fetch-depth: 1
+
+      - name: Authenticate healthy boot and stock-Image-3.09 companions
+        run: |
+          set -euo pipefail
+          test -s "$HEALTHY_STOCK_BOOT"
+          test "$(sha256sum "$HEALTHY_STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          for f in vendor_boot.img dtbo.img vbmeta.img vbmeta_system.img; do
+            p="$COMPANION_BASE/$f"
+            test -s "$p"
+            if head -c 96 "$p" | grep -aFq 'version https://git-lfs.github.com/spec/v1'; then
+              echo "$p is still a Git LFS pointer" >&2
+              exit 1
+            fi
+          done
+          echo 'COMPANION_BASE=stock-Image-3.09'
+          echo 'BASELINE_AUTH_GATE=PASS'
+
+      - name: Install analysis tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip binutils-aarch64-linux-gnu
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+          command -v vmlinux-to-elf
+          command -v aarch64-linux-gnu-objdump
+
+      - name: Materialize exact stock and Candidate 0015 Images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, struct
+          b=Path(os.environ['HEALTHY_STOCK_BOOT']).read_bytes()
+          if b[:8] != b'ANDROID!':
+              raise SystemExit('bad stock boot magic')
+          ksz=struct.unpack_from('<I',b,8)[0]
+          Path('stock-Image').write_bytes(b[4096:4096+ksz])
+          print(f'STOCK_IMAGE_BYTES={ksz}')
+          PY
+
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0015_ARTIFACT_ID}/zip" \
+            -o c0015.zip
+          mkdir c0015
+          unzip -q c0015.zip -d c0015
+          img="$(find c0015 -type f -name candidate-0015-Image -print -quit)"
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0015-Image
+          test "$(sha256sum candidate-0015-Image | awk '{print $1}')" = "$C0015_IMAGE_SHA256"
+          echo 'INPUT_IMAGE_GATE=PASS'
+
+      - name: Recover kallsyms and ELF containers
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder candidate-0015-Image > c0015.kallsyms
+          test -s stock.kallsyms
+          test -s c0015.kallsyms
+          vmlinux-to-elf stock-Image stock.elf > stock-vmlinux-to-elf.log 2>&1
+          vmlinux-to-elf candidate-0015-Image c0015.elf > c0015-vmlinux-to-elf.log 2>&1
+          test -s stock.elf
+          test -s c0015.elf
+
+      - name: Compare bounded executable core boot spine
+        run: |
+          set -euo pipefail
+          mkdir -p spine
+          python3 - <<'PY' | tee core-boot-spine-summary.txt
+          from pathlib import Path
+          import hashlib
+          import re
+          import subprocess
+
+          targets=[
+              'stext',
+              '__enable_mmu',
+              '__primary_switch',
+              '__primary_switched',
+              'start_kernel',
+              'setup_arch',
+              'setup_machine_fdt',
+              'early_fixmap_init',
+              'paging_init',
+              'bootmem_init',
+              'mm_init',
+              'trap_init',
+              'irqchip_init',
+              'time_init',
+              'console_init',
+              'rest_init',
+          ]
+          line_rx=re.compile(r'^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$')
+          insn_rx1=re.compile(r'^\s*[0-9a-f]+:\s+(?:[0-9a-f]{2}\s+){4}\s*([a-z0-9.]+)\s*(.*)$',re.I)
+          insn_rx2=re.compile(r'^\s*[0-9a-f]+:\s+[0-9a-f]{8}\s+([a-z0-9.]+)\s*(.*)$',re.I)
+          compiler_suffixes=[
+              re.compile(r'\.llvm\.[0-9A-Fa-f]+$'),
+              re.compile(r'\.(?:isra|constprop|part|cold)\.\d+$'),
+              re.compile(r'\.cfi_jt$'),
+              re.compile(r'\.\d+$'),
+          ]
+
+          def strip_suffixes(s):
+              prev=None
+              while s != prev:
+                  prev=s
+                  for rx in compiler_suffixes:
+                      s=rx.sub('',s)
+              return s
+
+          def canon_symbol(s):
+              s=s.split('+',1)[0]
+              s=re.sub(r'\$[0-9a-fA-F]{16,}$','',s)
+              return strip_suffixes(s)
+
+          def parse_symbols(path):
+              rows=[]
+              for raw in Path(path).read_text(errors='replace').splitlines():
+                  m=line_rx.match(raw)
+                  if m and m.group(2) in 'TtWw':
+                      rows.append((int(m.group(1),16),m.group(2),m.group(3)))
+              rows.sort(key=lambda x:(x[0],x[2]))
+              return rows
+
+          def choose(rows,target):
+              exact=[r for r in rows if r[2]==target]
+              if exact:
+                  return exact[0]
+              candidates=[r for r in rows if canon_symbol(r[2])==target and not r[2].endswith('.cfi_jt')]
+              if candidates:
+                  return candidates[0]
+              candidates=[r for r in rows if canon_symbol(r[2])==target]
+              return candidates[0] if candidates else None
+
+          def next_text_addr(rows,start,cap=0x40000):
+              greater=sorted({a for a,_,_ in rows if a>start})
+              natural=greater[0] if greater else start+cap
+              return min(natural,start+cap)
+
+          def disasm(elf,start,stop):
+              return subprocess.run([
+                  'aarch64-linux-gnu-objdump','-d',
+                  f'--start-address=0x{start:x}',f'--stop-address=0x{stop:x}',elf
+              ],check=True,capture_output=True,text=True).stdout
+
+          def first_branch_target(text):
+              for raw in text.splitlines():
+                  m=insn_rx1.match(raw) or insn_rx2.match(raw)
+                  if not m:
+                      continue
+                  op=m.group(1).lower(); operands=m.group(2).strip()
+                  sm=re.search(r'<([^>]+)>',operands)
+                  am=re.match(r'([0-9a-fA-F]+)',operands)
+                  if op in ('b','bl') and sm and am:
+                      return op,int(am.group(1),16),canon_symbol(sm.group(1))
+              return None
+
+          def resolve_entry(rows,elf,target):
+              row=choose(rows,target)
+              if row is None:
+                  return None
+              start=row[0]
+              # Clang CFI can place a relocation or canonical symbol on a
+              # 4-byte jump-table entry. Follow the entry only when it jumps
+              # to the function we explicitly asked for.
+              probe=disasm(elf,start,min(start+8,next_text_addr(rows,start,0x40)))
+              br=first_branch_target(probe)
+              if br and br[2]==target:
+                  return br[1],'packed-cfi:'+br[2]
+              return start,row[2]
+
+          def executable_lines(text,target,start,stop):
+              out=[]
+              calls=[]
+              tails=[]
+              for raw in text.splitlines():
+                  m=insn_rx1.match(raw) or insn_rx2.match(raw)
+                  if not m:
+                      continue
+                  op=m.group(1).lower(); operands=m.group(2).strip()
+                  if op in ('nop','hint'):
+                      continue
+                  sm=re.search(r'<([^>]+)>',operands)
+                  if sm:
+                      sym=canon_symbol(sm.group(1))
+                  else:
+                      sym=None
+                  normalized=op
+                  if sym:
+                      normalized += ' <'+sym+'>'
+                  out.append(normalized)
+                  if op=='bl' and sym:
+                      calls.append(sym)
+                  elif op=='b' and sym:
+                      am=re.match(r'([0-9a-fA-F]+)',operands)
+                      if am:
+                          dest=int(am.group(1),16)
+                          if not (start <= dest < stop):
+                              tails.append(sym)
+
+                  # Known ARM64 assembly boot-spine terminators.  Anything
+                  # following these is data or another function, not part of
+                  # the executed path under comparison.
+                  if target=='__primary_switch' and re.match(r'^x8(?:\s|$)',operands) and op=='br':
+                      break
+                  if target=='__primary_switched' and op=='b' and sym=='start_kernel':
+                      break
+                  if target=='stext' and op=='b' and sym=='__primary_switch':
+                      break
+              return out,calls,tails
+
+          stock_rows=parse_symbols('stock.kallsyms')
+          cand_rows=parse_symbols('c0015.kallsyms')
+          results=[]
+          unresolved=[]
+          first_diff=None
+          first_platform=None
+          platform_rx=re.compile(r'(qcom|msm|scm|rpmh|icc|interconnect|ufs|gic|irq|watchdog|smmu|iommu|clk|regulator|pinctrl|psci|memblock|setup_arch|paging|bootmem)',re.I)
+
+          for order,target in enumerate(targets):
+              sr=resolve_entry(stock_rows,'stock.elf',target)
+              cr=resolve_entry(cand_rows,'c0015.elf',target)
+              if sr is None or cr is None:
+                  unresolved.append((order,target,'missing-stock' if sr is None else 'missing-candidate'))
+                  continue
+              ss,ssrc=sr; cs,csrc=cr
+              se=next_text_addr(stock_rows,ss); ce=next_text_addr(cand_rows,cs)
+              sd=disasm('stock.elf',ss,se); cd=disasm('c0015.elf',cs,ce)
+              sl,scalls,stails=executable_lines(sd,target,ss,se)
+              cl,ccalls,ctails=executable_lines(cd,target,cs,ce)
+              if not sl or not cl:
+                  unresolved.append((order,target,'empty-disassembly'))
+                  continue
+              equal=(sl==cl and scalls==ccalls and stails==ctails)
+              status='EQUAL' if equal else 'DIFF'
+              sh=hashlib.sha256(('\n'.join(sl)+'\nCALL:'+','.join(scalls)+'\nTAIL:'+','.join(stails)).encode()).hexdigest()
+              ch=hashlib.sha256(('\n'.join(cl)+'\nCALL:'+','.join(ccalls)+'\nTAIL:'+','.join(ctails)).encode()).hexdigest()
+              results.append((order,target,status,len(sl),len(cl),','.join(scalls),','.join(ccalls),','.join(stails),','.join(ctails),ssrc,csrc,sh,ch))
+              Path(f'spine/{order:02d}-{target}-stock.S').write_text(sd)
+              Path(f'spine/{order:02d}-{target}-c0015.S').write_text(cd)
+              Path(f'spine/{order:02d}-{target}-stock.norm').write_text('\n'.join(sl)+'\n')
+              Path(f'spine/{order:02d}-{target}-c0015.norm').write_text('\n'.join(cl)+'\n')
+              if not equal:
+                  if first_diff is None:
+                      first_diff=(order,target)
+                  joined=' '.join([target]+scalls+ccalls+stails+ctails)
+                  if first_platform is None and platform_rx.search(joined):
+                      first_platform=(order,target)
+
+          Path('core-boot-spine.tsv').write_text(
+              'order\tfunction\tstatus\tstock_insns\tc0015_insns\tstock_calls\tc0015_calls\tstock_tails\tc0015_tails\tstock_provider\tc0015_provider\tstock_sig\tc0015_sig\n'+
+              ''.join('\t'.join(map(str,r))+'\n' for r in results)
+          )
+          Path('core-boot-spine-unresolved.tsv').write_text(
+              'order\tfunction\treason\n'+''.join('\t'.join(map(str,r))+'\n' for r in unresolved)
+          )
+
+          eq=sum(r[2]=='EQUAL' for r in results)
+          diff=sum(r[2]=='DIFF' for r in results)
+          print(f'CORE_SPINE_TARGETS={len(targets)}')
+          print(f'CORE_SPINE_RESOLVED={len(results)}')
+          print(f'CORE_SPINE_EQUAL={eq}')
+          print(f'CORE_SPINE_DIFF={diff}')
+          print(f'CORE_SPINE_UNRESOLVED={len(unresolved)}')
+          print('FIRST_CORE_SPINE_DIVERGENCE='+(f'{first_diff[0]}:{first_diff[1]}' if first_diff else '<none>'))
+          print('FIRST_PLATFORM_CORE_SPINE_DIVERGENCE='+(f'{first_platform[0]}:{first_platform[1]}' if first_platform else '<none>'))
+          print('LISA_C0015_CORE_BOOT_SPINE_DIAGNOSIS=PASS')
+          PY
+
+      - name: Final diagnostic gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'LISA_C0015_CORE_BOOT_SPINE_DIAGNOSIS=PASS' core-boot-spine-summary.txt
+          grep -Fqx 'CORE_SPINE_UNRESOLVED=0' core-boot-spine-summary.txt
+          cat core-boot-spine-summary.txt
+          cat core-boot-spine.tsv
+
+      - name: Upload core boot-spine diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0015-core-boot-spine
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            core-boot-spine-summary.txt
+            core-boot-spine.tsv
+            core-boot-spine-unresolved.tsv
+            spine/
+            stock.kallsyms
+            c0015.kallsyms
+            stock-vmlinux-to-elf.log
+            c0015-vmlinux-to-elf.log
