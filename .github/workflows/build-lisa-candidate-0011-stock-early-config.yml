@@ -101,7 +101,7 @@ jobs:
           cp compat/out/.config baseline.config
           sha256sum baseline.config | tee baseline-config.sha256
 
-      - name: Reproduce Candidate 0008 config then align only stock early-sensitive options
+      - name: Reproduce Candidate 0008 config and align representable stock early options
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
         run: |
@@ -124,12 +124,43 @@ jobs:
           scripts/config --file out/.config --enable MILLET_SIG
           scripts/config --file out/.config --enable MILLET_CGROUP
 
-          # Iteration 0014 healthy-stock diagnosis found only five early-sensitive
-          # effective config deltas. In this donor tree ARM64_LSE_ATOMICS is a
-          # hidden symbol whose default follows ARM64_USE_LSE_ATOMICS, so enabling
-          # USE_LSE is the compatibility action required to recover stock LSE=y.
+          # Prove whether the exact Android clang used by the stock banner can
+          # satisfy ARM64_LSE_ATOMICS' as-instr dependency before olddefconfig.
+          cat > ../lse-probe.S <<'EOF'
+          .text
+          .arch_extension lse
+          .global lisa_lse_probe
+          lisa_lse_probe:
+              cas x0, x1, [x2]
+              ret
+          EOF
+          if clang --target=aarch64-linux-gnu -c ../lse-probe.S -o ../lse-probe.o \
+              >../lse-assembler-probe.stdout 2>../lse-assembler-probe.stderr; then
+            echo 'LSE_ASSEMBLER_PROBE=PASS' | tee ../lse-assembler-probe.txt
+          else
+            echo 'LSE_ASSEMBLER_PROBE=FAIL' | tee ../lse-assembler-probe.txt
+            cat ../lse-assembler-probe.stderr
+            echo 'FIRST_BLOCKER=LSE_ASSEMBLER_CAPABILITY' | tee ../early-config-blocker.txt
+            exit 31
+          fi
+
+          # The stock Image exposes QCOM_MINIDUMP_ENCRYPT=y, but this option may
+          # not exist in the reconstructed donor Kconfig schema. Do not create a
+          # fake .config symbol and then mistake olddefconfig dropping it for a
+          # kernel failure. Detect representability from the exact donor first.
+          if grep -RqsE --include='Kconfig*' \
+              '^[[:space:]]*config[[:space:]]+QCOM_MINIDUMP_ENCRYPT([[:space:]]|$)' .; then
+            HAVE_QCOM_MINIDUMP_ENCRYPT=1
+            scripts/config --file out/.config --enable QCOM_MINIDUMP_ENCRYPT
+          else
+            HAVE_QCOM_MINIDUMP_ENCRYPT=0
+          fi
+          printf 'HAVE_QCOM_MINIDUMP_ENCRYPT=%s\n' "$HAVE_QCOM_MINIDUMP_ENCRYPT" \
+            | tee ../candidate-0011-capabilities.env
+
+          # ARM64_LSE_ATOMICS is hidden and follows ARM64_USE_LSE_ATOMICS when
+          # JUMP_LABEL and the assembler LSE probe are available.
           scripts/config --file out/.config --enable ARM64_USE_LSE_ATOMICS
-          scripts/config --file out/.config --enable QCOM_MINIDUMP_ENCRYPT
           scripts/config --file out/.config --set-val QCOM_WATCHDOG_BARK_TIME "$STOCK_WATCHDOG_BARK"
           scripts/config --file out/.config --set-val QCOM_WATCHDOG_PET_TIME "$STOCK_WATCHDOG_PET"
 
@@ -139,21 +170,46 @@ jobs:
             CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
 
-          grep -Fqx 'CONFIG_ARM64_USE_LSE_ATOMICS=y' out/.config
-          grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' out/.config
-          grep -Fqx 'CONFIG_QCOM_MINIDUMP_ENCRYPT=y' out/.config
-          grep -Fqx "CONFIG_QCOM_WATCHDOG_BARK_TIME=$STOCK_WATCHDOG_BARK" out/.config
-          grep -Fqx "CONFIG_QCOM_WATCHDOG_PET_TIME=$STOCK_WATCHDOG_PET" out/.config
+          {
+            grep -E '^(CONFIG_ARM64_(USE_)?LSE_ATOMICS|CONFIG_QCOM_MINIDUMP_ENCRYPT|CONFIG_QCOM_WATCHDOG_(BARK|PET)_TIME)=' out/.config || true
+            grep -E '^# CONFIG_ARM64_(USE_)?LSE_ATOMICS is not set|^# CONFIG_QCOM_MINIDUMP_ENCRYPT is not set' out/.config || true
+          } | tee ../stock-early-config-post-olddefconfig.txt
+
+          if ! grep -Fqx 'CONFIG_ARM64_USE_LSE_ATOMICS=y' out/.config; then
+            echo 'FIRST_BLOCKER=ARM64_USE_LSE_ATOMICS_NOT_REPRESENTED' | tee ../early-config-blocker.txt
+            exit 32
+          fi
+          if ! grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' out/.config; then
+            echo 'FIRST_BLOCKER=ARM64_LSE_ATOMICS_HIDDEN_DEPENDENCY' | tee ../early-config-blocker.txt
+            exit 33
+          fi
+          if ! grep -Fqx "CONFIG_QCOM_WATCHDOG_BARK_TIME=$STOCK_WATCHDOG_BARK" out/.config; then
+            echo 'FIRST_BLOCKER=QCOM_WATCHDOG_BARK_NOT_REPRESENTED' | tee ../early-config-blocker.txt
+            exit 34
+          fi
+          if ! grep -Fqx "CONFIG_QCOM_WATCHDOG_PET_TIME=$STOCK_WATCHDOG_PET" out/.config; then
+            echo 'FIRST_BLOCKER=QCOM_WATCHDOG_PET_NOT_REPRESENTED' | tee ../early-config-blocker.txt
+            exit 35
+          fi
+          if [[ "$HAVE_QCOM_MINIDUMP_ENCRYPT" == 1 ]] && \
+              ! grep -Fqx 'CONFIG_QCOM_MINIDUMP_ENCRYPT=y' out/.config; then
+            echo 'FIRST_BLOCKER=QCOM_MINIDUMP_ENCRYPT_DEPENDENCY' | tee ../early-config-blocker.txt
+            exit 36
+          fi
 
           {
             echo 'CONFIG_ARM64_LSE_ATOMICS=y'
             echo 'CONFIG_ARM64_USE_LSE_ATOMICS=y'
-            echo 'CONFIG_QCOM_MINIDUMP_ENCRYPT=y'
+            if [[ "$HAVE_QCOM_MINIDUMP_ENCRYPT" == 1 ]]; then
+              echo 'CONFIG_QCOM_MINIDUMP_ENCRYPT=y'
+            else
+              echo 'CONFIG_QCOM_MINIDUMP_ENCRYPT=UNREPRESENTABLE_IN_DONOR_SCHEMA'
+            fi
             echo "CONFIG_QCOM_WATCHDOG_BARK_TIME=$STOCK_WATCHDOG_BARK"
             echo "CONFIG_QCOM_WATCHDOG_PET_TIME=$STOCK_WATCHDOG_PET"
           } | tee ../stock-early-config-target.txt
 
-          echo 'STOCK_EARLY_CONFIG_EFFECTIVE_GATE=PASS'
+          echo 'STOCK_EARLY_CONFIG_REPRESENTABILITY_GATE=PASS'
 
       - name: Build Candidate 0011 Image
         env:
@@ -178,9 +234,10 @@ jobs:
           test "$(sha256sum ../candidate-0011-Image | awk '{print $1}')" != "$FAILED_CANDIDATE_IMAGE_SHA256"
           echo 'CANDIDATE_0011_IMAGE_BUILD_GATE=PASS'
 
-      - name: Verify embedded IKCONFIG carries stock early-sensitive state
+      - name: Verify embedded IKCONFIG carries representable stock early state
         run: |
           set -euo pipefail
+          source candidate-0011-capabilities.env
           extract="kernel/scripts/extract-ikconfig"
           chmod +x "$extract" || true
           "$extract" candidate-0011-Image > candidate-0011.ikconfig
@@ -188,7 +245,11 @@ jobs:
 
           grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' candidate-0011.ikconfig
           grep -Fqx 'CONFIG_ARM64_USE_LSE_ATOMICS=y' candidate-0011.ikconfig
-          grep -Fqx 'CONFIG_QCOM_MINIDUMP_ENCRYPT=y' candidate-0011.ikconfig
+          if [[ "$HAVE_QCOM_MINIDUMP_ENCRYPT" == 1 ]]; then
+            grep -Fqx 'CONFIG_QCOM_MINIDUMP_ENCRYPT=y' candidate-0011.ikconfig
+          else
+            ! grep -Fq 'CONFIG_QCOM_MINIDUMP_ENCRYPT=' candidate-0011.ikconfig
+          fi
           grep -Fqx "CONFIG_QCOM_WATCHDOG_BARK_TIME=$STOCK_WATCHDOG_BARK" candidate-0011.ikconfig
           grep -Fqx "CONFIG_QCOM_WATCHDOG_PET_TIME=$STOCK_WATCHDOG_PET" candidate-0011.ikconfig
           echo 'CANDIDATE_0011_IKCONFIG_GATE=PASS'
@@ -264,6 +325,7 @@ jobs:
       - name: Final static gate and device-test package
         run: |
           set -euo pipefail
+          source candidate-0011-capabilities.env
           grep -Fqx 'CANDIDATE_0011_REPACK_GATE=PASS' candidate-0011-repack.txt
           grep -aFq "$TARGET_RELEASE" candidate-0011-Image
 
@@ -272,10 +334,13 @@ jobs:
           cp boot.img.sha256 package/boot.img.sha256
           cp candidate-0011-Image.sha256 package/candidate-0011-Image.sha256
           cp stock-early-config-target.txt package/stock-early-config-target.txt
+          cp stock-early-config-post-olddefconfig.txt package/stock-early-config-post-olddefconfig.txt
+          cp candidate-0011-capabilities.env package/candidate-0011-capabilities.env
+          cp lse-assembler-probe.txt package/lse-assembler-probe.txt
           cp candidate-0011-repack.txt package/candidate-0011-repack.txt
 
-          cat > package/TEST_PLAN.txt <<'EOF'
-          Lisa Candidate 0011 — stock early-config control
+          cat > package/TEST_PLAN.txt <<EOF
+          Lisa Candidate 0011 — representable stock early-config control
 
           Device state must remain the same as healthy Iteration 0014:
           - stock-Image-3.09 firmware / vendor_boot / dtbo / vbmeta
@@ -287,10 +352,11 @@ jobs:
             fastboot flash boot_a boot.img
             fastboot reboot
 
-          Candidate 0011 changes only the reconstructed kernel build relative to
-          Candidate 0008's source/config lineage by aligning the five effective
-          early-sensitive stock IKCONFIG differences discovered after Iteration 0014:
-          ARM64 LSE atomics, QCOM minidump encryption, and watchdog bark/pet times.
+          Candidate 0011 keeps Candidate 0008's exact reconstructed source/config
+          lineage and aligns every early-sensitive stock IKCONFIG delta that the
+          donor Kconfig schema can actually represent: ARM64 LSE atomics and the
+          QCOM watchdog bark/pet times. QCOM_MINIDUMP_ENCRYPT donor-schema support
+          for this build is HAVE_QCOM_MINIDUMP_ENCRYPT=$HAVE_QCOM_MINIDUMP_ENCRYPT.
 
           If it still fails, collect the TWRP evidence bundle immediately before
           booting another kernel.
@@ -302,7 +368,8 @@ jobs:
             echo "failed_candidate_0008_image_sha256=$FAILED_CANDIDATE_IMAGE_SHA256"
             echo "candidate_0011_image_sha256=$(sha256sum candidate-0011-Image | awk '{print $1}')"
             echo "candidate_0011_boot_sha256=$(sha256sum boot.img | awk '{print $1}')"
-            echo 'FIRST_BLOCKER_TARGET=CANDIDATE_0008_EARLY_CONFIG_DELTA'
+            echo "qcom_minidump_encrypt_representable=$HAVE_QCOM_MINIDUMP_ENCRYPT"
+            echo 'FIRST_BLOCKER_TARGET=CANDIDATE_0008_REPRESENTABLE_EARLY_CONFIG_DELTA'
             echo 'LISA_CANDIDATE_0011_STATIC_GATE=PASS'
           } | tee package/final-gate.txt
 
@@ -330,4 +397,10 @@ jobs:
             candidate-0011.ikconfig
             candidate-0011-Image.sha256
             stock-early-config-target.txt
+            stock-early-config-post-olddefconfig.txt
+            candidate-0011-capabilities.env
+            lse-assembler-probe.txt
+            lse-assembler-probe.stdout
+            lse-assembler-probe.stderr
+            early-config-blocker.txt
             candidate-0011-repack.txt
