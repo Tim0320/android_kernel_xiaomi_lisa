@@ -1,0 +1,341 @@
+name: Build Lisa Candidate 0017 hard no-KASLR control
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0017-hard-nokaslr.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0017-hard-nokaslr
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+      HEALTHY_STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_BOOT_BYTES: "201326592"
+      STOCK_KERNEL_SIZE: "51436032"
+      STOCK_RAMDISK_SIZE: "19883180"
+      STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+      TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
+      STOCK_WATCHDOG_BARK: "20000"
+      STOCK_WATCHDOG_PET: "15000"
+
+    steps:
+      - name: Checkout main metadata and baselines
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout exact reconstructed donor source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Authenticate healthy boot and port-ROM companion baseline
+        run: |
+          set -euo pipefail
+          test -s "$HEALTHY_STOCK_BOOT"
+          test "$(stat -c '%s' "$HEALTHY_STOCK_BOOT")" = "$STOCK_BOOT_BYTES"
+          test "$(sha256sum "$HEALTHY_STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          for f in vendor_boot.img dtbo.img vbmeta.img vbmeta_system.img; do
+            path="$COMPANION_BASE/$f"
+            test -s "$path"
+            if head -c 96 "$path" | grep -aFq 'version https://git-lfs.github.com/spec/v1'; then
+              echo "$path is still a Git LFS pointer after checkout" >&2
+              exit 1
+            fi
+            printf '%s size=%s sha256=%s\n' "$path" "$(stat -c '%s' "$path")" "$(sha256sum "$path" | awk '{print $1}')"
+          done
+          test "$(head -c 4 "$COMPANION_BASE/vbmeta.img")" = 'AVB0'
+          test "$(head -c 4 "$COMPANION_BASE/vbmeta_system.img")" = 'AVB0'
+          cd kernel
+          test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+          grep -Fqx 'CONFIG_BOOT_INFO=y' techpack/bootinfo/bootinfo.conf
+          grep -Fq 'core_initcall(bootinfo_init);' techpack/bootinfo/bootinfo.c
+          printf '%s\n' '-g5987d69e25da' > .scmversion
+          echo 'PORT_ROM_COMPANION_BASE=stock-Image-3.09'
+          echo 'BASELINE_AUTH_GATE=PASS'
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 curl git rsync kmod binutils-aarch64-linux-gnu
+
+      - name: Cache clang 11.0.2
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/clang-r383902b1
+          key: aosp-clang-r383902b1-linux-x86-v1
+
+      - name: Install clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          if [[ ! -x "$DEST/bin/clang" ]]; then
+            curl -L --fail --retry 5 --retry-all-errors \
+              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
+              -o "$ARCHIVE"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          fi
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Extract exact healthy stock Image and IKCONFIG
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, struct
+          PAGE=4096
+          b=Path(os.environ['HEALTHY_STOCK_BOOT']).read_bytes()
+          if b[:8] != b'ANDROID!': raise SystemExit('bad stock boot magic')
+          ksz=struct.unpack_from('<I',b,8)[0]
+          if ksz != int(os.environ['STOCK_KERNEL_SIZE']): raise SystemExit('unexpected stock kernel size')
+          kernel=b[PAGE:PAGE+ksz]
+          if struct.unpack_from('<I',kernel,0x38)[0] != 0x644d5241: raise SystemExit('stock ARM64 Image magic missing')
+          Path('stock-Image').write_bytes(kernel)
+          PY
+          chmod +x kernel/scripts/extract-ikconfig || true
+          kernel/scripts/extract-ikconfig stock-Image > stock.config
+          test -s stock.config
+          grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' stock.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' stock.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' stock.config
+          if grep -Fqx 'CONFIG_RELR=y' stock.config; then
+            echo 'healthy stock unexpectedly has CONFIG_RELR=y; Candidate 0017 premise invalid' >&2
+            exit 1
+          fi
+          grep -Fqx '# CONFIG_RELR is not set' stock.config || echo 'STOCK_RELR_ASSIGNMENT=absent (treated disabled by source-era config)'
+          echo 'STOCK_RELR_ENABLED=0'
+          echo 'STOCK_IKCONFIG_GATE=PASS'
+
+      - name: Resolve max-stock config with RELR forced off
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          rm -rf out
+          mkdir -p out
+          cp ../stock.config out/.config
+          scripts/config --file out/.config --enable ARM64_USE_LSE_ATOMICS
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('drivers/soc/qcom/Kconfig')
+          s=p.read_text()
+          pairs=[
+            ('default 11000\n\trange 11000 11000','default 20000\n\trange 20000 20000'),
+            ('default 9360\n\trange 9360 9360','default 15000\n\trange 15000 15000'),
+          ]
+          for old,new in pairs:
+              if old not in s: raise SystemExit(f'watchdog block not found: {old!r}')
+              s=s.replace(old,new,1)
+          p.write_text(s)
+          PY
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_BARK_TIME "$STOCK_WATCHDOG_BARK"
+          scripts/config --file out/.config --set-val QCOM_WATCHDOG_PET_TIME "$STOCK_WATCHDOG_PET"
+          scripts/config --file out/.config --disable RELR
+          make -j"$(nproc)" O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+          scripts/config --file out/.config --disable RELR
+          make -j"$(nproc)" O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+          cp out/.config ../candidate-0017.config
+          grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' out/.config
+          grep -Fqx 'CONFIG_ARM64_USE_LSE_ATOMICS=y' out/.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' out/.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' out/.config
+          grep -Fqx '# CONFIG_RELR is not set' out/.config
+          echo 'CANDIDATE_0017_RELR_OFF_CONFIG_GATE=PASS'
+
+      - name: Preserve Candidate 0014 no-bootinfo control
+        run: |
+          set -euo pipefail
+          cd kernel
+          cp techpack/bootinfo/bootinfo.conf ../candidate-0017-bootinfo.conf.before
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('techpack/bootinfo/bootinfo.conf')
+          s=p.read_text()
+          old='CONFIG_BOOT_INFO=y'
+          if s.count(old) != 1: raise SystemExit('unexpected CONFIG_BOOT_INFO assignment count')
+          p.write_text(s.replace(old,'CONFIG_BOOT_INFO=n',1))
+          PY
+          cp techpack/bootinfo/bootinfo.conf ../candidate-0017-bootinfo.conf.after
+          git diff -- techpack/bootinfo/bootinfo.conf | tee ../candidate-0017-bootinfo.patch
+          grep -Fqx 'CONFIG_BOOT_INFO=n' techpack/bootinfo/bootinfo.conf
+          echo 'CANDIDATE_0017_NO_BOOTINFO_GATE=PASS'
+
+      - name: Hard-disable arm64 KASLR after mandatory module base setup
+        run: |
+          set -euo pipefail
+          cd kernel
+          cp arch/arm64/kernel/kaslr.c ../candidate-0017-kaslr.c.before
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('arch/arm64/kernel/kaslr.c')
+          s=p.read_text()
+          needle='''	module_alloc_base = (u64)_etext - MODULES_VSIZE;
+	__flush_dcache_area(&module_alloc_base, sizeof(module_alloc_base));
+'''
+          repl=needle+'''	/*
+	 * Lisa Candidate 0017 diagnostic control:
+	 * preserve the mandatory module_alloc_base initialization above, then
+	 * bypass runtime KASLR regardless of bootloader/vendor_boot cmdline.
+	 */
+	return 0;
+'''
+          if s.count(needle) != 1:
+              raise SystemExit('kaslr insertion point not unique')
+          p.write_text(s.replace(needle,repl,1))
+          PY
+          cp arch/arm64/kernel/kaslr.c ../candidate-0017-kaslr.c.after
+          git diff -- arch/arm64/kernel/kaslr.c | tee ../candidate-0017-kaslr.patch
+          grep -Fq 'Lisa Candidate 0017 diagnostic control' arch/arm64/kernel/kaslr.c
+          echo 'CANDIDATE_0017_HARD_NOKASLR_SOURCE_GATE=PASS' | tee ../candidate-0017-kaslr-gate.txt
+
+      - name: Build Candidate 0017 Image
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          KBUILD_BUILD_USER: builder
+          KBUILD_BUILD_HOST: pangu-build-component-vendor-782710-d7t6c-5vpwd-rmpns
+          KBUILD_BUILD_VERSION: "1"
+          KBUILD_BUILD_TIMESTAMP: "Sun Dec 21 12:22:29 UTC 2025"
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
+            CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+            CLANG_TRIPLE=aarch64-linux-gnu- Image 2>&1 | tee ../candidate-0017-build.log
+          test -s out/arch/arm64/boot/Image
+          if grep -Fq 'techpack/bootinfo/bootinfo.o' ../candidate-0017-build.log; then
+            echo 'bootinfo.o was still built' >&2; exit 1
+          fi
+          if nm -n out/vmlinux | grep -Eq '[[:space:]]bootinfo_init$'; then
+            echo 'bootinfo_init still linked' >&2; exit 1
+          fi
+          aarch64-linux-gnu-objdump -d --disassemble=__primary_switch out/vmlinux > ../candidate-0017-primary-switch.S || true
+          cp out/arch/arm64/boot/Image ../candidate-0017-Image
+          cd ..
+          sha256sum candidate-0017-Image | tee candidate-0017-Image.sha256
+          grep -aFq "$TARGET_RELEASE" candidate-0017-Image
+          echo 'CANDIDATE_0017_IMAGE_GATE=PASS'
+
+      - name: Verify embedded Candidate 0017 IKCONFIG
+        run: |
+          set -euo pipefail
+          kernel/scripts/extract-ikconfig candidate-0017-Image > candidate-0017.ikconfig
+          test -s candidate-0017.ikconfig
+          grep -Fqx 'CONFIG_ARM64_LSE_ATOMICS=y' candidate-0017.ikconfig
+          grep -Fqx 'CONFIG_ARM64_USE_LSE_ATOMICS=y' candidate-0017.ikconfig
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' candidate-0017.ikconfig
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' candidate-0017.ikconfig
+          grep -Fqx '# CONFIG_RELR is not set' candidate-0017.ikconfig
+          grep -Fqx 'CONFIG_RANDOMIZE_BASE=y' candidate-0017.ikconfig
+          echo 'CANDIDATE_0017_IKCONFIG_GATE=PASS'
+
+      - name: Package Candidate 0017 with exact healthy stock boot layout and AVB
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee candidate-0017-repack.txt
+          from pathlib import Path
+          import hashlib, os, struct
+          PAGE=4096
+          stock=bytearray(Path(os.environ['HEALTHY_STOCK_BOOT']).read_bytes())
+          kernel=Path('candidate-0017-Image').read_bytes()
+          def sha(b): return hashlib.sha256(b).hexdigest()
+          def align(v,a): return (v+a-1)//a*a
+          if stock[:8] != b'ANDROID!': raise SystemExit('bad stock boot magic')
+          stock_ksz=struct.unpack_from('<I',stock,8)[0]
+          rsz=struct.unpack_from('<I',stock,12)[0]
+          if stock_ksz != int(os.environ['STOCK_KERNEL_SIZE']): raise SystemExit('stock kernel size mismatch')
+          if rsz != int(os.environ['STOCK_RAMDISK_SIZE']): raise SystemExit('stock ramdisk size mismatch')
+          if len(kernel) > stock_ksz: raise SystemExit('Candidate 0017 Image exceeds stock kernel region')
+          if struct.unpack_from('<I',kernel,0x38)[0] != 0x644d5241: raise SystemExit('candidate ARM64 magic missing')
+          roff=align(PAGE+stock_ksz,PAGE)
+          ramdisk=bytes(stock[roff:roff+rsz])
+          if sha(ramdisk) != os.environ['STOCK_RAMDISK_SHA256']: raise SystemExit('stock ramdisk mismatch')
+          logical_end=align(roff+rsz,PAGE)
+          if bytes(stock[logical_end:logical_end+4]) != b'AVB0': raise SystemExit('stock AVB0 missing')
+          if bytes(stock[-64:-60]) != b'AVBf': raise SystemExit('stock AVBf missing')
+          original=bytes(stock)
+          stock[PAGE:PAGE+stock_ksz]=b'\0'*stock_ksz
+          stock[PAGE:PAGE+len(kernel)]=kernel
+          out=bytes(stock)
+          if out[:PAGE] != original[:PAGE]: raise SystemExit('stock header changed')
+          if out[PAGE+stock_ksz:] != original[PAGE+stock_ksz:]: raise SystemExit('bytes outside kernel region changed')
+          if out[roff:roff+rsz] != ramdisk: raise SystemExit('stock ramdisk changed')
+          if out[logical_end:logical_end+4] != b'AVB0' or out[-64:-60] != b'AVBf': raise SystemExit('stock AVB metadata changed')
+          Path('boot.img').write_bytes(out)
+          Path('boot.img.sha256').write_text(sha(out)+'  boot.img\n')
+          print(f'candidate_0015_image_sha256={sha(kernel)}')
+          print(f'candidate_0015_image_bytes={len(kernel)}')
+          print(f'candidate_0015_boot_sha256={sha(out)}')
+          print(f'kernel_zero_pad_bytes={stock_ksz-len(kernel)}')
+          print('changed_bytes_outside_kernel_region=0')
+          print('stock_header_byte_exact=1')
+          print('stock_ramdisk_byte_exact=1')
+          print('stock_avb0_metadata_byte_exact=1')
+          print('stock_avbf_footer_byte_exact=1')
+          print('CANDIDATE_0017_STOCK_LAYOUT_GATE=PASS')
+          PY
+
+      - name: Final Candidate 0017 gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'CANDIDATE_0017_STOCK_LAYOUT_GATE=PASS' candidate-0017-repack.txt
+          grep -Fqx 'CANDIDATE_0017_HARD_NOKASLR_SOURCE_GATE=PASS' candidate-0017-kaslr-gate.txt
+          grep -Fqx '# CONFIG_RELR is not set' candidate-0017.ikconfig
+          grep -Fqx 'CONFIG_RANDOMIZE_BASE=y' candidate-0017.ikconfig
+          test "$(stat -c '%s' boot.img)" = "$STOCK_BOOT_BYTES"
+          test "$(head -c 8 boot.img)" = 'ANDROID!'
+          echo 'LISA_CANDIDATE_0017_FINAL_GATE=PASS'
+
+      - name: Upload Candidate 0017
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0017-hard-nokaslr
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0017-Image
+            candidate-0017-Image.sha256
+            candidate-0017.config
+            candidate-0017.ikconfig
+            candidate-0017-build.log
+            candidate-0017-primary-switch.S
+            candidate-0017-bootinfo.conf.before
+            candidate-0017-bootinfo.conf.after
+            candidate-0017-bootinfo.patch
+            candidate-0017-kaslr.c.before
+            candidate-0017-kaslr.c.after
+            candidate-0017-kaslr.patch
+            candidate-0017-kaslr-gate.txt
+            candidate-0017-repack.txt
+            stock.config
+            clang-version.txt
