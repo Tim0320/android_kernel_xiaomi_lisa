@@ -1,0 +1,345 @@
+name: Analyze Lisa stock-Image-3.09 companion delta
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/analyze-lisa-stock-image-3-09-companion-delta.yml
+      - reconstruction/stock/stock-Image-3.09/vendor_boot.img
+      - reconstruction/stock/stock-Image-3.09/dtbo.img
+      - reconstruction/stock/stock-Image/vendor_boot.img
+      - reconstruction/stock/stock-Image/dtbo.img
+      - .gitattributes
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-stock-3-09-companion-delta-analysis
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NEW_VENDOR_BOOT: reconstruction/stock/stock-Image-3.09/vendor_boot.img
+      NEW_DTBO: reconstruction/stock/stock-Image-3.09/dtbo.img
+      OLD_VENDOR_BOOT: reconstruction/stock/stock-Image/vendor_boot.img
+      OLD_DTBO: reconstruction/stock/stock-Image/dtbo.img
+      EXPECT_NEW_VENDOR_BOOT_SHA256: a94ecc2b8e53666693fd3cfc99ad07b5f24f586e85841728bf1d41333bc4b053
+      EXPECT_NEW_DTBO_SHA256: 537655919c72edcba2e1dcbc83edb45fe92484263f3b8d5b29e8c1408282a35c
+      EXPECT_OLD_VENDOR_BOOT_SHA256: c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a
+      EXPECT_OLD_DTBO_SHA256: db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7
+
+    steps:
+      - name: Checkout exact images with Git LFS
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: true
+
+      - name: Install analysis tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y cpio lz4 zstd xz-utils gzip python3 device-tree-compiler
+
+      - name: Authenticate inputs
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$NEW_VENDOR_BOOT" | awk '{print $1}')" = "$EXPECT_NEW_VENDOR_BOOT_SHA256"
+          test "$(sha256sum "$NEW_DTBO" | awk '{print $1}')" = "$EXPECT_NEW_DTBO_SHA256"
+          test "$(sha256sum "$OLD_VENDOR_BOOT" | awk '{print $1}')" = "$EXPECT_OLD_VENDOR_BOOT_SHA256"
+          test "$(sha256sum "$OLD_DTBO" | awk '{print $1}')" = "$EXPECT_OLD_DTBO_SHA256"
+          echo 'INPUT_HASH_GATE=PASS'
+
+      - name: Extract and unpack vendor ramdisks
+        run: |
+          set -euo pipefail
+          mkdir -p analysis/new analysis/old
+
+          python3 - "$NEW_VENDOR_BOOT" analysis/new <<'PY'
+          import hashlib,struct,sys
+          from pathlib import Path
+          def align(v,a): return (v+a-1)//a*a
+          b=Path(sys.argv[1]).read_bytes(); out=Path(sys.argv[2])
+          if b[:8] != b'VNDRBOOT': raise SystemExit('bad vendor_boot magic')
+          u32=lambda o: struct.unpack_from('<I',b,o)[0]
+          page=u32(12); rsz=u32(24); hsz=u32(2096); dsz=u32(2100)
+          roff=align(hsz,page); doff=align(roff+rsz,page)
+          ram=b[roff:roff+rsz]; dtb=b[doff:doff+dsz]
+          (out/'vendor_ramdisk.bin').write_bytes(ram)
+          (out/'vendor_dtb.bin').write_bytes(dtb)
+          (out/'hashes.txt').write_text(
+            f'vendor_ramdisk_sha256={hashlib.sha256(ram).hexdigest()}\n'
+            f'vendor_dtb_sha256={hashlib.sha256(dtb).hexdigest()}\n')
+          PY
+
+          python3 - "$OLD_VENDOR_BOOT" analysis/old <<'PY'
+          import hashlib,struct,sys
+          from pathlib import Path
+          def align(v,a): return (v+a-1)//a*a
+          b=Path(sys.argv[1]).read_bytes(); out=Path(sys.argv[2])
+          if b[:8] != b'VNDRBOOT': raise SystemExit('bad vendor_boot magic')
+          u32=lambda o: struct.unpack_from('<I',b,o)[0]
+          page=u32(12); rsz=u32(24); hsz=u32(2096); dsz=u32(2100)
+          roff=align(hsz,page); doff=align(roff+rsz,page)
+          ram=b[roff:roff+rsz]; dtb=b[doff:doff+dsz]
+          (out/'vendor_ramdisk.bin').write_bytes(ram)
+          (out/'vendor_dtb.bin').write_bytes(dtb)
+          (out/'hashes.txt').write_text(
+            f'vendor_ramdisk_sha256={hashlib.sha256(ram).hexdigest()}\n'
+            f'vendor_dtb_sha256={hashlib.sha256(dtb).hexdigest()}\n')
+          PY
+
+          unpack() {
+            local src="$1" out="$2" cpio="$3"
+            mkdir -p "$out"
+            magic="$(xxd -p -l 8 "$src")"
+            case "$magic" in
+              1f8b*) gzip -dc "$src" > "$cpio" ;;
+              04224d18*|02214c18*) lz4 -dc "$src" > "$cpio" ;;
+              fd377a585a00*) xz -dc "$src" > "$cpio" ;;
+              28b52ffd*) zstd -dc "$src" > "$cpio" ;;
+              303730373031*|303730373032*) cp "$src" "$cpio" ;;
+              *) echo "unknown ramdisk compression: $magic" >&2; exit 1 ;;
+            esac
+            abs="$(realpath "$cpio")"
+            (cd "$out" && cpio --quiet -idm --no-absolute-filenames < "$abs")
+          }
+
+          unpack analysis/new/vendor_ramdisk.bin analysis/new/root analysis/new/vendor_ramdisk.cpio
+          unpack analysis/old/vendor_ramdisk.bin analysis/old/root analysis/old/vendor_ramdisk.cpio
+
+      - name: Exact vendor ramdisk file delta
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib,os,stat
+
+          def record(root):
+              root=Path(root); out={}
+              for p in sorted(root.rglob('*')):
+                  rel=str(p.relative_to(root))
+                  st=p.lstat()
+                  if p.is_symlink():
+                      out[rel]=('L',oct(stat.S_IMODE(st.st_mode)),os.readlink(p))
+                  elif p.is_file():
+                      h=hashlib.sha256(p.read_bytes()).hexdigest()
+                      out[rel]=('F',oct(stat.S_IMODE(st.st_mode)),h)
+                  elif p.is_dir():
+                      out[rel]=('D',oct(stat.S_IMODE(st.st_mode)),'-')
+              return out
+
+          n=record('analysis/new/root'); o=record('analysis/old/root')
+          new_only=sorted(set(n)-set(o))
+          old_only=sorted(set(o)-set(n))
+          changed=sorted(k for k in set(n)&set(o) if n[k]!=o[k])
+          changed_non_ko=[k for k in changed if not k.endswith('.ko')]
+
+          lines=['path\tnew_type\tnew_mode\tnew_value\told_type\told_mode\told_value']
+          for k in sorted(set(new_only)|set(old_only)|set(changed)):
+              a=n.get(k,('MISSING','-','-')); b=o.get(k,('MISSING','-','-'))
+              lines.append('\t'.join((k,*a,*b)))
+          Path('analysis/ramdisk-file-delta.tsv').write_text('\n'.join(lines)+'\n')
+
+          summary=[
+            f'new_entries={len(n)}',
+            f'old_entries={len(o)}',
+            f'new_only_entries={len(new_only)}',
+            f'old_only_entries={len(old_only)}',
+            f'changed_entries={len(changed)}',
+            f'changed_non_ko_entries={len(changed_non_ko)}',
+            'new_only=' + ','.join(new_only),
+            'old_only=' + ','.join(old_only),
+            'changed_non_ko=' + ','.join(changed_non_ko),
+          ]
+          Path('analysis/ramdisk-file-summary.txt').write_text('\n'.join(summary)+'\n')
+          print('\n'.join(summary))
+          PY
+
+      - name: Compare modules.load files exactly
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import difflib
+
+          def loads(root):
+              root=Path(root)
+              out={}
+              for p in sorted(root.rglob('modules.load*')):
+                  out[str(p.relative_to(root))]=p.read_text(errors='replace').splitlines()
+              return out
+
+          n=loads('analysis/new/root'); o=loads('analysis/old/root')
+          names=sorted(set(n)|set(o))
+          report=[]
+          for name in names:
+              report.append(f'===== {name} =====')
+              a=o.get(name,[]); b=n.get(name,[])
+              report.extend(difflib.unified_diff(a,b,fromfile='old/'+name,tofile='new/'+name,lineterm=''))
+          Path('analysis/modules-load-diff.txt').write_text('\n'.join(report)+'\n')
+
+          def active(root):
+              p=Path(root)/'lib/modules/modules.load'
+              return [x.strip() for x in p.read_text(errors='replace').splitlines()
+                      if x.strip() and not x.lstrip().startswith('#')] if p.exists() else []
+
+          na=active('analysis/new/root'); oa=active('analysis/old/root')
+          Path('analysis/active-modules-load.txt').write_text(
+              '[new]\n'+'\n'.join(na)+'\n[old]\n'+'\n'.join(oa)+'\n')
+          print(f'new_active_entries={len(na)}')
+          print(f'old_active_entries={len(oa)}')
+          print(f'active_names_identical={int(na==oa)}')
+          print('new_active=' + ','.join(na))
+          print('old_active=' + ','.join(oa))
+          PY
+
+      - name: Compare embedded vendor DTB
+        run: |
+          set -euo pipefail
+          set +e
+          dtc -q -I dtb -O dts -o analysis/new/vendor.dts analysis/new/vendor_dtb.bin
+          new_rc=$?
+          dtc -q -I dtb -O dts -o analysis/old/vendor.dts analysis/old/vendor_dtb.bin
+          old_rc=$?
+          set -e
+
+          echo "new_vendor_dtb_dtc_rc=$new_rc" | tee analysis/vendor-dtb-dtc.txt
+          echo "old_vendor_dtb_dtc_rc=$old_rc" | tee -a analysis/vendor-dtb-dtc.txt
+
+          if [ "$new_rc" -eq 0 ] && [ "$old_rc" -eq 0 ]; then
+            diff -u analysis/old/vendor.dts analysis/new/vendor.dts > analysis/vendor-dtb.diff || true
+            python3 - <<'PY'
+          from pathlib import Path
+          p=Path('analysis/vendor-dtb.diff')
+          lines=p.read_text(errors='replace').splitlines() if p.exists() else []
+          adds=sum(1 for x in lines if x.startswith('+') and not x.startswith('+++'))
+          dels=sum(1 for x in lines if x.startswith('-') and not x.startswith('---'))
+          Path('analysis/vendor-dtb-summary.txt').write_text(
+              f'dts_added_lines={adds}\ndts_removed_lines={dels}\n')
+          print(f'dts_added_lines={adds}')
+          print(f'dts_removed_lines={dels}')
+          PY
+          else
+            echo 'dts_added_lines=UNAVAILABLE' > analysis/vendor-dtb-summary.txt
+            echo 'dts_removed_lines=UNAVAILABLE' >> analysis/vendor-dtb-summary.txt
+          fi
+
+      - name: Compare DTBO entries by index
+        run: |
+          set -euo pipefail
+          mkdir -p analysis/new/dtbo analysis/old/dtbo
+          python3 - "$NEW_DTBO" "$OLD_DTBO" <<'PY'
+          import hashlib,struct,sys
+          from pathlib import Path
+
+          MAGIC=0xd7b7ab1e
+          def parse(path,outdir):
+              b=Path(path).read_bytes()
+              vals=struct.unpack_from('>8I',b,0)
+              endian='>'
+              if vals[0]!=MAGIC:
+                  vals=struct.unpack_from('<8I',b,0); endian='<'
+              magic,total,hsz,esz,count,eoff,page,ver=vals
+              if magic!=MAGIC: raise SystemExit(f'{path}: bad DTBO magic')
+              out=[]; od=Path(outdir)
+              for i in range(count):
+                  size,off,ident,rev,c0,c1,c2,c3=struct.unpack_from(endian+'8I',b,eoff+i*esz)
+                  blob=b[off:off+size]
+                  h=hashlib.sha256(blob).hexdigest()
+                  (od/f'{i:02d}.dtb').write_bytes(blob)
+                  out.append((i,ident,rev,c0,c1,c2,c3,size,h))
+              return out
+
+          n=parse(sys.argv[1],'analysis/new/dtbo')
+          o=parse(sys.argv[2],'analysis/old/dtbo')
+          count=max(len(n),len(o)); changed=[]; meta_changed=[]
+          lines=['index\tnew_id\tnew_rev\tnew_custom\tnew_size\tnew_sha256\told_id\told_rev\told_custom\told_size\told_sha256\tblob_identical']
+          for i in range(count):
+              a=n[i] if i<len(n) else None; b=o[i] if i<len(o) else None
+              if a and b:
+                  same=a[-1]==b[-1]
+                  if not same: changed.append(i)
+                  if a[1:7]!=b[1:7]: meta_changed.append(i)
+                  lines.append(f'{i}\t{a[1]}\t{a[2]}\t{",".join(map(str,a[3:7]))}\t{a[7]}\t{a[8]}\t{b[1]}\t{b[2]}\t{",".join(map(str,b[3:7]))}\t{b[7]}\t{b[8]}\t{int(same)}')
+              else:
+                  changed.append(i)
+          Path('analysis/dtbo-index-compare.tsv').write_text('\n'.join(lines)+'\n')
+          summary=[
+              f'new_dtbo_entries={len(n)}',
+              f'old_dtbo_entries={len(o)}',
+              f'changed_entry_indices={",".join(map(str,changed))}',
+              f'changed_entry_count={len(changed)}',
+              f'metadata_changed_indices={",".join(map(str,meta_changed))}',
+              f'metadata_changed_count={len(meta_changed)}',
+          ]
+          Path('analysis/dtbo-index-summary.txt').write_text('\n'.join(summary)+'\n')
+          print('\n'.join(summary))
+          PY
+
+          : > analysis/dtbo-dts-summary.txt
+          for f in analysis/new/dtbo/*.dtb; do
+            i="$(basename "$f" .dtb)"
+            dtc -q -I dtb -O dts -o "analysis/new/dtbo/$i.dts" "$f" || true
+          done
+          for f in analysis/old/dtbo/*.dtb; do
+            i="$(basename "$f" .dtb)"
+            dtc -q -I dtb -O dts -o "analysis/old/dtbo/$i.dts" "$f" || true
+          done
+
+          while IFS= read -r idx; do
+            [ -n "$idx" ] || continue
+            i="$(printf '%02d' "$idx")"
+            if [ -s "analysis/new/dtbo/$i.dts" ] && [ -s "analysis/old/dtbo/$i.dts" ]; then
+              diff -u "analysis/old/dtbo/$i.dts" "analysis/new/dtbo/$i.dts" > "analysis/dtbo-$i.diff" || true
+              adds="$(grep -c '^+[^+]' "analysis/dtbo-$i.diff" || true)"
+              dels="$(grep -c '^-[^-]' "analysis/dtbo-$i.diff" || true)"
+              echo "index=$idx added_lines=$adds removed_lines=$dels" >> analysis/dtbo-dts-summary.txt
+            fi
+          done < <(awk -F= '/^changed_entry_indices=/ {gsub(/,/,"\n",$2); print $2}' analysis/dtbo-index-summary.txt)
+
+      - name: Final delta classification
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def kv(path):
+              d={}
+              for x in Path(path).read_text(errors='replace').splitlines():
+                  if '=' in x:
+                      k,v=x.split('=',1); d[k]=v
+              return d
+
+          r=kv('analysis/ramdisk-file-summary.txt')
+          d=kv('analysis/dtbo-index-summary.txt')
+          v=kv('analysis/vendor-dtb-summary.txt')
+
+          lines=[
+              f'ramdisk_new_only_entries={r["new_only_entries"]}',
+              f'ramdisk_old_only_entries={r["old_only_entries"]}',
+              f'ramdisk_changed_entries={r["changed_entries"]}',
+              f'ramdisk_changed_non_ko_entries={r["changed_non_ko_entries"]}',
+              f'dtbo_changed_entry_count={d["changed_entry_count"]}',
+              f'dtbo_metadata_changed_count={d["metadata_changed_count"]}',
+              f'vendor_dtb_dts_added_lines={v.get("dts_added_lines","UNAVAILABLE")}',
+              f'vendor_dtb_dts_removed_lines={v.get("dts_removed_lines","UNAVAILABLE")}',
+              'MODULE_BINARY_DELTA=0',
+              'LISA_STOCK_3_09_COMPANION_DELTA_ANALYSIS=PASS',
+          ]
+          Path('analysis/final-gate.txt').write_text('\n'.join(lines)+'\n')
+          print('\n'.join(lines))
+          PY
+
+      - name: Upload detailed delta analysis
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-stock-3-09-companion-delta-analysis
+          retention-days: 14
+          if-no-files-found: error
+          path: analysis/
