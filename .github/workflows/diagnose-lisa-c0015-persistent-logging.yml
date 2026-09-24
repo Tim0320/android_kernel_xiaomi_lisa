@@ -1,0 +1,240 @@
+name: Diagnose Lisa Candidate 0015 persistent logging path
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0015-persistent-logging.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0015-persistent-logging
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      HEALTHY_STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+      C0015_ARTIFACT_ID: "10810774162"
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0015_IMAGE_SHA256: c40049716600f16d85e87abad8e7c4613dfbdb7dd8cef198cfb774674eef4ccc
+
+    steps:
+      - name: Checkout exact user baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Authenticate user baseline
+        run: |
+          set -euo pipefail
+          test -s "$HEALTHY_STOCK_BOOT"
+          test "$(sha256sum "$HEALTHY_STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          for f in vendor_boot.img dtbo.img vbmeta.img vbmeta_system.img; do
+            p="$COMPANION_BASE/$f"
+            test -s "$p"
+            if head -c 96 "$p" | grep -aFq 'version https://git-lfs.github.com/spec/v1'; then
+              echo "$p is still a Git LFS pointer" >&2
+              exit 1
+            fi
+            printf '%s size=%s sha256=%s\n' "$p" "$(stat -c '%s' "$p")" "$(sha256sum "$p" | awk '{print $1}')"
+          done
+          test "$(head -c 4 "$COMPANION_BASE/vbmeta.img")" = 'AVB0'
+          test "$(head -c 4 "$COMPANION_BASE/vbmeta_system.img")" = 'AVB0'
+          echo 'PORT_ROM_COMPANION_BASE=stock-Image-3.09'
+          echo 'BASELINE_AUTH_GATE=PASS'
+
+      - name: Install analysis tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y curl unzip device-tree-compiler python3 file
+
+      - name: Fetch authenticated Candidate 0015 configs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0015_ARTIFACT_ID}/zip"             -o c0015.zip
+          mkdir -p c0015
+          unzip -q c0015.zip -d c0015
+          test -s c0015/stock.config
+          test -s c0015/candidate-0015.ikconfig
+          test -s c0015/candidate-0015-Image
+          test "$(sha256sum c0015/candidate-0015-Image | awk '{print $1}')" = "$C0015_IMAGE_SHA256"
+          cp c0015/stock.config stock.config
+          cp c0015/candidate-0015.ikconfig candidate-0015.config
+          echo 'C0015_CONFIG_AUTH_GATE=PASS'
+
+      - name: Compare persistent logging and early console configs
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee logging-config-summary.txt
+          from pathlib import Path
+
+          keys = [
+              "CONFIG_PSTORE","CONFIG_PSTORE_CONSOLE","CONFIG_PSTORE_PMSG",
+              "CONFIG_PSTORE_FTRACE","CONFIG_PSTORE_RAM","CONFIG_PSTORE_COMPRESS",
+              "CONFIG_PRINTK","CONFIG_PRINTK_TIME","CONFIG_EARLY_PRINTK",
+              "CONFIG_SERIAL_EARLYCON","CONFIG_SERIAL_CORE","CONFIG_SERIAL_CORE_CONSOLE",
+              "CONFIG_SERIAL_MSM_GENI","CONFIG_SERIAL_MSM_GENI_CONSOLE",
+              "CONFIG_SERIAL_MSM_GENI_EARLY_CONSOLE","CONFIG_MAGIC_SYSRQ",
+              "CONFIG_PANIC_ON_OOPS","CONFIG_PANIC_TIMEOUT","CONFIG_KALLSYMS",
+              "CONFIG_KALLSYMS_ALL","CONFIG_DEBUG_KERNEL",
+          ]
+
+          def parse(path):
+              out={}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  if raw.startswith("CONFIG_") and "=" in raw:
+                      k,v=raw.split("=",1); out[k]=v
+                  elif raw.startswith("# CONFIG_") and raw.endswith(" is not set"):
+                      k=raw[len("# "):].split(" is not set",1)[0]
+                      out[k]="n"
+              return out
+
+          s=parse("stock.config"); c=parse("candidate-0015.config")
+          rows=[]; diffs=[]
+          for k in keys:
+              sv=s.get(k,"<absent>"); cv=c.get(k,"<absent>")
+              rows.append((k,sv,cv,"SAME" if sv==cv else "DIFF"))
+              if sv!=cv: diffs.append((k,sv,cv))
+
+          Path("logging-config-compare.tsv").write_text(
+              "key\tstock\tcandidate0015\tstatus\n"+
+              "".join(f"{k}\t{sv}\t{cv}\t{st}\n" for k,sv,cv,st in rows)
+          )
+
+          print(f"LOGGING_CONFIG_KEYS={len(rows)}")
+          print(f"LOGGING_CONFIG_DIFF_COUNT={len(diffs)}")
+          for k,sv,cv in diffs:
+              print(f"LOGGING_CONFIG_DIFF={k}:stock={sv}:c0015={cv}")
+          for k in ["CONFIG_PSTORE","CONFIG_PSTORE_CONSOLE","CONFIG_PSTORE_RAM","CONFIG_PRINTK"]:
+              print(f"STOCK_{k}={s.get(k,'<absent>')}")
+              print(f"C0015_{k}={c.get(k,'<absent>')}")
+          print("LOGGING_CONFIG_COMPARE_GATE=PASS")
+          PY
+          cat logging-config-compare.tsv
+
+      - name: Extract valid FDTs from exact companion images
+        run: |
+          set -euo pipefail
+          mkdir -p fdt/dtbo fdt/vendor_boot dts/dtbo dts/vendor_boot
+          python3 - <<'PY' | tee fdt-extract-summary.txt
+          from pathlib import Path
+          import struct, subprocess
+          MAGIC=b'\xd0\x0d\xfe\xed'
+
+          def carve(src, outdir):
+              data=Path(src).read_bytes()
+              hits=[]; pos=0; idx=0
+              while True:
+                  p=data.find(MAGIC,pos)
+                  if p<0: break
+                  pos=p+1
+                  if p+8>len(data): continue
+                  total=struct.unpack_from(">I",data,p+4)[0]
+                  if total<40 or p+total>len(data): continue
+                  blob=data[p:p+total]
+                  out=Path(outdir)/f"{idx:03d}-0x{p:x}.dtb"
+                  out.write_bytes(blob)
+                  ok=subprocess.run(["dtc","-I","dtb","-O","dts","-o","/dev/null",str(out)],
+                                    stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
+                  if ok:
+                      hits.append((idx,p,total,str(out))); idx+=1
+                  else:
+                      out.unlink(missing_ok=True)
+              return hits
+
+          for tag,src in [
+              ("dtbo","reconstruction/stock/stock-Image-3.09/dtbo.img"),
+              ("vendor_boot","reconstruction/stock/stock-Image-3.09/vendor_boot.img"),
+          ]:
+              hits=carve(src,f"fdt/{tag}")
+              print(f"{tag.upper()}_VALID_FDT_COUNT={len(hits)}")
+              for idx,off,total,path in hits:
+                  print(f"{tag.upper()}_FDT={idx}:offset=0x{off:x}:bytes={total}:path={path}")
+          print("FDT_CARVE_GATE=PASS")
+          PY
+
+          for tag in dtbo vendor_boot; do
+            for f in fdt/$tag/*.dtb; do
+              [ -e "$f" ] || continue
+              b="$(basename "$f" .dtb)"
+              dtc -I dtb -O dts -o "dts/$tag/$b.dts" "$f" 2>"dts/$tag/$b.stderr" || true
+            done
+          done
+
+      - name: Locate ramoops and reserved-memory evidence
+        run: |
+          set -euo pipefail
+          : > ramoops-dt-evidence.txt
+          grep -RniE 'ramoops|persistent[-_]?ram|reserved-memory|console-size|record-size|pmsg-size|ftrace-size|ecc-size|mem-type'             dts >> ramoops-dt-evidence.txt || true
+
+          python3 - <<'PY' | tee persistent-logging-summary.txt
+          from pathlib import Path
+          import re
+          cfg=Path("logging-config-compare.tsv").read_text(errors="replace")
+          ev=Path("ramoops-dt-evidence.txt").read_text(errors="replace")
+
+          def val(key,who):
+              for line in cfg.splitlines()[1:]:
+                  p=line.split("\t")
+                  if len(p)>=4 and p[0]==key:
+                      return p[1] if who=="stock" else p[2]
+              return "<absent>"
+
+          ramoops_lines=[x for x in ev.splitlines() if re.search(r'ramoops|persistent[-_]?ram',x,re.I)]
+          reserved_lines=[x for x in ev.splitlines() if re.search(r'reserved-memory|console-size|record-size|pmsg-size|ftrace-size',x,re.I)]
+          print(f"STOCK_PSTORE={val('CONFIG_PSTORE','stock')}")
+          print(f"C0015_PSTORE={val('CONFIG_PSTORE','c0015')}")
+          print(f"STOCK_PSTORE_CONSOLE={val('CONFIG_PSTORE_CONSOLE','stock')}")
+          print(f"C0015_PSTORE_CONSOLE={val('CONFIG_PSTORE_CONSOLE','c0015')}")
+          print(f"STOCK_PSTORE_RAM={val('CONFIG_PSTORE_RAM','stock')}")
+          print(f"C0015_PSTORE_RAM={val('CONFIG_PSTORE_RAM','c0015')}")
+          print(f"RAMOOPS_DTS_MATCH_COUNT={len(ramoops_lines)}")
+          print(f"RESERVED_MEMORY_DTS_MATCH_COUNT={len(reserved_lines)}")
+          print("PERSISTENT_LOGGING_DIAG_GATE=PASS")
+          PY
+          cat ramoops-dt-evidence.txt || true
+
+      - name: Final gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'LOGGING_CONFIG_COMPARE_GATE=PASS' logging-config-summary.txt
+          grep -Fqx 'FDT_CARVE_GATE=PASS' fdt-extract-summary.txt
+          grep -Fqx 'PERSISTENT_LOGGING_DIAG_GATE=PASS' persistent-logging-summary.txt
+          {
+            echo 'KNOWN_GOOD_REFERENCE=healthy-stock-boot-e6f8c978c2cf'
+            echo 'CANDIDATE_REFERENCE=c0015-image-c40049716600'
+            echo 'PASS_COMPANION_CHAIN=stock-Image-3.09'
+            cat logging-config-summary.txt
+            cat fdt-extract-summary.txt
+            cat persistent-logging-summary.txt
+            echo 'LISA_C0015_PERSISTENT_LOGGING_PATH=PASS'
+          } | tee final.txt
+
+      - name: Upload persistent logging diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0015-persistent-logging
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            final.txt
+            logging-config-summary.txt
+            logging-config-compare.tsv
+            fdt-extract-summary.txt
+            persistent-logging-summary.txt
+            ramoops-dt-evidence.txt
+            dts/
