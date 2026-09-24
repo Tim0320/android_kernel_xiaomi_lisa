@@ -1072,3 +1072,113 @@ The next controlled test must isolate the boot image itself:
 - replace **only** `boot_a` with the exact official CN OS2.0.16 stock g598 boot (`e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1`).
 
 If that stock-boot control starts Android, Candidate 0008 boot/kernel packaging is isolated as the failing variable. If it fails with the same EBS-stage behavior, the blocker is outside the reconstructed boot image and lies in the 3.09-bottom + TW-super combination or another device-state dependency.
+
+
+## Iteration 0014 — 2026-09-24 12:49 +08:00
+
+- Boot under test: exact official CN OS2.0.16 stock boot
+- Boot SHA256: `e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1`
+- Companion/base state: unchanged `reconstruction/stock/stock-Image-3.09/` firmware + vendor_boot + dtbo
+- Userspace: user's current TW/global ported `super`
+- Slot: `_a`
+- Actual result: **boots successfully into Android**
+- Evidence package: `lisa-twrp-iter-0014_20260924-124953_boot_e6f8c978c2cf.zip`
+
+### Collector metadata correction
+
+The collector `SUMMARY.txt` records `outcome=black-screen-reboot`, but its note says:
+
+```text
+stock CN boot + stock-Image-3.09 bottom + TW super boots successfully
+```
+
+Android-side evidence independently proves the successful boot, so the stale/incorrect `outcome` field must not be used as the Iteration 0014 result.
+
+### Healthy Android-side baseline
+
+The successful stock boot reports:
+
+```text
+Linux localhost 5.4.289-qgki-g5987d69e25da
+#1 SMP PREEMPT Sun Dec 21 12:22:29 UTC 2025
+f2fs-hash:990dc88b60
+aarch64
+```
+
+Key boot/runtime properties:
+
+```text
+ro.boot.slot_suffix=_a
+ro.boot.bootdevice=1d84000.ufshc
+ro.boot.hardware=qcom
+ro.boot.verifiedbootstate=orange
+ro.boot.dtb_idx=7
+ro.boot.dtbo_idx=24
+dev.bootcomplete=1
+sys.boot_completed=1
+```
+
+The current successfully booted userspace identifies itself as:
+
+```text
+ro.build.version.incremental=OS2.0.8.0.UKOMIXM
+ro.mi.os.version.incremental=OS2.0.8.0.UKOMIXM
+ro.miui.region=TW
+ro.vendor.miui.region=TW
+```
+
+This corrects the older working note that referred to the present TW userspace as OS2.0.5.0. The actual current Android-side properties are OS2.0.8.0.UKOMIXM / TW.
+
+### Persistent evidence comparison against Iteration 0013
+
+```text
+partition      iter0013                                                        iter0014                                                        result
+logdump        08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a  same                                                            stale/same
+minidump       40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d  same                                                            stale/same
+mdcompress     072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea  same                                                            stale/same
+rawdump        605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c  same                                                            stale/same
+logfs          a2506a4613f2fea5438aa3311d91594979e88883b56550a5da191b0020ec3347  442e9617d06cceac2a40dd7c473793cabfb4adb7cf5dcc0af39ff70fd7771f96  changed
+oops           e01e62f9edd7af1eaaa99a3924e126287b8bb0522beba2eac7fc441a18bb659d  9040d25c5db21b867be5ee5ea206fd3d988150280483943f3e38798397607312  changed
+```
+
+The Iteration 0014 mtdoops ring contains a newly advanced record at counter `0x517` (1303) carrying the healthy stock build banner:
+
+```text
+#1 SMP PREEMPT Sun Dec 21 12:22:29 UTC 2025 f2fs-hash:990dc88b60
+```
+
+and the record contains later Android runtime/display activity. Therefore persistent Linux logging is functional when the exact stock boot is used.
+
+By contrast, Iteration 0013 with Candidate 0008 left no record carrying the reconstructed Candidate build banner:
+
+```text
+#1 SMP PREEMPT Tue Sep 22 17:43:28 UTC 2026
+```
+
+### Decisive A/B conclusion
+
+The following were held constant across Iterations 0013 and 0014:
+
+- `stock-Image-3.09` firmware state
+- `stock-Image-3.09` vendor_boot
+- `stock-Image-3.09` dtbo
+- active slot A
+- the user's current TW/global OS2.0.8.0 ported `super`
+
+The single controlled variable was `boot_a`:
+
+```text
+Iteration 0013:
+  Candidate 0008 boot
+  585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063
+  -> black-screen-reboot after UEFI Start EBS
+
+Iteration 0014:
+  exact stock boot
+  e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+  -> Android boot success
+```
+
+This isolates the first current blocker to **Candidate 0008 boot / reconstructed kernel Image**, not the 3.09 companion chain and not the TW/global super.
+
+The next non-speculative action is an exact healthy-stock-vs-Candidate-0008 kernel Image diagnosis: boot-v3 payload equality, ramdisk/header preservation, ARM64 Image header/entry layout, embedded IKCONFIG diff, and early-boot-sensitive config comparison.
