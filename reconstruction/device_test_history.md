@@ -980,3 +980,95 @@ The next non-speculative action is to compare the complete early boot firmware s
 The comparison must include the official stock boot image/banner and low-level firmware partitions such as `abl`, `xbl`, `xbl_config`, `devcfg`, `aop`, `hyp`, `tz`, `keymaster`, `qupfw`, `imagefv`, `featenabler`, `shrm`, plus `boot`, `vendor_boot`, `dtbo`, and vbmeta images.
 
 Do not make another kernel or slot-selection mutation until that comparison is complete.
+
+
+## Iteration 0013 — 2026-09-24 12:36 +08:00
+
+- Tested boot SHA256: `585a69eae9ab0fe1ff028c5e9890c36e4d745778e9d60a9ebdc61649a81c2063`
+- Candidate: Candidate 0008 known-g598 historical repack
+- Companion/base state: `reconstruction/stock/stock-Image-3.09/` firmware + vendor_boot + dtbo, with the user's actual TW ported `super`
+- Slot: `_a`
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Evidence package: `lisa-twrp-iter-0013_20260924-123606_boot_585a69eae9ab.zip`
+
+### Persistent dump freshness
+
+The crash-oriented partitions show:
+
+```text
+oops:
+  e01e62f9edd7af1eaaa99a3924e126287b8bb0522beba2eac7fc441a18bb659d
+
+logdump:
+  08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a
+
+minidump:
+  40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d
+
+mdcompress:
+  072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea
+
+rawdump:
+  605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c
+
+logfs:
+  a2506a4613f2fea5438aa3311d91594979e88883b56550a5da191b0020ec3347
+```
+
+The `minidump`, `mdcompress`, `rawdump`, and `logdump` hashes are unchanged from the already-proven stale payloads. In particular, the historical:
+
+```text
+qnoc_probe -> qcom_icc_set_qos -> regmap_mmio_read32le
+Kernel panic - not syncing: Fatal exception
+```
+
+record belongs to the older stored g598 minidump and is **not** fresh Iteration 0013 evidence.
+
+The `oops` aggregate hash changed, but splitting the 16 MiB mtdoops ring into its eight 2 MiB records shows only historical build banners/counters. The newest visible counters still include:
+
+```text
+slot 0: counter 1297, g4c23 lineage, build Tue Jul 22 13:10:31 UTC 2025
+slot 1: counter 1298, g598 lineage, build Tue Sep 16 14:22:14 UTC 2025
+```
+
+Neither record contains the exact reconstructed Candidate 0008 build banner:
+
+```text
+#1 SMP PREEMPT Tue Sep 22 17:43:28 UTC 2026
+```
+
+Therefore the changed aggregate `oops` partition still does not provide a trustworthy current Candidate 0008 Linux crash record.
+
+### Fresh UEFI evidence
+
+The `logfs` partition changed and contains fresh repeated mission boots:
+
+```text
+KeyPress:0, BootReason:0
+Active Slot _a is bootable
+Booting from slot (_a)
+Load Image boot_a
+Load Image dtbo_a
+Load Image vendor_boot_a
+VB2: Authenticate complete! boot state is: orange
+fatal error is not set
+Shutting Down UEFI Boot Services
+Start EBS
+```
+
+Normal-boot retry count decreases across the captured pages (5 -> 4 -> 3 -> 2), so the bootloader is repeatedly accepting the current 3.09 companion state and handing control past ExitBootServices.
+
+### Iteration 0013 conclusion
+
+Using the actual `stock-Image-3.09` companion/base does **not** by itself make Candidate 0008 boot successfully. The current attempt still reaches UEFI `Start EBS` but leaves no fresh exact-2026 Candidate 0008 Linux persistent record.
+
+No new kernel-source mutation is justified from the stale historical qnoc panic.
+
+The next controlled test must isolate the boot image itself:
+
+- keep the exact current `stock-Image-3.09` firmware / `vendor_boot` / `dtbo` state unchanged;
+- keep the user's current TW ported `super` unchanged;
+- replace **only** `boot_a` with the exact official CN OS2.0.16 stock g598 boot (`e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1`).
+
+If that stock-boot control starts Android, Candidate 0008 boot/kernel packaging is isolated as the failing variable. If it fails with the same EBS-stage behavior, the blocker is outside the reconstructed boot image and lies in the 3.09-bottom + TW-super combination or another device-state dependency.
