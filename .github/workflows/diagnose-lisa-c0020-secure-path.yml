@@ -136,7 +136,7 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import gzip
+          import gzip, re
 
           def cfg(image):
               b=Path(image).read_bytes()
