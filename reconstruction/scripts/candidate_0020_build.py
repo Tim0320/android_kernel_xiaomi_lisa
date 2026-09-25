@@ -49,17 +49,17 @@ def patch_yupik():
     if not node:
         raise SystemExit("qxm_ipa node block not found")
     block=node.group(0)
-    old="\\t.qosbox = &qxm_ipa_qos,"
+    old="\t.qosbox = &qxm_ipa_qos,"
     if block.count(old) != 1:
         raise SystemExit(f"unexpected qxm_ipa qosbox binding count: {block.count(old)}")
-    new="\\t/* Lisa Candidate 0020 diagnostic: never touch inaccessible IPA QoS MMIO. */\\n\\t.qosbox = NULL,"
+    new="\t/* Lisa Candidate 0020 diagnostic: never touch inaccessible IPA QoS MMIO. */\n\t.qosbox = NULL,"
     block2=block.replace(old,new,1)
     s=s[:node.start()]+block2+s[node.end():]
 
-    marker='\\tret = clk_bulk_prepare_enable(qp->num_clks, qp->clks);\\n'
+    marker='\tret = clk_bulk_prepare_enable(qp->num_clks, qp->clks);\n'
     if s.count(marker) != 1:
         raise SystemExit(f"unexpected clock-enable marker count: {s.count(marker)}")
-    marker_new=marker+'\\n\\tif (desc == &yupik_aggre2_noc)\\n\\t\\tdev_info(&pdev->dev, "Lisa Candidate 0020: qxm_ipa QoS fully disabled\\\\n");\\n'
+    marker_new=marker+'\n\tif (desc == &yupik_aggre2_noc)\n\t\tdev_info(&pdev->dev, "Lisa Candidate 0020: qxm_ipa QoS fully disabled\\n");\n'
     s=s.replace(marker,marker_new,1)
     p.write_text(s)
 
