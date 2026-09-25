@@ -1598,3 +1598,70 @@ More suspiciously, Candidate 0013/0014 contain a large set of level-6 candidate-
 This matters because the validated `stock-Image-3.09` vendor_boot ABI audit shows the active QGKI vendor module set contains `msm_drm.ko`. A built-in `msm_drm_register` in the reconstructed Image is therefore a concrete stock-vs-candidate execution-model mismatch.
 
 Before building another candidate, determine the exact Candidate initcall order relative to `mtdoops_init` / persistent-log initialization and identify which candidate-only built-in paths run before the first persistent Linux evidence would become writable.
+
+
+## Iteration 0024 — 2026-09-25 12:14 +08:00
+
+- Candidate: Candidate 0017 hard no-KASLR control
+- Download/CI short code: `315333d`
+- Workflow run: `36040331806`
+- Artifact ID: `10827096620`
+- Artifact: `lisa-candidate-0017-hard-nokaslr`
+- Kernel source: `6e568aa`
+- Tested boot SHA256: `20584b0457ac6c57d26905c6a081c98900ee49eb76ab5b97ad33a4914fad6a1a`
+- Candidate Image SHA256: `bc6a5a04de8ef532a9c70d39f34f91f8fafcc2eaf658d2e1c521ef90081a6316`
+- Base/companion state: `reconstruction/stock/stock-Image-3.09/` firmware + vendor_boot + dtbo + vbmeta family; user's current ported super; slot A
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Evidence package: `lisa-twrp-iter-0024_20260925-121439_boot_20584b0457ac.zip`
+
+### Candidate identity gate
+
+The collector-reported boot hash exactly matches Candidate 0017:
+
+```text
+20584b0457ac6c57d26905c6a081c98900ee49eb76ab5b97ad33a4914fad6a1a
+```
+
+Therefore this iteration is positively tied to the Candidate 0017 artifact rather than inferred from filename or operator notes.
+
+### Persistent evidence
+
+```text
+oops      9040d25c5db21b867be5ee5ea206fd3d988150280483943f3e38798397607312
+logdump   08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a
+minidump  40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d
+mdcompress 072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea
+logfs     cf5121ef47c0546a3b9f8d51201687175d6231e39495370b911cfb0fef93863f
+```
+
+`/sys/fs/pstore` is empty and `/data/vendor/ramoops` is absent in recovery. The crash-oriented partition hashes are unchanged from the already-known stale payloads. No new Candidate 0017-specific persistent Linux record is present.
+
+The recovery kernel used for collection is `5.4.302-qgki-g46af56554ec5`; it is not the failed Android kernel.
+
+### Fresh UEFI evidence
+
+The updated `logfs` contains repeated slot-A mission boots which load `boot_a`, `dtbo_a`, and `vendor_boot_a`, authenticate in orange state with no fatal AVB error, and reach:
+
+```text
+Shutting Down UEFI Boot Services
+Start EBS
+```
+
+The retry count advances down to zero across repeated attempts. Thus Candidate 0017 is accepted by the unlocked bootloader and fails after ExitBootServices / kernel handoff.
+
+### Candidate 0017 conclusion
+
+Candidate 0017 hard-disabled runtime KASLR in `arch/arm64/kernel/kaslr.c` after mandatory module-base setup while retaining the Candidate 0015 no-RELR and Candidate 0014 no-bootinfo controls. The device still fails identically and leaves no new current-kernel persistent record.
+
+Therefore runtime KASLR is **not sufficient to explain the failure** and should not remain the primary blocker hypothesis.
+
+### Next controlled action
+
+A stronger historical anchor exists: workflow run `35762412094`, artifact `10710943414`, contains an exact reconstructed Image with SHA256:
+
+```text
+492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+```
+
+Historical rawdump evidence carries the exact same release/build timestamp and shows this lineage executing into Linux through `Booting Linux`, `setup_arch`, and `ramoops/pstore` registration. The next candidate should therefore avoid another source/config guess: repack this exact known-Linux-entry Image into the already-proven healthy stock boot layout while keeping the `stock-Image-3.09` companion chain and the user's ported super unchanged.
