@@ -129,12 +129,12 @@ jobs:
           if int(qos.group(1),16) != 0x10000:
               raise SystemExit(f"unexpected qxm_ipa QoS offset {qos.group(1)}")
 
-          old="""		if (qnodes[i]->qosbox) {
+          old="""\t\tif (qnodes[i]->qosbox) {
           \t\t\tqnodes[i]->noc_ops->set_qos(qnodes[i]);
           \t\t\tqnodes[i]->qosbox->initialized = true;
           \t\t}
 """
-          new="""		if (qnodes[i]->qosbox) {
+          new="""\t\tif (qnodes[i]->qosbox) {
           \t\t\t/*
           \t\t\t * Lisa Candidate 0019 diagnostic control:
           \t\t\t * Candidate 0018 faults during qnoc_probe while qxm_ipa
