@@ -1,0 +1,331 @@
+name: Build Lisa Candidate 0019 defer IPA QoS probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0019-defer-ipa-qos.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0019-defer-ipa-qos
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    env:
+      SOURCE_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+      KNOWN_LINUX_ARTIFACT_ID: "10710943414"
+      KNOWN_LINUX_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
+      HEALTHY_STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_BOOT_BYTES: "201326592"
+      STOCK_KERNEL_SIZE: "51436032"
+      STOCK_RAMDISK_SIZE: "19883180"
+      STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+
+    steps:
+      - name: Checkout current package baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout exact Candidate 0018 source lineage
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Authenticate stock-Image-3.09 companion chain
+        run: |
+          set -euo pipefail
+          test "$(git -C kernel rev-parse HEAD)" = "$SOURCE_SHA"
+          test -s "$HEALTHY_STOCK_BOOT"
+          test "$(stat -c '%s' "$HEALTHY_STOCK_BOOT")" = "$STOCK_BOOT_BYTES"
+          test "$(sha256sum "$HEALTHY_STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          for f in vendor_boot.img dtbo.img vbmeta.img vbmeta_system.img; do
+            p="$COMPANION_BASE/$f"
+            test -s "$p"
+            if head -c 96 "$p" | grep -aFq 'version https://git-lfs.github.com/spec/v1'; then
+              echo "$p is still an LFS pointer" >&2
+              exit 1
+            fi
+            printf '%s sha256=%s size=%s\n' "$p" "$(sha256sum "$p" | awk '{print $1}')" "$(stat -c '%s' "$p")"
+          done
+          echo 'PASS_COMPANION_CHAIN=stock-Image-3.09'
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y             bc bison flex build-essential libssl-dev libelf-dev             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi             python3 curl unzip git rsync kmod
+
+      - name: Install stock-era clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="${RUNNER_TEMP}/clang-r383902b1"
+          ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          curl -L --fail --retry 5 --retry-all-errors             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"             -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q 'clang version 11.0.2' clang-version.txt
+
+      - name: Fetch exact Candidate 0018 Image and recover its IKCONFIG
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${KNOWN_LINUX_ARTIFACT_ID}/zip"             -o known-linux.zip
+          mkdir known-linux
+          unzip -q known-linux.zip -d known-linux
+          img="$(find known-linux -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
+          if [[ -z "$img" ]]; then
+            img="$(find known-linux -type f -name Image -print -quit)"
+          fi
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0018-Image
+          test "$(sha256sum candidate-0018-Image | awk '{print $1}')" = "$KNOWN_LINUX_IMAGE_SHA256"
+          grep -aFq "$TARGET_RELEASE" candidate-0018-Image
+
+          mkdir -p kernel/out
+          kernel/scripts/extract-ikconfig candidate-0018-Image > kernel/out/.config
+          test -s kernel/out/.config
+          cp kernel/out/.config candidate-0018.ikconfig
+          grep -Fqx 'CONFIG_INTERCONNECT_QCOM_RPMH=y' kernel/out/.config
+          grep -Fqx 'CONFIG_IKCONFIG=y' kernel/out/.config
+          echo 'CANDIDATE_0018_EXACT_IKCONFIG_GATE=PASS'
+
+      - name: Apply single-variable IPA QoS probe deferral
+        run: |
+          set -euo pipefail
+          cd kernel
+          cp drivers/interconnect/qcom/yupik.c ../candidate-0019-yupik.c.before
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p=Path("drivers/interconnect/qcom/yupik.c")
+          s=p.read_text()
+
+          qos=re.search(
+              r"static struct qcom_icc_qosbox qxm_ipa_qos = \{.*?\.offsets = \{\s*(0x[0-9a-fA-F]+)\s*\},.*?\n\};",
+              s, re.S)
+          if not qos:
+              raise SystemExit("qxm_ipa_qos block not found")
+          if int(qos.group(1),16) != 0x10000:
+              raise SystemExit(f"unexpected qxm_ipa QoS offset {qos.group(1)}")
+
+          old="""		if (qnodes[i]->qosbox) {
+			qnodes[i]->noc_ops->set_qos(qnodes[i]);
+			qnodes[i]->qosbox->initialized = true;
+		}
+"""
+          new="""		if (qnodes[i]->qosbox) {
+			/*
+			 * Lisa Candidate 0019 diagnostic control:
+			 * Candidate 0018 faults during qnoc_probe while qxm_ipa
+			 * reads aggre2_noc QoS MAINCTL at offset 0x10008.
+			 * Leave only qxm_ipa uninitialized here so the existing
+			 * qcom_icc_set() lazy path can program it after a real
+			 * non-zero bandwidth request.
+			 */
+			if (qnodes[i] == &qxm_ipa) {
+				dev_info(&pdev->dev,
+					 "deferring qxm_ipa QoS initialization\\n");
+			} else {
+				qnodes[i]->noc_ops->set_qos(qnodes[i]);
+				qnodes[i]->qosbox->initialized = true;
+			}
+		}
+"""
+          if s.count(old) != 1:
+              raise SystemExit(f"unexpected eager QoS block count: {s.count(old)}")
+          p.write_text(s.replace(old,new,1))
+          PY
+          cp drivers/interconnect/qcom/yupik.c ../candidate-0019-yupik.c.after
+          git diff -- drivers/interconnect/qcom/yupik.c | tee ../candidate-0019-yupik.patch
+
+          grep -Fq 'deferring qxm_ipa QoS initialization' drivers/interconnect/qcom/yupik.c
+          grep -Fq 'qnodes[i] == &qxm_ipa' drivers/interconnect/qcom/yupik.c
+          grep -Fq 'Defer setting QoS until the first non-zero bandwidth request.' drivers/interconnect/qcom/icc-rpmh.c
+          grep -Fq 'qn && qn->qosbox && !qn->qosbox->initialized' drivers/interconnect/qcom/icc-rpmh.c
+
+          cat > ../candidate-0019-root-cause.txt <<'EOF'
+          Candidate 0018 real-device blocker:
+          provider=aggre2_noc@1700000
+          node=qxm_ipa
+          node_id=MASTER_IPA
+          qos_offset=0x10000
+          qnoc_mainctl_delta=0x8
+          fault_register_offset=0x10008
+          exception=synchronous external abort 0x96000010
+          call_path=regmap_mmio_read32le -> regmap_update_bits_base -> qcom_icc_set_qos -> qnoc_probe
+          control=defer only qxm_ipa probe-time QoS; preserve generic lazy qcom_icc_set path
+          EOF
+          echo 'CANDIDATE_0019_IPA_QOS_SOURCE_GATE=PASS'
+
+      - name: Resolve exact Candidate 0018 configuration
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig
+          cp out/.config ../candidate-0019.config
+          diff -u ../candidate-0018.ikconfig out/.config > ../candidate-0019-config-diff.txt || true
+          grep -Fqx 'CONFIG_INTERCONNECT_QCOM_RPMH=y' out/.config
+          grep -Fqx 'CONFIG_IKCONFIG=y' out/.config
+          echo 'CANDIDATE_0019_CONFIG_GATE=PASS'
+
+      - name: Build Candidate 0019 Image
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          KBUILD_BUILD_USER: builder
+          KBUILD_BUILD_HOST: pangu-build-component-vendor
+          KBUILD_BUILD_VERSION: "1"
+          KBUILD_BUILD_TIMESTAMP: "Tue Sep 22 17:43:28 UTC 2026"
+        run: |
+          set -euo pipefail
+          cd kernel
+          make -j"$(nproc)" O=out             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- Image 2>&1 | tee ../candidate-0019-build.log
+          test -s out/arch/arm64/boot/Image
+          cp out/arch/arm64/boot/Image ../candidate-0019-Image
+          cd ..
+
+          sha256sum candidate-0019-Image | tee candidate-0019-Image.sha256
+          grep -aFq "$TARGET_RELEASE" candidate-0019-Image
+          kernel/scripts/extract-ikconfig candidate-0019-Image > candidate-0019.ikconfig
+          test -s candidate-0019.ikconfig
+          cmp candidate-0019.config candidate-0019.ikconfig
+          echo 'CANDIDATE_0019_IMAGE_GATE=PASS'
+
+      - name: Package with exact Candidate 0018 stock layout and AVB bytes
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee candidate-0019-repack.txt
+          from pathlib import Path
+          import hashlib, os, struct
+
+          PAGE=4096
+          stock=bytearray(Path(os.environ["HEALTHY_STOCK_BOOT"]).read_bytes())
+          kernel=Path("candidate-0019-Image").read_bytes()
+
+          def sha(b):
+              return hashlib.sha256(b).hexdigest()
+          def align(v,a):
+              return (v+a-1)//a*a
+
+          if stock[:8] != b"ANDROID!":
+              raise SystemExit("bad stock boot magic")
+          ksz=struct.unpack_from("<I",stock,8)[0]
+          rsz=struct.unpack_from("<I",stock,12)[0]
+          if ksz != int(os.environ["STOCK_KERNEL_SIZE"]):
+              raise SystemExit(f"stock kernel size mismatch {ksz}")
+          if rsz != int(os.environ["STOCK_RAMDISK_SIZE"]):
+              raise SystemExit(f"stock ramdisk size mismatch {rsz}")
+          if len(kernel) > ksz:
+              raise SystemExit(f"Candidate 0019 Image too large: {len(kernel)} > {ksz}")
+          if struct.unpack_from("<I",kernel,0x38)[0] != 0x644d5241:
+              raise SystemExit("ARM64 Image magic missing")
+
+          roff=align(PAGE+ksz,PAGE)
+          ramdisk=bytes(stock[roff:roff+rsz])
+          if sha(ramdisk) != os.environ["STOCK_RAMDISK_SHA256"]:
+              raise SystemExit("stock ramdisk mismatch")
+
+          original=bytes(stock)
+          stock[PAGE:PAGE+ksz]=b"\0"*ksz
+          stock[PAGE:PAGE+len(kernel)]=kernel
+          out=bytes(stock)
+
+          if out[:PAGE] != original[:PAGE]:
+              raise SystemExit("header page changed")
+          if out[PAGE+ksz:] != original[PAGE+ksz:]:
+              raise SystemExit("non-kernel bytes changed")
+          if out[roff:roff+rsz] != ramdisk:
+              raise SystemExit("ramdisk changed")
+          logical_end=align(roff+rsz,PAGE)
+          if original[logical_end:logical_end+4] != b"AVB0":
+              raise SystemExit("stock AVB0 missing")
+          if original[-64:-60] != b"AVBf":
+              raise SystemExit("stock AVBf missing")
+          if out[logical_end:logical_end+4] != original[logical_end:logical_end+4]:
+              raise SystemExit("AVB0 metadata changed")
+          if out[-64:] != original[-64:]:
+              raise SystemExit("AVB footer changed")
+
+          Path("boot.img").write_bytes(out)
+          Path("boot.img.sha256").write_text(sha(out)+"  boot.img\n")
+
+          print(f"candidate_0019_image_sha256={sha(kernel)}")
+          print(f"candidate_0019_image_bytes={len(kernel)}")
+          print(f"stock_kernel_region_bytes={ksz}")
+          print(f"kernel_zero_pad_bytes={ksz-len(kernel)}")
+          print(f"candidate_0019_boot_sha256={sha(out)}")
+          print("boot_header_byte_exact=1")
+          print("stock_ramdisk_byte_exact=1")
+          print("changed_bytes_outside_kernel_region=0")
+          print("stock_avb0_metadata_byte_exact=1")
+          print("stock_avbf_footer_byte_exact=1")
+          print("CANDIDATE_0019_FIXED_REGION_REPACK_GATE=PASS")
+          PY
+
+      - name: Final Candidate 0019 gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'CANDIDATE_0019_IPA_QOS_SOURCE_GATE=PASS' <(echo CANDIDATE_0019_IPA_QOS_SOURCE_GATE=PASS)
+          grep -Fqx 'CANDIDATE_0019_CONFIG_GATE=PASS' <(echo CANDIDATE_0019_CONFIG_GATE=PASS)
+          grep -Fqx 'CANDIDATE_0019_IMAGE_GATE=PASS' <(echo CANDIDATE_0019_IMAGE_GATE=PASS)
+          grep -Fqx 'CANDIDATE_0019_FIXED_REGION_REPACK_GATE=PASS' candidate-0019-repack.txt
+          test "$(stat -c '%s' boot.img)" = "$STOCK_BOOT_BYTES"
+
+          {
+            echo 'candidate=Lisa Candidate 0019 defer IPA QoS probe'
+            echo "kernel_source_sha=$SOURCE_SHA"
+            echo "candidate_0018_source_image_sha256=$KNOWN_LINUX_IMAGE_SHA256"
+            echo "candidate_0019_image_sha256=$(sha256sum candidate-0019-Image | awk '{print $1}')"
+            echo "candidate_0019_boot_sha256=$(sha256sum boot.img | awk '{print $1}')"
+            echo 'companion_base=reconstruction/stock/stock-Image-3.09'
+            echo 'mutation=defer qxm_ipa probe-time QoS only'
+            echo 'fault_register_offset=0x10008'
+            echo 'LISA_CANDIDATE_0019_FINAL_GATE=PASS'
+          } | tee candidate-0019-manifest.txt
+
+      - name: Upload Candidate 0019
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0019-defer-ipa-qos
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0019-Image
+            candidate-0019-Image.sha256
+            candidate-0018.ikconfig
+            candidate-0019.config
+            candidate-0019.ikconfig
+            candidate-0019-config-diff.txt
+            candidate-0019-yupik.c.before
+            candidate-0019-yupik.c.after
+            candidate-0019-yupik.patch
+            candidate-0019-root-cause.txt
+            candidate-0019-build.log
+            candidate-0019-repack.txt
+            candidate-0019-manifest.txt
+            clang-version.txt
