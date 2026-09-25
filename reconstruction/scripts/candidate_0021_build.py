@@ -56,7 +56,7 @@ def align(v,a):
 def git_blob_sha(path):
     data=Path(path).read_bytes()
     h=hashlib.sha1()
-    h.update(b"blob "+str(len(data)).encode()+b"\\0"+data)
+    h.update(b"blob "+str(len(data)).encode()+b"\x00"+data)
     return h.hexdigest()
 
 def overlay_known_good():
