@@ -39,22 +39,19 @@ def align(v,a):
 def patch_yupik():
     p=KERNEL/"drivers/interconnect/qcom/yupik.c"
     s=p.read_text()
-    m=re.search(r"static struct qcom_icc_qosbox qxm_ipa_qos = \\{.*?\\.offsets = \\{\\s*(0x[0-9a-fA-F]+)\\s*\\},.*?\\n\\};", s, re.S)
-    if not m:
-        raise SystemExit("qxm_ipa_qos block not found")
-    if int(m.group(1),16) != 0x10000:
-        raise SystemExit("unexpected qxm_ipa qos offset")
 
-    node=re.search(r"static struct qcom_icc_node qxm_ipa = \\{.*?\\n\\};", s, re.S)
-    if not node:
-        raise SystemExit("qxm_ipa node block not found")
-    block=node.group(0)
+    qos_decl="static struct qcom_icc_qosbox qxm_ipa_qos = {"
+    qos_offset=".offsets = { 0x10000 },"
+    if s.count(qos_decl) != 1:
+        raise SystemExit(f"unexpected qxm_ipa_qos declaration count: {s.count(qos_decl)}")
+    if s.count(qos_offset) != 1:
+        raise SystemExit(f"unexpected qxm_ipa qos offset count: {s.count(qos_offset)}")
+
     old="\t.qosbox = &qxm_ipa_qos,"
-    if block.count(old) != 1:
-        raise SystemExit(f"unexpected qxm_ipa qosbox binding count: {block.count(old)}")
+    if s.count(old) != 1:
+        raise SystemExit(f"unexpected qxm_ipa qosbox binding count: {s.count(old)}")
     new="\t/* Lisa Candidate 0020 diagnostic: never touch inaccessible IPA QoS MMIO. */\n\t.qosbox = NULL,"
-    block2=block.replace(old,new,1)
-    s=s[:node.start()]+block2+s[node.end():]
+    s=s.replace(old,new,1)
 
     marker='\tret = clk_bulk_prepare_enable(qp->num_clks, qp->clks);\n'
     if s.count(marker) != 1:
@@ -64,20 +61,20 @@ def patch_yupik():
     p.write_text(s)
 
     out=p.read_text()
-    if ".qosbox = NULL," not in out:
+    if out.count(".qosbox = NULL,") != 1:
         raise SystemExit("qxm_ipa qosbox disable verification failed")
     if "Lisa Candidate 0020: qxm_ipa QoS fully disabled" not in out:
         raise SystemExit("Candidate 0020 runtime marker missing")
 
     (ROOT/"candidate-0020-root-cause.txt").write_text(
-        "candidate_0019_boot_sha256=ceb2a7a6e4b621cb129f5818f1c6fec245601cd55dfbc756c05e9e888eab4488\\n"
-        "candidate_0019_exception=synchronous external abort 0x96000010\\n"
-        "candidate_0019_pc=regmap_mmio_read32le+0x8/0x20\\n"
-        "candidate_0019_call_path=qcom_icc_set_qos -> qnoc_probe\\n"
-        "candidate_0019_candidate_0019_fault_register_offset=0x10008\\n"
-        "candidate_0019_aggre2_registration=not reached\\n"
-        "candidate_0020_control=set qxm_ipa.qosbox=NULL at compile time; disable both probe and lazy QoS access\\n"
-        "companion_base=reconstruction/stock/stock-Image-3.09\\n"
+        "candidate_0019_boot_sha256=ceb2a7a6e4b621cb129f5818f1c6fec245601cd55dfbc756c05e9e888eab4488\n"
+        "candidate_0019_exception=synchronous external abort 0x96000010\n"
+        "candidate_0019_pc=regmap_mmio_read32le+0x8/0x20\n"
+        "candidate_0019_call_path=qcom_icc_set_qos -> qnoc_probe\n"
+        "candidate_0019_fault_register_offset=0x10008\n"
+        "candidate_0019_aggre2_registration=not reached\n"
+        "candidate_0020_control=set qxm_ipa.qosbox=NULL at compile time; disable both probe and lazy QoS access\n"
+        "companion_base=reconstruction/stock/stock-Image-3.09\n"
     )
 
 def repack():
