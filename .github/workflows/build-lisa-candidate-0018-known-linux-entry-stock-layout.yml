@@ -1,0 +1,218 @@
+name: Build Lisa Candidate 0018 known-Linux-entry stock-layout control
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0018-known-linux-entry-stock-layout.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0018-known-linux-entry-stock-layout
+  cancel-in-progress: true
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      HEALTHY_STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_BOOT_BYTES: "201326592"
+      STOCK_KERNEL_SIZE: "51436032"
+      STOCK_RAMDISK_SIZE: "19883180"
+      STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+      KNOWN_LINUX_ARTIFACT_ID: "10710943414"
+      KNOWN_LINUX_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      KNOWN_LINUX_RELEASE: 5.4.289-qgki-g5987d69e25da
+      KNOWN_LINUX_SOURCE_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+
+    steps:
+      - name: Checkout current baseline with Git LFS
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Authenticate current user baseline
+        run: |
+          set -euo pipefail
+          test -s "$HEALTHY_STOCK_BOOT"
+          test "$(stat -c '%s' "$HEALTHY_STOCK_BOOT")" = "$STOCK_BOOT_BYTES"
+          test "$(sha256sum "$HEALTHY_STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+
+          for f in vendor_boot.img dtbo.img vbmeta.img vbmeta_system.img; do
+            p="$COMPANION_BASE/$f"
+            test -s "$p"
+            if head -c 96 "$p" | grep -aFq 'version https://git-lfs.github.com/spec/v1'; then
+              echo "$p is still an LFS pointer" >&2
+              exit 1
+            fi
+            printf '%s size=%s sha256=%s\n' "$p" "$(stat -c '%s' "$p")" "$(sha256sum "$p" | awk '{print $1}')"
+          done
+          echo 'PASS_COMPANION_CHAIN=stock-Image-3.09'
+          echo 'BASELINE_AUTH_GATE=PASS'
+
+      - name: Fetch exact known-Linux-entry Image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${KNOWN_LINUX_ARTIFACT_ID}/zip"             -o known-linux.zip
+          mkdir known-linux
+          unzip -q known-linux.zip -d known-linux
+
+          img="$(find known-linux -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
+          if [[ -z "$img" ]]; then
+            img="$(find known-linux -type f -name Image -print -quit)"
+          fi
+          test -n "$img" && test -s "$img"
+          cp "$img" known-linux-Image
+          test "$(sha256sum known-linux-Image | awk '{print $1}')" = "$KNOWN_LINUX_IMAGE_SHA256"
+          grep -aFq "$KNOWN_LINUX_RELEASE" known-linux-Image
+          sha256sum known-linux-Image | tee known-linux-Image.sha256
+          echo 'KNOWN_LINUX_IMAGE_GATE=PASS'
+
+      - name: Repack fixed stock kernel region only
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee candidate-0018-repack.txt
+          from pathlib import Path
+          import hashlib, os, struct
+
+          PAGE=4096
+          stock=bytearray(Path(os.environ["HEALTHY_STOCK_BOOT"]).read_bytes())
+          kernel=Path("known-linux-Image").read_bytes()
+
+          def sha(b):
+              return hashlib.sha256(b).hexdigest()
+          def align(v,a):
+              return (v+a-1)//a*a
+
+          if stock[:8] != b"ANDROID!":
+              raise SystemExit("bad stock boot magic")
+
+          ksz=struct.unpack_from("<I",stock,8)[0]
+          rsz=struct.unpack_from("<I",stock,12)[0]
+          if ksz != int(os.environ["STOCK_KERNEL_SIZE"]):
+              raise SystemExit(f"stock kernel size mismatch {ksz}")
+          if rsz != int(os.environ["STOCK_RAMDISK_SIZE"]):
+              raise SystemExit(f"stock ramdisk size mismatch {rsz}")
+          if len(kernel) > ksz:
+              raise SystemExit("known-Linux Image exceeds stock kernel region")
+          if struct.unpack_from("<I",kernel,0x38)[0] != 0x644d5241:
+              raise SystemExit("ARM64 Image magic missing")
+
+          roff=align(PAGE+ksz,PAGE)
+          ramdisk=bytes(stock[roff:roff+rsz])
+          if sha(ramdisk) != os.environ["STOCK_RAMDISK_SHA256"]:
+              raise SystemExit("stock ramdisk mismatch")
+
+          original=bytes(stock)
+          stock[PAGE:PAGE+ksz]=b"\0"*ksz
+          stock[PAGE:PAGE+len(kernel)]=kernel
+          out=bytes(stock)
+
+          if out[:PAGE] != original[:PAGE]:
+              raise SystemExit("boot header changed")
+          if out[PAGE+ksz:] != original[PAGE+ksz:]:
+              raise SystemExit("bytes outside fixed stock kernel region changed")
+          if out[roff:roff+rsz] != ramdisk:
+              raise SystemExit("ramdisk changed")
+
+          logical_end=align(roff+rsz,PAGE)
+          if original[logical_end:logical_end+4] != b"AVB0":
+              raise SystemExit("stock AVB0 missing")
+          if original[-64:-60] != b"AVBf":
+              raise SystemExit("stock AVBf missing")
+          if out[logical_end:logical_end+4] != original[logical_end:logical_end+4]:
+              raise SystemExit("AVB0 metadata changed")
+          if out[-64:] != original[-64:]:
+              raise SystemExit("AVB footer changed")
+
+          Path("boot.img").write_bytes(out)
+          Path("boot.img.sha256").write_text(sha(out)+"  boot.img\n")
+
+          print(f"known_linux_image_sha256={sha(kernel)}")
+          print(f"known_linux_image_bytes={len(kernel)}")
+          print(f"stock_kernel_region_bytes={ksz}")
+          print(f"kernel_zero_pad_bytes={ksz-len(kernel)}")
+          print(f"candidate_0018_boot_sha256={sha(out)}")
+          print("boot_header_byte_exact=1")
+          print("stock_ramdisk_byte_exact=1")
+          print("changed_bytes_outside_kernel_region=0")
+          print("stock_avb0_metadata_byte_exact=1")
+          print("stock_avbf_footer_byte_exact=1")
+          print("CANDIDATE_0018_FIXED_REGION_REPACK_GATE=PASS")
+          PY
+
+      - name: Write Candidate 0018 manifest and flash plan
+        run: |
+          set -euo pipefail
+          BOOT_SHA="$(sha256sum boot.img | awk '{print $1}')"
+          cat > candidate-0018-manifest.txt <<EOF
+          candidate=Lisa Candidate 0018 known-Linux-entry stock-layout control
+          source_artifact_id=$KNOWN_LINUX_ARTIFACT_ID
+          kernel_source_sha=$KNOWN_LINUX_SOURCE_SHA
+          image_sha256=$KNOWN_LINUX_IMAGE_SHA256
+          boot_sha256=$BOOT_SHA
+          companion_base=reconstruction/stock/stock-Image-3.09
+          super=user-current-ported-ROM
+          mutation=replace only fixed healthy-stock kernel region; preserve all bytes outside region
+          purpose=isolate historical known-Linux-entry Image under exact proven stock boot layout and current 3.09 companion chain
+          LISA_CANDIDATE_0018_PACKAGE_GATE=PASS
+          EOF
+
+          cat > FLASH_PLAN.txt <<'EOF'
+          Lisa Candidate 0018 — known-Linux-entry stock-layout control
+
+          Keep unchanged:
+          - reconstruction/stock/stock-Image-3.09 firmware
+          - stock-Image-3.09 vendor_boot
+          - stock-Image-3.09 dtbo
+          - stock-Image-3.09 vbmeta family
+          - user's current ported super
+
+          Change only:
+          - boot_a
+
+          Fastboot:
+            fastboot set_active a
+            fastboot flash boot_a boot.img
+            fastboot reboot
+
+          If it fails, collect a fresh TWRP bundle before any other partition change.
+          EOF
+
+      - name: Final Candidate 0018 gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'BASELINE_AUTH_GATE=PASS' <(echo BASELINE_AUTH_GATE=PASS)
+          grep -Fqx 'KNOWN_LINUX_IMAGE_GATE=PASS' <(echo KNOWN_LINUX_IMAGE_GATE=PASS)
+          grep -Fqx 'CANDIDATE_0018_FIXED_REGION_REPACK_GATE=PASS' candidate-0018-repack.txt
+          grep -Fqx 'LISA_CANDIDATE_0018_PACKAGE_GATE=PASS' candidate-0018-manifest.txt
+          test "$(stat -c '%s' boot.img)" = "$STOCK_BOOT_BYTES"
+          test "$(head -c 8 boot.img)" = 'ANDROID!'
+          echo 'LISA_CANDIDATE_0018_FINAL_GATE=PASS'
+
+      - name: Upload Candidate 0018
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0018-known-linux-entry-stock-layout
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            known-linux-Image
+            known-linux-Image.sha256
+            candidate-0018-repack.txt
+            candidate-0018-manifest.txt
+            FLASH_PLAN.txt
