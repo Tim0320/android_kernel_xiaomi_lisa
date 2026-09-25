@@ -1665,3 +1665,130 @@ A stronger historical anchor exists: workflow run `35762412094`, artifact `10710
 ```
 
 Historical rawdump evidence carries the exact same release/build timestamp and shows this lineage executing into Linux through `Booting Linux`, `setup_arch`, and `ramoops/pstore` registration. The next candidate should therefore avoid another source/config guess: repack this exact known-Linux-entry Image into the already-proven healthy stock boot layout while keeping the `stock-Image-3.09` companion chain and the user's ported super unchanged.
+
+
+## Iteration 0025 — 2026-09-25 21:39 +08:00
+
+- Candidate: Candidate 0018 known-Linux-entry stock-layout control
+- Download/CI short code: `d4f1e9d`
+- Workflow run: `36097251979`
+- Artifact ID: `10847693709`
+- Artifact: `lisa-candidate-0018-known-linux-entry-stock-layout`
+- Kernel source: `6e568aa`
+- Tested boot SHA256: `e38aab4680ba78d3dfa40cba92c0d52a23406c310cd8bc61722a6de943cf24b6`
+- Exact test Image SHA256: `492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55`
+- Base/companion state: `reconstruction/stock/stock-Image-3.09/` firmware + vendor_boot + dtbo + vbmeta family; user's current ported super; slot A
+- Outcome: `black-screen-reboot`
+- Note: `閃一屏`
+- Evidence package: `lisa-twrp-iter-0001_20260925-213948_boot_e38aab4680ba.zip`
+- Evidence ZIP SHA256: `ac65921ca883d9c303b9c9e9124a108271f90da2c473f68b8ba90e3898d1fbd1`
+
+### Candidate identity and packaging gate
+
+The collector-reported boot hash exactly matches the formal Candidate 0018 GitHub artifact:
+
+```text
+e38aab4680ba78d3dfa40cba92c0d52a23406c310cd8bc61722a6de943cf24b6
+```
+
+Run `36097251979` also proved:
+
+```text
+known_linux_image_sha256=492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+changed_bytes_outside_kernel_region=0
+stock_avb0_metadata_byte_exact=1
+stock_avbf_footer_byte_exact=1
+CANDIDATE_0018_FIXED_REGION_REPACK_GATE=PASS
+LISA_CANDIDATE_0018_FINAL_GATE=PASS
+```
+
+Therefore this device result is positively tied to the formal Candidate 0018 package and the current `stock-Image-3.09` companion chain.
+
+### Persistent evidence correction
+
+Recovery-visible `pstore` is empty and the aggregate crash-partition hashes remain familiar:
+
+```text
+oops       9040d25c5db21b867be5ee5ea206fd3d988150280483943f3e38798397607312
+logdump    08cf91fa91ba50db1e55bb54fa1d7efda2cee491c97e2f7fd7f1160d2d825f9a
+minidump   40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d
+mdcompress 072ce52ce7afcf65859e21f3b11e5df8122690e8ee7863d001aabc99d90a25ea
+logfs      5f5ea3affe0f1dfe88e3a6c609abf0f796851e63a10a56b3b3a76cd8e0991f40
+```
+
+However, treating the unchanged `minidump` hash as proof that every embedded record is irrelevant is too coarse. The structured minidump contains an exact current Candidate 0018 session whose build banner is:
+
+```text
+Linux version 5.4.289-qgki-g5987d69e25da
+#1 SMP PREEMPT Tue Sep 22 17:43:28 UTC 2026
+```
+
+This exact build is the Image packaged by Candidate 0018.
+
+### First actual current blocker
+
+The current Candidate 0018 session enters Linux, establishes memory and ramoops, initializes the Qualcomm watchdog, and proceeds through platform probing. It then faults at approximately 0.954 seconds:
+
+```text
+Internal error: synchronous external abort: 96000010 [#1] PREEMPT SMP
+CPU: 3 PID: 8 Comm: kworker/u16:0
+Workqueue: events_unbound deferred_probe_work_func
+
+pc : regmap_mmio_read32le+0x8/0x20
+
+Call trace:
+ regmap_mmio_read32le
+ _regmap_bus_reg_read
+ _regmap_read
+ _regmap_update_bits
+ regmap_update_bits_base
+ qcom_icc_set_qos
+ qnoc_probe
+ platform_drv_probe
+ really_probe
+ ...
+```
+
+The register argument at the fault is:
+
+```text
+x1 = 0x0000000000010008
+```
+
+In `drivers/interconnect/qcom/qnoc-qos.c`, `QOSGEN_MAINCTL_LO` is the node QoS offset plus `0x8`. Therefore the fault targets a QoS box at offset `0x10000`.
+
+Provider registration immediately before the fault succeeds through:
+
+```text
+qnoc-yupik 16e0000.interconnect: Registered YUPIK ICC
+```
+
+The next provider is `aggre2_noc@1700000`. In the exact `6e568aa` source, its only QoS node with offset `0x10000` is:
+
+```text
+qxm_ipa
+  id = MASTER_IPA
+  qos offset = 0x10000
+```
+
+Thus the current first blocker is identified as an eager probe-time MMIO access to the IPA QoS MAINCTL register at `aggre2_noc@1700000 + 0x10008`.
+
+The panic is followed by the Qualcomm Apps Watchdog bite; the watchdog is a consequence of the fatal abort, not the initiating blocker.
+
+### Source-path discrepancy
+
+The generic RPMh interconnect path in `drivers/interconnect/qcom/icc-rpmh.c` already implements lazy QoS setup: it defers `set_qos` until a non-zero bandwidth request, enabling provider clocks around the access.
+
+In contrast, `drivers/interconnect/qcom/yupik.c:qnoc_probe` eagerly calls `set_qos` for every node carrying a QoS box and immediately marks it initialized. Candidate 0018 dies in that eager probe path on `qxm_ipa`.
+
+### Next controlled action
+
+Build Candidate 0019 as a single-variable control:
+
+- keep source lineage `6e568aa` and the exact Candidate 0018 configuration lineage;
+- preserve the `stock-Image-3.09` companion chain and exact healthy-stock boot layout/AVB bytes;
+- defer only `qxm_ipa` QoS programming during `qnoc_probe`;
+- leave `qxm_ipa_qos.initialized=false` so the existing `qcom_icc_set` lazy path remains available on a real non-zero bandwidth request;
+- do not alter the IPA QoS offset/table, other interconnect nodes, DTBO, vendor_boot, or super.
+
+If Candidate 0019 advances past the 0.954-second `qcom_icc_set_qos` abort, the IPA eager-QoS access is confirmed as the current blocking defect.
