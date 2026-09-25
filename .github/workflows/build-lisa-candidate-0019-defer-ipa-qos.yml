@@ -130,27 +130,27 @@ jobs:
               raise SystemExit(f"unexpected qxm_ipa QoS offset {qos.group(1)}")
 
           old="""		if (qnodes[i]->qosbox) {
-			qnodes[i]->noc_ops->set_qos(qnodes[i]);
-			qnodes[i]->qosbox->initialized = true;
-		}
+          \t\t\tqnodes[i]->noc_ops->set_qos(qnodes[i]);
+          \t\t\tqnodes[i]->qosbox->initialized = true;
+          \t\t}
 """
           new="""		if (qnodes[i]->qosbox) {
-			/*
-			 * Lisa Candidate 0019 diagnostic control:
-			 * Candidate 0018 faults during qnoc_probe while qxm_ipa
-			 * reads aggre2_noc QoS MAINCTL at offset 0x10008.
-			 * Leave only qxm_ipa uninitialized here so the existing
-			 * qcom_icc_set() lazy path can program it after a real
-			 * non-zero bandwidth request.
-			 */
-			if (qnodes[i] == &qxm_ipa) {
-				dev_info(&pdev->dev,
-					 "deferring qxm_ipa QoS initialization\\n");
-			} else {
-				qnodes[i]->noc_ops->set_qos(qnodes[i]);
-				qnodes[i]->qosbox->initialized = true;
-			}
-		}
+          \t\t\t/*
+          \t\t\t * Lisa Candidate 0019 diagnostic control:
+          \t\t\t * Candidate 0018 faults during qnoc_probe while qxm_ipa
+          \t\t\t * reads aggre2_noc QoS MAINCTL at offset 0x10008.
+          \t\t\t * Leave only qxm_ipa uninitialized here so the existing
+          \t\t\t * qcom_icc_set() lazy path can program it after a real
+          \t\t\t * non-zero bandwidth request.
+          \t\t\t */
+          \t\t\tif (qnodes[i] == &qxm_ipa) {
+          \t\t\t\tdev_info(&pdev->dev,
+          \t\t\t\t\t "deferring qxm_ipa QoS initialization\\n");
+          \t\t\t} else {
+          \t\t\t\tqnodes[i]->noc_ops->set_qos(qnodes[i]);
+          \t\t\t\tqnodes[i]->qosbox->initialized = true;
+          \t\t\t}
+          \t\t}
 """
           if s.count(old) != 1:
               raise SystemExit(f"unexpected eager QoS block count: {s.count(old)}")
