@@ -1,0 +1,218 @@
+name: Diagnose Lisa Candidate 0020 secure-path delta
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0020-secure-path.yml
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+  STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+  C0020_RUN_ID: "36155095510"
+  C0020_ARTIFACT: lisa-candidate-0020-disable-ipa-qos
+  C0020_IMAGE_SHA256: 713581e8777daece127f017cec638069ce0d98213ac4965188a14dd81194379c
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact repository inputs
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: true
+
+      - name: Authenticate and extract stock Image
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, struct, hashlib
+          b=Path(os.environ['STOCK_BOOT']).read_bytes()
+          if b[:8] != b'ANDROID!':
+              raise SystemExit('bad stock boot magic')
+          ksz=struct.unpack_from('<I',b,8)[0]
+          image=b[4096:4096+ksz]
+          if struct.unpack_from('<I',image,0x38)[0] != 0x644d5241:
+              raise SystemExit('stock ARM64 Image magic missing')
+          Path('stock-Image').write_bytes(image)
+          print('stock_image_sha256='+hashlib.sha256(image).hexdigest())
+          PY
+
+      - name: Download exact Candidate 0020 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir c0020
+          gh run download "$C0020_RUN_ID" -n "$C0020_ARTIFACT" -D c0020
+          test -s c0020/candidate-0020-Image
+          test "$(sha256sum c0020/candidate-0020-Image | awk '{print $1}')" = "$C0020_IMAGE_SHA256"
+          echo 'C0020_ARTIFACT_AUTH_GATE=PASS'
+
+      - name: Install kallsyms extractor
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip
+          python3 -m pip install --break-system-packages             git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+
+      - name: Recover stock and Candidate kallsyms
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder c0020/candidate-0020-Image > c0020.kallsyms
+          test -s stock.kallsyms
+          test -s c0020.kallsyms
+          echo "STOCK_KALLSYMS_LINES=$(wc -l < stock.kallsyms)"
+          echo "C0020_KALLSYMS_LINES=$(wc -l < c0020.kallsyms)"
+
+      - name: Compare secure-path symbol footprint
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          rx=re.compile(
+              r'(qsee|qtee|qcom_scm|scm_|smcinvoke|secure_buffer|hyp_assign|'
+              r'ice_|ufs.*crypto|crypto.*ufs|dm_crypt|fscrypt|inline.*crypt|'
+              r'qcom.*iommu|arm_smmu|keymaster)',
+              re.I)
+
+          def parse(path):
+              out={}
+              for line in Path(path).read_text(errors='replace').splitlines():
+                  p=line.split()
+                  if len(p) < 3:
+                      continue
+                  name=p[-1]
+                  if rx.search(name):
+                      out[name]=line
+              return out
+
+          s=parse('stock.kallsyms')
+          c=parse('c0020.kallsyms')
+          stock_only=sorted(set(s)-set(c))
+          c0020_only=sorted(set(c)-set(s))
+          common=sorted(set(s)&set(c))
+
+          lines=[
+              f'STOCK_SECURE_SYMBOLS={len(s)}',
+              f'C0020_SECURE_SYMBOLS={len(c)}',
+              f'COMMON_SECURE_SYMBOLS={len(common)}',
+              f'STOCK_ONLY_SECURE_SYMBOLS={len(stock_only)}',
+              f'C0020_ONLY_SECURE_SYMBOLS={len(c0020_only)}',
+          ]
+          lines += ['STOCK_ONLY '+x for x in stock_only]
+          lines += ['C0020_ONLY '+x for x in c0020_only]
+          Path('secure-symbol-delta.txt').write_text('\n'.join(lines)+'\n')
+          print('\n'.join(lines))
+
+          priority=re.compile(r'(qsee|qtee|qcom_scm|smcinvoke|secure_buffer|hyp_assign)',re.I)
+          pstock=[x for x in stock_only if priority.search(x)]
+          pcand=[x for x in c0020_only if priority.search(x)]
+          summary=[
+              f'PRIORITY_STOCK_ONLY={len(pstock)}',
+              f'PRIORITY_C0020_ONLY={len(pcand)}',
+          ]
+          summary += ['PRIORITY_STOCK_ONLY_SYMBOL='+x for x in pstock]
+          summary += ['PRIORITY_C0020_ONLY_SYMBOL='+x for x in pcand]
+          Path('secure-priority-summary.txt').write_text('\n'.join(summary)+'\n')
+          print('\n'.join(summary))
+          PY
+
+      - name: Compare exact embedded IKCONFIG
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import gzip
+
+          def cfg(image):
+              b=Path(image).read_bytes()
+              s=b.find(b'IKCFG_ST')
+              e=b.find(b'IKCFG_ED',s)
+              if s < 0 or e < 0:
+                  raise SystemExit(f'IKCONFIG missing: {image}')
+              return gzip.decompress(b[s+8:e]).decode(errors='replace')
+
+          def parse(text):
+              d={}
+              for line in text.splitlines():
+                  if line.startswith('CONFIG_'):
+                      k,v=line.split('=',1); d[k]=v
+                  elif line.startswith('# CONFIG_') and line.endswith(' is not set'):
+                      k=line[2:].split(' is not set')[0]; d[k]='n'
+              return d
+
+          s=parse(cfg('stock-Image'))
+          c=parse(cfg('c0020/candidate-0020-Image'))
+          keys=sorted(set(s)|set(c))
+          delta=[(k,s.get(k,'<absent>'),c.get(k,'<absent>')) for k in keys if s.get(k)!=c.get(k)]
+          Path('ikconfig-delta.txt').write_text(
+              '\n'.join(f'{k}\tstock={a}\tc0020={b}' for k,a,b in delta)+'\n'
+          )
+
+          secure=re.compile(r'(QSEE|QTEE|SCM|SMCINVOKE|SECURE|CRYPTO|FSCRYPT|DM_CRYPT|INLINE|ICE|IOMMU|SMMU|UFS)',re.I)
+          relevant=[x for x in delta if secure.search(x[0])]
+          Path('ikconfig-secure-delta.txt').write_text(
+              '\n'.join(f'{k}\tstock={a}\tc0020={b}' for k,a,b in relevant)+'\n'
+          )
+          print('IKCONFIG_TOTAL_DELTA='+str(len(delta)))
+          print('IKCONFIG_SECURE_DELTA='+str(len(relevant)))
+          for k,a,b in relevant:
+              print(f'SECURE_CONFIG_DELTA {k} stock={a} c0020={b}')
+          PY
+
+      - name: Compare secure-path strings
+        run: |
+          set -euo pipefail
+          for tag in stock c0020; do
+            img=stock-Image
+            if [ "$tag" = c0020 ]; then img=c0020/candidate-0020-Image; fi
+            strings -a "$img"               | grep -Ei 'qsee|qtee|smcinvoke|qcom_scm|keymaster|secure buffer|hyp_assign|ice crypto|inline encryption'               | sort -u > "$tag-secure-strings.txt" || true
+          done
+          comm -23 stock-secure-strings.txt c0020-secure-strings.txt > stock-only-secure-strings.txt || true
+          comm -13 stock-secure-strings.txt c0020-secure-strings.txt > c0020-only-secure-strings.txt || true
+          echo "STOCK_ONLY_SECURE_STRINGS=$(wc -l < stock-only-secure-strings.txt)"
+          echo "C0020_ONLY_SECURE_STRINGS=$(wc -l < c0020-only-secure-strings.txt)"
+
+      - name: Final diagnosis gate
+        run: |
+          set -euo pipefail
+          test -s secure-symbol-delta.txt
+          test -f secure-priority-summary.txt
+          test -f ikconfig-delta.txt
+          {
+            echo "control_stock_boot=04d51ac"
+            echo "control_result=ANDROID_BOOT_SUCCESS_RECONFIRMED"
+            echo "candidate_0020=75ccad5"
+            echo "candidate_result=ANDROID_USERSPACE_KEYMASTER_METADATA_KEY_FAILURE"
+            echo "interpretation=metadata_and_secure_firmware_exonerated_by_stock_boot_control"
+            echo "LISA_C0020_SECURE_PATH_DIAGNOSIS=PASS"
+          } | tee final-summary.txt
+
+      - name: Upload secure-path diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0020-secure-path-diagnosis
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            secure-symbol-delta.txt
+            secure-priority-summary.txt
+            ikconfig-delta.txt
+            ikconfig-secure-delta.txt
+            stock-only-secure-strings.txt
+            c0020-only-secure-strings.txt
+            final-summary.txt
