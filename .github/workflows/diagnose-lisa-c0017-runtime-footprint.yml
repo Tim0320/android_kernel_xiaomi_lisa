@@ -1,0 +1,296 @@
+name: Diagnose Lisa Candidate 0017 runtime footprint
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-c0017-runtime-footprint.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0017-runtime-footprint
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      SOURCE_SHA: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+      HEALTHY_STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      C0017_ARTIFACT_ID: "10827096620"
+      C0017_IMAGE_SHA256: bc6a5a04de8ef532a9c70d39f34f91f8fafcc2eaf658d2e1c521ef90081a6316
+      COMPANION_BASE: reconstruction/stock/stock-Image-3.09
+
+    steps:
+      - name: Checkout exact user baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout reconstructed source lineage
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SOURCE_SHA }}
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Authenticate current baseline
+        run: |
+          set -euo pipefail
+          test "$(sha256sum "$HEALTHY_STOCK_BOOT" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+          test -s "$COMPANION_BASE/vendor_boot.img"
+          test -s "$COMPANION_BASE/dtbo.img"
+          test "$(git -C kernel rev-parse HEAD)" = "$SOURCE_SHA"
+          echo 'PASS_COMPANION_CHAIN=stock-Image-3.09'
+
+      - name: Install symbol recovery tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y python3-pip curl unzip
+          python3 -m pip install --break-system-packages             git+https://github.com/marin-m/vmlinux-to-elf.git@19683fb95b29cd31362d49e6f48ab8368f96cbdf
+          command -v kallsyms-finder
+
+      - name: Materialize exact stock and Candidate 0017 Images
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import struct, hashlib
+          b=Path("reconstruction/stock/stock-Image/boot.img").read_bytes()
+          if b[:8] != b"ANDROID!":
+              raise SystemExit("bad healthy stock boot magic")
+          ksz=struct.unpack_from("<I",b,8)[0]
+          image=b[4096:4096+ksz]
+          if len(image) != ksz:
+              raise SystemExit("short stock kernel payload")
+          Path("stock-Image").write_bytes(image)
+          print("STOCK_IMAGE_SHA256="+hashlib.sha256(image).hexdigest())
+          print(f"STOCK_IMAGE_FILE_BYTES={len(image)}")
+          PY
+
+          curl -fL             -H "Authorization: Bearer $GH_TOKEN"             -H "Accept: application/vnd.github+json"             -H "X-GitHub-Api-Version: 2022-11-28"             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${C0017_ARTIFACT_ID}/zip"             -o c0017.zip
+          mkdir c0017
+          unzip -q c0017.zip -d c0017
+          img="$(find c0017 -type f -name candidate-0017-Image -print -quit)"
+          test -n "$img" && test -s "$img"
+          cp "$img" candidate-0017-Image
+          test "$(sha256sum candidate-0017-Image | awk '{print $1}')" = "$C0017_IMAGE_SHA256"
+          sha256sum stock-Image candidate-0017-Image | tee exact-images.sha256
+
+      - name: Recover exact kallsyms
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          kallsyms-finder candidate-0017-Image > c0017.kallsyms
+          test -s stock.kallsyms
+          test -s c0017.kallsyms
+
+      - name: Diagnose runtime footprint and BSS delta
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' | tee runtime-footprint-summary.txt
+          from pathlib import Path
+          import re, struct
+
+          line_rx=re.compile(r"^([0-9a-fA-F]+)\s+([A-Za-z?])\s+(.+?)\s*$")
+
+          def header(path):
+              b=Path(path).read_bytes()
+              if len(b)<64:
+                  raise SystemExit(f"short Image: {path}")
+              magic=struct.unpack_from("<I",b,0x38)[0]
+              if magic != 0x644d5241:
+                  raise SystemExit(f"bad ARM64 magic: {path}")
+              return {
+                  "file_bytes":len(b),
+                  "text_offset":struct.unpack_from("<Q",b,8)[0],
+                  "image_size":struct.unpack_from("<Q",b,16)[0],
+                  "flags":struct.unpack_from("<Q",b,24)[0],
+              }
+
+          def parse(path):
+              rows=[]
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  m=line_rx.match(raw)
+                  if m:
+                      rows.append((int(m.group(1),16),m.group(2),m.group(3)))
+              return rows
+
+          def canon(name):
+              name=name.split("+",1)[0]
+              name=re.sub(r"\$[0-9a-fA-F]{8,}$","",name)
+              name=re.sub(r"\.llvm\.[0-9A-Fa-f]+$","",name)
+              name=re.sub(r"\.(?:isra|constprop|part|cold)\.\d+$","",name)
+              name=re.sub(r"\.\d+$","",name)
+              return name
+
+          def addr(rows,names):
+              for wanted in names:
+                  xs=sorted({a for a,t,n in rows if n==wanted})
+                  if xs:
+                      return xs[0],wanted
+              return None,None
+
+          def bss_regions(rows,start,end):
+              byaddr={}
+              for a,t,n in rows:
+                  if start is not None and a < start:
+                      continue
+                  if end is not None and a >= end:
+                      continue
+                  if t not in "Bb":
+                      continue
+                  byaddr.setdefault(a,[]).append(n)
+              addrs=sorted(byaddr)
+              out=[]
+              for i,a in enumerate(addrs):
+                  nxt=addrs[i+1] if i+1<len(addrs) else end
+                  if nxt is None or nxt<a:
+                      size=0
+                  else:
+                      size=nxt-a
+                  names=sorted(set(byaddr[a]))
+                  out.append((a,size,names))
+              return out
+
+          sh=header("stock-Image")
+          ch=header("candidate-0017-Image")
+          sr=parse("stock.kallsyms")
+          cr=parse("c0017.kallsyms")
+
+          sb0,sb0n=addr(sr,["__bss_start","__bss_start__","_sbss"])
+          sb1,sb1n=addr(sr,["__bss_stop","__bss_end__","_ebss","__bss_end"])
+          cb0,cb0n=addr(cr,["__bss_start","__bss_start__","_sbss"])
+          cb1,cb1n=addr(cr,["__bss_stop","__bss_end__","_ebss","__bss_end"])
+
+          def emit(prefix,h,b0,b1,b0n,b1n):
+              tail=h["image_size"]-h["file_bytes"]
+              print(f"{prefix}_FILE_BYTES={h['file_bytes']}")
+              print(f"{prefix}_TEXT_OFFSET=0x{h['text_offset']:x}")
+              print(f"{prefix}_IMAGE_SIZE=0x{h['image_size']:x}")
+              print(f"{prefix}_IMAGE_SIZE_BYTES={h['image_size']}")
+              print(f"{prefix}_FLAGS=0x{h['flags']:x}")
+              print(f"{prefix}_RUNTIME_TAIL_BYTES={tail}")
+              print(f"{prefix}_BSS_START_SYMBOL={b0n or '<missing>'}")
+              print(f"{prefix}_BSS_STOP_SYMBOL={b1n or '<missing>'}")
+              print(f"{prefix}_BSS_START={(f'0x{b0:x}' if b0 is not None else '<missing>')}")
+              print(f"{prefix}_BSS_STOP={(f'0x{b1:x}' if b1 is not None else '<missing>')}")
+              if b0 is not None and b1 is not None:
+                  print(f"{prefix}_BSS_SPAN_BYTES={b1-b0}")
+
+          emit("STOCK",sh,sb0,sb1,sb0n,sb1n)
+          emit("C0017",ch,cb0,cb1,cb0n,cb1n)
+          print(f"IMAGE_SIZE_DELTA_BYTES={ch['image_size']-sh['image_size']}")
+          print(f"RUNTIME_TAIL_DELTA_BYTES={(ch['image_size']-ch['file_bytes'])-(sh['image_size']-sh['file_bytes'])}")
+          print(f"C0017_IMAGE_SIZE_GT_STOCK={int(ch['image_size']>sh['image_size'])}")
+          print(f"C0017_RUNTIME_TAIL_GT_STOCK={int((ch['image_size']-ch['file_bytes'])>(sh['image_size']-sh['file_bytes']))}")
+          if None not in (sb0,sb1,cb0,cb1):
+              print(f"BSS_SPAN_DELTA_BYTES={(cb1-cb0)-(sb1-sb0)}")
+
+          sregions=bss_regions(sr,sb0,sb1)
+          cregions=bss_regions(cr,cb0,cb1)
+          stock_names={canon(n) for _,_,ns in sregions for n in ns}
+          cand_names={canon(n) for _,_,ns in cregions for n in ns}
+
+          cand_only=[]
+          for a,size,names in cregions:
+              cn=[canon(n) for n in names]
+              if cn and not any(n in stock_names for n in cn):
+                  rep=next((n for n in cn if not n.startswith("__")),cn[0])
+                  cand_only.append((size,a,rep,",".join(names)))
+          cand_only.sort(reverse=True)
+          Path("candidate-only-bss-regions.tsv").write_text(
+              "size_bytes\taddress\trepresentative\traw_symbols\n"+
+              "".join(f"{size}\t{a:016x}\t{rep}\t{raw}\n" for size,a,rep,raw in cand_only)
+          )
+
+          shared_delta=[]
+          def name_sizes(regions):
+              out={}
+              for a,size,names in regions:
+                  for n in names:
+                      out.setdefault(canon(n),size)
+              return out
+          ss=name_sizes(sregions); cs=name_sizes(cregions)
+          for n in sorted(set(ss)&set(cs)):
+              d=cs[n]-ss[n]
+              if d:
+                  shared_delta.append((abs(d),d,n,ss[n],cs[n]))
+          shared_delta.sort(reverse=True)
+          Path("shared-bss-size-deltas.tsv").write_text(
+              "abs_delta\tdelta\tsymbol\tstock_size\tc0017_size\n"+
+              "".join(f"{ad}\t{d}\t{n}\t{s}\t{c}\n" for ad,d,n,s,c in shared_delta)
+          )
+
+          top=cand_only[:40]
+          Path("candidate-only-bss-top-symbols.txt").write_text(
+              "\n".join(rep for _,_,rep,_ in top)+"\n"
+          )
+          print(f"STOCK_BSS_REGION_COUNT={len(sregions)}")
+          print(f"C0017_BSS_REGION_COUNT={len(cregions)}")
+          print(f"C0017_ONLY_BSS_REGION_COUNT={len(cand_only)}")
+          for idx,(size,a,rep,raw) in enumerate(top[:20],1):
+              print(f"TOP_C0017_ONLY_BSS_{idx:02d}=size:{size},addr:0x{a:x},symbol:{rep}")
+          print("C0017_RUNTIME_FOOTPRINT_DIAGNOSIS=PASS")
+          PY
+
+      - name: Map largest Candidate-only BSS symbols to source
+        run: |
+          set -euo pipefail
+          : > candidate-only-bss-source-map.txt
+          while IFS= read -r sym; do
+            [[ -n "$sym" ]] || continue
+            echo "### $sym" | tee -a candidate-only-bss-source-map.txt
+            hits="$(git -C kernel grep -n -F "$sym" -- '*.c' '*.h' '*.S' '*Kconfig*' '*Makefile*' | head -n 40 || true)"
+            if [[ -n "$hits" ]]; then
+              printf '%s\n' "$hits" | tee -a candidate-only-bss-source-map.txt
+            else
+              echo 'SOURCE_EXACT_MATCH=0' | tee -a candidate-only-bss-source-map.txt
+            fi
+          done < candidate-only-bss-top-symbols.txt
+          echo 'C0017_BSS_SOURCE_MAP=PASS' | tee -a candidate-only-bss-source-map.txt
+
+      - name: Final gate
+        run: |
+          set -euo pipefail
+          grep -Fqx 'C0017_RUNTIME_FOOTPRINT_DIAGNOSIS=PASS' runtime-footprint-summary.txt
+          grep -Fqx 'C0017_IMAGE_SIZE_GT_STOCK=1' runtime-footprint-summary.txt
+          grep -Fqx 'C0017_RUNTIME_TAIL_GT_STOCK=1' runtime-footprint-summary.txt
+          grep -Fqx 'C0017_BSS_SOURCE_MAP=PASS' candidate-only-bss-source-map.txt
+          {
+            echo 'KNOWN_GOOD_REFERENCE=healthy-stock-boot-e6f8c978c2cf'
+            echo 'CANDIDATE_REFERENCE=c0017-image-bc6a5a04de8e'
+            echo 'PASS_COMPANION_CHAIN=stock-Image-3.09'
+            cat runtime-footprint-summary.txt
+            echo 'LISA_C0017_RUNTIME_FOOTPRINT=PASS'
+          } | tee final.txt
+
+      - name: Upload runtime footprint diagnosis
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0017-runtime-footprint
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            final.txt
+            runtime-footprint-summary.txt
+            candidate-only-bss-regions.tsv
+            shared-bss-size-deltas.tsv
+            candidate-only-bss-top-symbols.txt
+            candidate-only-bss-source-map.txt
+            exact-images.sha256
+            stock.kallsyms
+            c0017.kallsyms
