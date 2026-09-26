@@ -346,14 +346,14 @@ def patch_mtdoops_periodic_snapshot():
 
     old=(
         "\tif (kmsg_dump_unregister(&cxt->dump) < 0)\n"
-        "\t\tprintk(KERN_WARNING \"mtdoops: could not unregister kmsg dumper\\n\");\n"
+        "\t\tprintk(KERN_WARNING \"mtdoops: could not unregister kmsg_dumper\\n\");\n"
         "\n"
         "\tcxt->mtd = NULL;\n"
     )
     new=(
         "\tcancel_delayed_work_sync(&cxt->work_snapshot);\n"
         "\tif (kmsg_dump_unregister(&cxt->dump) < 0)\n"
-        "\t\tprintk(KERN_WARNING \"mtdoops: could not unregister kmsg dumper\\n\");\n"
+        "\t\tprintk(KERN_WARNING \"mtdoops: could not unregister kmsg_dumper\\n\");\n"
         "\n"
         "\tcxt->mtd = NULL;\n"
     )
