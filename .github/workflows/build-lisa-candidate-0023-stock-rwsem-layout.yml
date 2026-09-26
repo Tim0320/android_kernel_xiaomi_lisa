@@ -1,0 +1,118 @@
+name: Build Lisa Candidate 0023 stock rwsem runtime layout
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0023-stock-rwsem-layout.yml
+      - reconstruction/scripts/candidate_0023_build.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0023-stock-rwsem-layout
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout package baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout exact reconstructed kernel source
+        uses: actions/checkout@v4
+        with:
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Checkout exact known-good 5.4.302 runtime source
+        uses: actions/checkout@v4
+        with:
+          repository: LineageOS/android_kernel_xiaomi_sm8350
+          ref: 46af56554ec50e3ff3752858bf38eaeeb852ca0d
+          path: known-good-302
+          fetch-depth: 1
+          lfs: false
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 curl unzip git rsync kmod
+
+      - name: Install stock-era clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="$RUNNER_TEMP/clang-r383902b1"
+          ARCHIVE="$RUNNER_TEMP/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          curl -L --fail --retry 5 --retry-all-errors "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q "clang version 11.0.2" clang-version.txt
+
+      - name: Fetch exact Candidate 0018 Image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10710943414/zip" -o known-linux.zip
+          mkdir known-linux
+          unzip -q known-linux.zip -d known-linux
+          img="$(find known-linux -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
+          if [ -z "$img" ]; then img="$(find known-linux -type f -name Image -print -quit)"; fi
+          test -n "$img"
+          cp "$img" candidate-0018-Image
+          test "$(sha256sum candidate-0018-Image | awk '{print $1}')" = "492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55"
+
+      - name: Validate Candidate 0023 build script
+        run: python3 -m py_compile reconstruction/scripts/candidate_0023_build.py
+
+      - name: Build and package Candidate 0023
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        run: python3 reconstruction/scripts/candidate_0023_build.py
+
+      - name: Final Candidate 0023 static gate
+        run: |
+          set -euo pipefail
+          test -s boot.img
+          test -s candidate-0023-Image
+          test -s candidate-0023-overlay.txt
+          test -s candidate-0023-layout.txt
+          grep -Fq 'LISA_CANDIDATE_0023_FINAL_GATE=PASS' candidate-0023-manifest.txt
+          grep -Fq 'changed_bytes_outside_kernel_region=0' candidate-0023-repack.txt
+          grep -Fq 'stock_ramdisk_byte_exact=1' candidate-0023-repack.txt
+          grep -Fq 'known_good_sha=46af56554ec50e3ff3752858bf38eaeeb852ca0d' candidate-0023-overlay.txt
+          grep -Fq 'CANDIDATE_0023_RWSEM_LAYOUT_GATE=PASS' candidate-0023-layout.txt
+          echo 'LISA_CANDIDATE_0023_ARTIFACT_GATE=PASS'
+
+      - name: Upload Candidate 0023
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0023-stock-rwsem-layout
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0023-Image
+            candidate-0023.ikconfig
+            candidate-0023.config
+            candidate-0023-repack.txt
+            candidate-0023-root-cause.txt
+            candidate-0023-manifest.txt
+            candidate-0023-overlay.txt
+            candidate-0023-layout.txt
+            candidate-0018.ikconfig
+            clang-version.txt
