@@ -1,0 +1,109 @@
+name: Diagnose Candidate 0021 memory path
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/diagnose-lisa-candidate-0021-memory.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0021-memory-diagnosis
+  cancel-in-progress: true
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout package baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: false
+
+      - name: Checkout reconstructed kernel source
+        uses: actions/checkout@v4
+        with:
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Checkout known-good 5.4.302 source
+        uses: actions/checkout@v4
+        with:
+          repository: LineageOS/android_kernel_xiaomi_sm8350
+          ref: 46af56554ec50e3ff3752858bf38eaeeb852ca0d
+          path: known-good-302
+          fetch-depth: 1
+          lfs: false
+
+      - name: Compare memory, zram, swap and ION paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          report=candidate-0021-memory-diagnosis.txt
+          : > "$report"
+          echo "candidate=0021" >> "$report"
+          echo "kernel_source=6e568aabc77a06fa787baec1d9e60e4b559874a3" >> "$report"
+          echo "known_good=46af56554ec50e3ff3752858bf38eaeeb852ca0d" >> "$report"
+          echo "runtime_failure=page allocation failure -> zram write -> swap Write-error major 254" >> "$report"
+          echo >> "$report"
+
+          files=(
+            drivers/block/zram/zram_drv.c
+            drivers/block/zram/zcomp.c
+            mm/page_alloc.c
+            mm/vmscan.c
+            mm/swapfile.c
+            mm/swap_state.c
+            mm/memcontrol.c
+            mm/zsmalloc.c
+            drivers/staging/android/ion/ion.c
+            drivers/staging/android/ion/ion_system_heap.c
+            drivers/staging/android/ion/ion_page_pool.c
+            drivers/staging/android/ion/ion_msm_page_pool.c
+            drivers/staging/android/ion/heaps/ion_system_heap.c
+            drivers/staging/android/ion/heaps/ion_page_pool.c
+            drivers/staging/android/ion/heaps/ion_msm_system_heap.c
+          )
+
+          for rel in "${files[@]}"; do
+            a="kernel/$rel"
+            b="known-good-302/$rel"
+            if [[ -f "$a" && -f "$b" ]]; then
+              ha=$(git -C kernel hash-object "$rel")
+              hb=$(git -C known-good-302 hash-object "$rel")
+              if [[ "$ha" == "$hb" ]]; then
+                echo "SAME $rel $ha" >> "$report"
+              else
+                echo "DIFF $rel reconstructed=$ha known_good=$hb" >> "$report"
+                git diff --no-index --numstat "$a" "$b" >> "$report" || true
+              fi
+            else
+              echo "MISSING $rel reconstructed=$([[ -f "$a" ]] && echo 1 || echo 0) known_good=$([[ -f "$b" ]] && echo 1 || echo 0)" >> "$report"
+            fi
+          done
+
+          echo >> "$report"
+          echo "=== symbols related to observed call trace ===" >> "$report"
+          for sym in __zram_bvec_write zram_rw_page __swap_writepage shrink_page_list shrink_node_memcg ion_msm_page_pool_alloc ion_msm_system_heap_allocate; do
+            echo "--- $sym ---" >> "$report"
+            grep -RIn --include='*.c' --include='*.h' "$sym" kernel/drivers kernel/mm 2>/dev/null | head -20 >> "$report" || true
+          done
+
+          cat "$report"
+
+      - name: Upload diagnosis
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0021-memory-diagnosis
+          retention-days: 14
+          if-no-files-found: error
+          path: candidate-0021-memory-diagnosis.txt
