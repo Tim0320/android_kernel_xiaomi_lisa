@@ -1,0 +1,238 @@
+name: Build Lisa Candidate 0027 stock QGKI module ABI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0027-stock-qgki-module-abi.yml
+      - reconstruction/scripts/candidate_0027_build.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0027-stock-qgki-module-abi
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout package baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout exact reconstructed kernel source
+        uses: actions/checkout@v4
+        with:
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Checkout exact known-good 5.4.302 runtime source
+        uses: actions/checkout@v4
+        with:
+          repository: LineageOS/android_kernel_xiaomi_sm8350
+          ref: 46af56554ec50e3ff3752858bf38eaeeb852ca0d
+          path: known-good-302
+          fetch-depth: 1
+          lfs: false
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 curl unzip git rsync kmod
+
+      - name: Install stock-era clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="$RUNNER_TEMP/clang-r383902b1"
+          ARCHIVE="$RUNNER_TEMP/clang-r383902b1.tar.gz"
+          mkdir -p "$DEST"
+          curl -L --fail --retry 5 --retry-all-errors "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" -o "$ARCHIVE"
+          tar -xzf "$ARCHIVE" -C "$DEST"
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -q "clang version 11.0.2" clang-version.txt
+
+      - name: Download exact stock IKHEADERS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+        run: |
+          set -euo pipefail
+          rm -rf stock-artifact "$RUNNER_TEMP/stock-abi-root"
+          mkdir -p stock-artifact "$RUNNER_TEMP/stock-abi-root"
+          curl -fL --retry 5 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders.zip
+          unzip -q stock-kheaders.zip -d stock-artifact
+          test -d stock-artifact/stock-kheaders
+          test "$(find stock-artifact/stock-kheaders -type f -name '*.h' | wc -l)" -eq 7806
+          rsync -a stock-artifact/stock-kheaders/ "$RUNNER_TEMP/stock-abi-root/"
+
+      - name: Fetch exact Candidate 0018 Image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10710943414/zip" -o known-linux.zip
+          mkdir known-linux
+          unzip -q known-linux.zip -d known-linux
+          img="$(find known-linux -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
+          if [ -z "$img" ]; then img="$(find known-linux -type f -name Image -print -quit)"; fi
+          test -n "$img"
+          cp "$img" candidate-0018-Image
+          test "$(sha256sum candidate-0018-Image | awk '{print $1}')" = "492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55"
+
+      - name: Validate Candidate 0027 build script
+        run: python3 -m py_compile reconstruction/scripts/candidate_0027_build.py
+
+      - name: Build and package Candidate 0027
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: python3 reconstruction/scripts/candidate_0027_build.py
+
+      - name: Download exact stock msm_drm import oracle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VENDOR_BOOT_ARTIFACT_ID: "10648361196"
+        run: |
+          set -euo pipefail
+          rm -rf vendor-abi-oracle
+          mkdir -p vendor-abi-oracle
+          curl -fL --retry 5 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${VENDOR_BOOT_ARTIFACT_ID}/zip" \
+            -o vendor-abi-oracle.zip
+          unzip -q vendor-abi-oracle.zip -d vendor-abi-oracle
+          imports="$(find vendor-abi-oracle -type f -name stock-vendor-boot-module-imports.tsv -print -quit)"
+          summary="$(find vendor-abi-oracle -type f -name stock-vendor-boot-module-summary.tsv -print -quit)"
+          test -n "$imports"
+          test -n "$summary"
+          cp "$imports" stock-msm-drm-imports.tsv
+          cp "$summary" stock-msm-drm-summary.tsv
+
+      - name: Enforce stock msm_drm 736-import ABI
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          summary=Path("stock-msm-drm-summary.tsv").read_text(errors="replace").splitlines()
+          rows=[r.split("\t") for r in summary if r.endswith("\tOK") and "/lib/modules/msm_drm.ko\t" in r]
+          if len(rows) != 1:
+              raise SystemExit(f"expected one stock msm_drm summary row, got {len(rows)}")
+          module,machine,vermagic,layout,count,status=rows[0][:6]
+          if layout.lower() != "0xba39cbb8":
+              raise SystemExit(f"stock oracle layout changed: {layout}")
+          if int(count) != 736:
+              raise SystemExit(f"stock oracle import count changed: {count}")
+
+          required={}
+          for raw in Path("stock-msm-drm-imports.tsv").read_text(errors="replace").splitlines():
+              p=raw.split("\t")
+              if len(p)>=5 and p[0].endswith("/lib/modules/msm_drm.ko"):
+                  required[p[3]]=int(p[4],16)
+
+          current={}
+          for raw in Path("kernel/out/Module.symvers").read_text(errors="replace").splitlines():
+              p=raw.split()
+              if len(p)>=3:
+                  try: current[p[1]]=int(p[0],16)
+                  except ValueError: pass
+
+          mismatches=[]
+          missing=[]
+          for sym,exp in sorted(required.items()):
+              got=current.get(sym)
+              if got is None:
+                  missing.append((sym,exp))
+              elif got != exp:
+                  mismatches.append((sym,exp,got))
+
+          ml=current.get("module_layout")
+          lines=[
+              f"stock_module_layout=0xba39cbb8",
+              f"candidate_module_layout={('0x%08x'%ml) if ml is not None else '<missing>'}",
+              f"stock_imports={len(required)}",
+              f"mismatches={len(mismatches)}",
+              f"missing={len(missing)}",
+          ]
+          for sym,exp,got in mismatches[:100]:
+              lines.append(f"MISMATCH {sym} stock=0x{exp:08x} candidate=0x{got:08x}")
+          for sym,exp in missing[:100]:
+              lines.append(f"MISSING {sym} stock=0x{exp:08x}")
+          Path("candidate-0027-msm-drm-abi.txt").write_text("\n".join(lines)+"\n")
+          print("\n".join(lines[:5]))
+
+          if ml != 0xba39cbb8:
+              raise SystemExit(f"module_layout mismatch: {ml}")
+          if len(required) != 736 or mismatches or missing:
+              raise SystemExit(
+                  f"msm_drm ABI failed imports={len(required)} mismatches={len(mismatches)} missing={len(missing)}"
+              )
+          print("CANDIDATE_0027_MSM_DRM_736_GATE=PASS")
+          PY
+
+      - name: Final Candidate 0027 static gate
+        run: |
+          set -euo pipefail
+          test -s boot.img
+          test -s candidate-0027-Image
+          test -s candidate-0027-overlay.txt
+          test -s candidate-0027-layout.txt
+          test -s candidate-0027-logging.txt
+          test -s candidate-0027-devpath.txt
+          test -s candidate-0027-snapshot.txt
+          test -s candidate-0027-qgki.txt
+          test -s candidate-0027-msm-drm-abi.txt
+          grep -Fq 'LISA_CANDIDATE_0027_FINAL_GATE=PASS' candidate-0027-manifest.txt
+          grep -Fq 'changed_bytes_outside_kernel_region=0' candidate-0027-repack.txt
+          grep -Fq 'stock_ramdisk_byte_exact=1' candidate-0027-repack.txt
+          grep -Fq 'known_good_sha=46af56554ec50e3ff3752858bf38eaeeb852ca0d' candidate-0027-overlay.txt
+          grep -Fq 'CANDIDATE_0027_RWSEM_LAYOUT_GATE=PASS' candidate-0027-layout.txt
+          grep -Fq 'CANDIDATE_0027_PERSISTENT_KMSG_GATE=PASS' candidate-0027-logging.txt
+          grep -Fq 'CANDIDATE_0027_BLOCK2MTD_DEVPATH_GATE=PASS' candidate-0027-devpath.txt
+          grep -Fq 'CANDIDATE_0027_PERIODIC_KMSG_GATE=PASS' candidate-0027-snapshot.txt
+          grep -Fq 'CANDIDATE_0027_QGKI_ABI_PATCH_GATE=PASS' candidate-0027-qgki.txt
+          grep -Fq 'candidate_module_layout=0xba39cbb8' candidate-0027-msm-drm-abi.txt
+          grep -Fq 'mismatches=0' candidate-0027-msm-drm-abi.txt
+          grep -Fq 'missing=0' candidate-0027-msm-drm-abi.txt
+          echo 'LISA_CANDIDATE_0027_ARTIFACT_GATE=PASS'
+
+      - name: Upload Candidate 0027
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0027-stock-qgki-module-abi
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0027-Image
+            candidate-0027.ikconfig
+            candidate-0027.config
+            candidate-0027-repack.txt
+            candidate-0027-root-cause.txt
+            candidate-0027-manifest.txt
+            candidate-0027-overlay.txt
+            candidate-0027-layout.txt
+            candidate-0027-logging.txt
+            candidate-0027-devpath.txt
+            candidate-0027-snapshot.txt
+            candidate-0027-qgki.txt
+            candidate-0027-msm-drm-abi.txt
+            kernel/out/Module.symvers
+            candidate-0018.ikconfig
+            clang-version.txt
