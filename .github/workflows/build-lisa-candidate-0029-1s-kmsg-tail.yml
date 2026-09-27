@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - .github/workflows/build-lisa-candidate-0029-modular-techpack-display.yml
+      - .github/workflows/build-lisa-candidate-0029-1s-kmsg-tail.yml
       - reconstruction/scripts/candidate_0029_build.py
 
 permissions:
