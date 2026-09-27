@@ -286,7 +286,7 @@ def patch_mtdoops_periodic_snapshot():
     new=old + (
         "\n"
         "#define MTDOOPS_SNAPSHOT_FIRST_DELAY (2 * HZ)\n"
-        "#define MTDOOPS_SNAPSHOT_INTERVAL    (HZ / 16)\n"
+        "#define MTDOOPS_SNAPSHOT_INTERVAL    msecs_to_jiffies(10)\n"
         "\n"
         "static void mtdoops_snapshot_workfunc(struct work_struct *work)\n"
         "{\n"
@@ -400,7 +400,7 @@ def patch_mtdoops_periodic_snapshot():
         "reset_mode=PSHOLD hard reset may bypass kmsg_dump callbacks\n"
         "mutation=private kmsg_dumper periodic snapshots to mtdoops ring\n"
         "first_snapshot_delay_seconds=2\n"
-        "snapshot_interval_seconds=0.0625\n"
+        "snapshot_interval_milliseconds=10\n"
         "record_size_bytes=2097152\n"
         "ring_records=8\n"
         "history_window_seconds_approx=1\n"
