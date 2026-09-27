@@ -187,14 +187,272 @@ jobs:
       - name: Verify Candidate 0028 display ownership
         run: |
           set -euo pipefail
-          test -s kernel/out/techpack/display/msm/msm_drm.ko
+          MOD=kernel/out/techpack/display/msm/msm_drm.ko
+          ORDER=kernel/out/techpack/display/msm/modules.order
+          BUILTIN=kernel/out/techpack/display/msm/built-in.a
+
+          test -s "$MOD"
+          test -s "$ORDER"
           grep -Fq 'export CONFIG_DISPLAY_BUILD=m' kernel/techpack/display/config/lahainadisp.conf
-          if strings -a candidate-0028-Image | grep -Fq 'Initialized msm_drm'; then
-            echo 'techpack msm_drm still present in Image' >&2
+          grep -Eq '(^|/)techpack/display/msm/msm_drm\.ko$|^msm_drm\.ko
+      - name: Final Candidate 0028 static gate
+        run: |
+          set -euo pipefail
+          test -s boot.img
+          test -s candidate-0028-Image
+          test -s candidate-0028-overlay.txt
+          test -s candidate-0028-layout.txt
+          test -s candidate-0028-logging.txt
+          test -s candidate-0028-devpath.txt
+          test -s candidate-0028-snapshot.txt
+          test -s candidate-0028-qgki.txt
+          test -s candidate-0028-msm-drm-abi.txt
+          test -s candidate-0028-display-mode.txt
+          test -s candidate-0028-display-ownership.txt
+          test -s kernel/out/techpack/display/msm/msm_drm.ko
+          grep -Fq 'LISA_CANDIDATE_0028_FINAL_GATE=PASS' candidate-0028-manifest.txt
+          grep -Fq 'changed_bytes_outside_kernel_region=0' candidate-0028-repack.txt
+          grep -Fq 'stock_ramdisk_byte_exact=1' candidate-0028-repack.txt
+          grep -Fq 'known_good_sha=46af56554ec50e3ff3752858bf38eaeeb852ca0d' candidate-0028-overlay.txt
+          grep -Fq 'CANDIDATE_0028_RWSEM_LAYOUT_GATE=PASS' candidate-0028-layout.txt
+          grep -Fq 'CANDIDATE_0028_PERSISTENT_KMSG_GATE=PASS' candidate-0028-logging.txt
+          grep -Fq 'CANDIDATE_0028_BLOCK2MTD_DEVPATH_GATE=PASS' candidate-0028-devpath.txt
+          grep -Fq 'CANDIDATE_0028_PERIODIC_KMSG_GATE=PASS' candidate-0028-snapshot.txt
+          grep -Fq 'CANDIDATE_0028_QGKI_ABI_PATCH_GATE=PASS' candidate-0028-qgki.txt
+          grep -Fq 'candidate_module_layout=0xba39cbb8' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'mismatches=0' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'missing=0' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'CANDIDATE_0028_DISPLAY_MODULE_MODE_GATE=PASS' candidate-0028-display-mode.txt
+          grep -Fq 'CANDIDATE_0028_DISPLAY_OWNERSHIP_GATE=PASS' candidate-0028-display-ownership.txt
+          echo 'LISA_CANDIDATE_0028_ARTIFACT_GATE=PASS'
+
+      - name: Upload Candidate 0028
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0028-modular-techpack-display
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0028-Image
+            candidate-0028.ikconfig
+            candidate-0028.config
+            candidate-0028-repack.txt
+            candidate-0028-root-cause.txt
+            candidate-0028-manifest.txt
+            candidate-0028-overlay.txt
+            candidate-0028-layout.txt
+            candidate-0028-logging.txt
+            candidate-0028-devpath.txt
+            candidate-0028-snapshot.txt
+            candidate-0028-qgki.txt
+            candidate-0028-msm-drm-abi.txt
+            candidate-0028-display-mode.txt
+            candidate-0028-display-ownership.txt
+            kernel/out/Module.symvers
+            kernel/out/techpack/display/msm/msm_drm.ko
+            candidate-0018.ikconfig
+            clang-version.txt
+ "$ORDER"
+
+          # Verify the techpack driver really owns a module init entry.
+          nm -a "$MOD" | grep -Eq '[[:space:]]([tT])[[:space:]]+msm_drm_register
+      - name: Final Candidate 0028 static gate
+        run: |
+          set -euo pipefail
+          test -s boot.img
+          test -s candidate-0028-Image
+          test -s candidate-0028-overlay.txt
+          test -s candidate-0028-layout.txt
+          test -s candidate-0028-logging.txt
+          test -s candidate-0028-devpath.txt
+          test -s candidate-0028-snapshot.txt
+          test -s candidate-0028-qgki.txt
+          test -s candidate-0028-msm-drm-abi.txt
+          test -s candidate-0028-display-mode.txt
+          test -s kernel/out/techpack/display/msm/msm_drm.ko
+          grep -Fq 'LISA_CANDIDATE_0028_FINAL_GATE=PASS' candidate-0028-manifest.txt
+          grep -Fq 'changed_bytes_outside_kernel_region=0' candidate-0028-repack.txt
+          grep -Fq 'stock_ramdisk_byte_exact=1' candidate-0028-repack.txt
+          grep -Fq 'known_good_sha=46af56554ec50e3ff3752858bf38eaeeb852ca0d' candidate-0028-overlay.txt
+          grep -Fq 'CANDIDATE_0028_RWSEM_LAYOUT_GATE=PASS' candidate-0028-layout.txt
+          grep -Fq 'CANDIDATE_0028_PERSISTENT_KMSG_GATE=PASS' candidate-0028-logging.txt
+          grep -Fq 'CANDIDATE_0028_BLOCK2MTD_DEVPATH_GATE=PASS' candidate-0028-devpath.txt
+          grep -Fq 'CANDIDATE_0028_PERIODIC_KMSG_GATE=PASS' candidate-0028-snapshot.txt
+          grep -Fq 'CANDIDATE_0028_QGKI_ABI_PATCH_GATE=PASS' candidate-0028-qgki.txt
+          grep -Fq 'candidate_module_layout=0xba39cbb8' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'mismatches=0' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'missing=0' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'CANDIDATE_0028_DISPLAY_MODULE_MODE_GATE=PASS' candidate-0028-display-mode.txt
+          echo 'LISA_CANDIDATE_0028_ARTIFACT_GATE=PASS'
+
+      - name: Upload Candidate 0028
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0028-modular-techpack-display
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0028-Image
+            candidate-0028.ikconfig
+            candidate-0028.config
+            candidate-0028-repack.txt
+            candidate-0028-root-cause.txt
+            candidate-0028-manifest.txt
+            candidate-0028-overlay.txt
+            candidate-0028-layout.txt
+            candidate-0028-logging.txt
+            candidate-0028-devpath.txt
+            candidate-0028-snapshot.txt
+            candidate-0028-qgki.txt
+            candidate-0028-msm-drm-abi.txt
+            candidate-0028-display-mode.txt
+            kernel/out/Module.symvers
+            kernel/out/techpack/display/msm/msm_drm.ko
+            candidate-0018.ikconfig
+            clang-version.txt
+
+          nm -a "$MOD" | grep -Eq '[[:space:]]([tT])[[:space:]]+init_module
+      - name: Final Candidate 0028 static gate
+        run: |
+          set -euo pipefail
+          test -s boot.img
+          test -s candidate-0028-Image
+          test -s candidate-0028-overlay.txt
+          test -s candidate-0028-layout.txt
+          test -s candidate-0028-logging.txt
+          test -s candidate-0028-devpath.txt
+          test -s candidate-0028-snapshot.txt
+          test -s candidate-0028-qgki.txt
+          test -s candidate-0028-msm-drm-abi.txt
+          test -s candidate-0028-display-mode.txt
+          test -s kernel/out/techpack/display/msm/msm_drm.ko
+          grep -Fq 'LISA_CANDIDATE_0028_FINAL_GATE=PASS' candidate-0028-manifest.txt
+          grep -Fq 'changed_bytes_outside_kernel_region=0' candidate-0028-repack.txt
+          grep -Fq 'stock_ramdisk_byte_exact=1' candidate-0028-repack.txt
+          grep -Fq 'known_good_sha=46af56554ec50e3ff3752858bf38eaeeb852ca0d' candidate-0028-overlay.txt
+          grep -Fq 'CANDIDATE_0028_RWSEM_LAYOUT_GATE=PASS' candidate-0028-layout.txt
+          grep -Fq 'CANDIDATE_0028_PERSISTENT_KMSG_GATE=PASS' candidate-0028-logging.txt
+          grep -Fq 'CANDIDATE_0028_BLOCK2MTD_DEVPATH_GATE=PASS' candidate-0028-devpath.txt
+          grep -Fq 'CANDIDATE_0028_PERIODIC_KMSG_GATE=PASS' candidate-0028-snapshot.txt
+          grep -Fq 'CANDIDATE_0028_QGKI_ABI_PATCH_GATE=PASS' candidate-0028-qgki.txt
+          grep -Fq 'candidate_module_layout=0xba39cbb8' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'mismatches=0' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'missing=0' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'CANDIDATE_0028_DISPLAY_MODULE_MODE_GATE=PASS' candidate-0028-display-mode.txt
+          echo 'LISA_CANDIDATE_0028_ARTIFACT_GATE=PASS'
+
+      - name: Upload Candidate 0028
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0028-modular-techpack-display
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0028-Image
+            candidate-0028.ikconfig
+            candidate-0028.config
+            candidate-0028-repack.txt
+            candidate-0028-root-cause.txt
+            candidate-0028-manifest.txt
+            candidate-0028-overlay.txt
+            candidate-0028-layout.txt
+            candidate-0028-logging.txt
+            candidate-0028-devpath.txt
+            candidate-0028-snapshot.txt
+            candidate-0028-qgki.txt
+            candidate-0028-msm-drm-abi.txt
+            candidate-0028-display-mode.txt
+            kernel/out/Module.symvers
+            kernel/out/techpack/display/msm/msm_drm.ko
+            candidate-0018.ikconfig
+            clang-version.txt
+
+
+          # Prove the same msm_drm init routine is not present in this
+          # directory's built-in archive.  This is a Kbuild ownership check,
+          # unlike the previous fragile literal-string test.
+          if [ -f "$BUILTIN" ] && nm -A "$BUILTIN" 2>/dev/null | grep -Eq '[[:space:]]msm_drm_register
+      - name: Final Candidate 0028 static gate
+        run: |
+          set -euo pipefail
+          test -s boot.img
+          test -s candidate-0028-Image
+          test -s candidate-0028-overlay.txt
+          test -s candidate-0028-layout.txt
+          test -s candidate-0028-logging.txt
+          test -s candidate-0028-devpath.txt
+          test -s candidate-0028-snapshot.txt
+          test -s candidate-0028-qgki.txt
+          test -s candidate-0028-msm-drm-abi.txt
+          test -s candidate-0028-display-mode.txt
+          test -s kernel/out/techpack/display/msm/msm_drm.ko
+          grep -Fq 'LISA_CANDIDATE_0028_FINAL_GATE=PASS' candidate-0028-manifest.txt
+          grep -Fq 'changed_bytes_outside_kernel_region=0' candidate-0028-repack.txt
+          grep -Fq 'stock_ramdisk_byte_exact=1' candidate-0028-repack.txt
+          grep -Fq 'known_good_sha=46af56554ec50e3ff3752858bf38eaeeb852ca0d' candidate-0028-overlay.txt
+          grep -Fq 'CANDIDATE_0028_RWSEM_LAYOUT_GATE=PASS' candidate-0028-layout.txt
+          grep -Fq 'CANDIDATE_0028_PERSISTENT_KMSG_GATE=PASS' candidate-0028-logging.txt
+          grep -Fq 'CANDIDATE_0028_BLOCK2MTD_DEVPATH_GATE=PASS' candidate-0028-devpath.txt
+          grep -Fq 'CANDIDATE_0028_PERIODIC_KMSG_GATE=PASS' candidate-0028-snapshot.txt
+          grep -Fq 'CANDIDATE_0028_QGKI_ABI_PATCH_GATE=PASS' candidate-0028-qgki.txt
+          grep -Fq 'candidate_module_layout=0xba39cbb8' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'mismatches=0' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'missing=0' candidate-0028-msm-drm-abi.txt
+          grep -Fq 'CANDIDATE_0028_DISPLAY_MODULE_MODE_GATE=PASS' candidate-0028-display-mode.txt
+          echo 'LISA_CANDIDATE_0028_ARTIFACT_GATE=PASS'
+
+      - name: Upload Candidate 0028
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0028-modular-techpack-display
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0028-Image
+            candidate-0028.ikconfig
+            candidate-0028.config
+            candidate-0028-repack.txt
+            candidate-0028-root-cause.txt
+            candidate-0028-manifest.txt
+            candidate-0028-overlay.txt
+            candidate-0028-layout.txt
+            candidate-0028-logging.txt
+            candidate-0028-devpath.txt
+            candidate-0028-snapshot.txt
+            candidate-0028-qgki.txt
+            candidate-0028-msm-drm-abi.txt
+            candidate-0028-display-mode.txt
+            kernel/out/Module.symvers
+            kernel/out/techpack/display/msm/msm_drm.ko
+            candidate-0018.ikconfig
+            clang-version.txt
+; then
+            echo 'techpack msm_drm_register still present in built-in.a' >&2
             exit 1
           fi
-          strings -a kernel/out/techpack/display/msm/msm_drm.ko | grep -Fq 'Initialized msm_drm'
-          echo 'CANDIDATE_0028_DISPLAY_OWNERSHIP_GATE=PASS'
+
+          {
+            echo 'display_build=module'
+            echo "module_name=$(modinfo -F name "$MOD")"
+            echo "module_vermagic=$(modinfo -F vermagic "$MOD")"
+            echo 'modules_order_entry=present'
+            echo 'module_init_symbol=present'
+            echo 'built_in_msm_drm_register=absent'
+            echo 'CANDIDATE_0028_DISPLAY_OWNERSHIP_GATE=PASS'
+          } > candidate-0028-display-ownership.txt
+          cat candidate-0028-display-ownership.txt
 
       - name: Final Candidate 0028 static gate
         run: |
