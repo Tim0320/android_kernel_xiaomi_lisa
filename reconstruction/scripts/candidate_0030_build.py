@@ -385,7 +385,7 @@ def patch_mtdoops_periodic_snapshot():
         "struct delayed_work work_snapshot;",
         "struct kmsg_dumper snapshot_dump;",
         "MTDOOPS_SNAPSHOT_FIRST_DELAY (2 * HZ)",
-        "MTDOOPS_SNAPSHOT_INTERVAL    (1 * HZ)",
+        "MTDOOPS_SNAPSHOT_INTERVAL    (HZ / 2)",
         "kmsg_dump_rewind(&cxt->snapshot_dump);",
         "Lisa Candidate 0030 snapshot %u persisted",
         "INIT_DELAYED_WORK(&cxt->work_snapshot, mtdoops_snapshot_workfunc);",
