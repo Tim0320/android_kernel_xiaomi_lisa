@@ -1,11 +1,11 @@
-name: Build Lisa Candidate 0033 62.5ms fast-tail
+name: Build Lisa Candidate 0033 10ms fast-tail
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - .github/workflows/build-lisa-candidate-0033-62.5ms-fast-tail.yml
+      - .github/workflows/build-lisa-candidate-0033-10ms-fast-tail.yml
       - reconstruction/scripts/candidate_0033_build.py
 
 permissions:
@@ -13,7 +13,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: lisa-candidate-0033-62.5ms-fast-tail
+  group: lisa-candidate-0033-10ms-fast-tail
   cancel-in-progress: true
 
 jobs:
@@ -242,7 +242,7 @@ jobs:
           grep -Fq 'CANDIDATE_0033_PERSISTENT_KMSG_GATE=PASS' candidate-0033-logging.txt
           grep -Fq 'CANDIDATE_0033_BLOCK2MTD_DEVPATH_GATE=PASS' candidate-0033-devpath.txt
           grep -Fq 'CANDIDATE_0033_PERIODIC_KMSG_GATE=PASS' candidate-0033-snapshot.txt
-          grep -Fq 'snapshot_interval_seconds=0.0625' candidate-0033-snapshot.txt
+          grep -Fq 'snapshot_interval_seconds=10' candidate-0033-snapshot.txt
           grep -Fq 'CANDIDATE_0033_FAST_TAIL_GATE=PASS' candidate-0033-fast-tail.txt
           grep -Fq 'CANDIDATE_0033_QGKI_ABI_PATCH_GATE=PASS' candidate-0033-qgki.txt
           grep -Fq 'candidate_module_layout=0xba39cbb8' candidate-0033-msm-drm-abi.txt
@@ -255,7 +255,7 @@ jobs:
       - name: Upload Candidate 0033
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-candidate-0033-62.5ms-fast-tail
+          name: lisa-candidate-0033-10ms-fast-tail
           retention-days: 14
           compression-level: 1
           if-no-files-found: error
