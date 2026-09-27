@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - .github/workflows/build-lisa-candidate-0033-10ms-fast-tail.yml
+      - .github/workflows/build-lisa-candidate-0033-62p5ms-fast-tail.yml
       - reconstruction/scripts/candidate_0033_build.py
 
 permissions:
@@ -242,7 +242,7 @@ jobs:
           grep -Fq 'CANDIDATE_0033_PERSISTENT_KMSG_GATE=PASS' candidate-0033-logging.txt
           grep -Fq 'CANDIDATE_0033_BLOCK2MTD_DEVPATH_GATE=PASS' candidate-0033-devpath.txt
           grep -Fq 'CANDIDATE_0033_PERIODIC_KMSG_GATE=PASS' candidate-0033-snapshot.txt
-          grep -Fq 'snapshot_interval_seconds=10' candidate-0033-snapshot.txt
+          grep -Fq 'snapshot_interval_milliseconds=10' candidate-0033-snapshot.txt
           grep -Fq 'CANDIDATE_0033_FAST_TAIL_GATE=PASS' candidate-0033-fast-tail.txt
           grep -Fq 'CANDIDATE_0033_QGKI_ABI_PATCH_GATE=PASS' candidate-0033-qgki.txt
           grep -Fq 'candidate_module_layout=0xba39cbb8' candidate-0033-msm-drm-abi.txt
