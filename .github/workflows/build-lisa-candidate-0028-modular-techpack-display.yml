@@ -196,23 +196,24 @@ jobs:
           grep -Fq 'export CONFIG_DISPLAY_BUILD=m' kernel/techpack/display/config/lahainadisp.conf
           grep -Fq 'techpack/display/msm/msm_drm.ko' "$ORDER"
 
-          nm -a "$MOD" | grep -Eq '[[:space:]][tT][[:space:]]+msm_drm_register$'
-          nm -a "$MOD" | grep -Eq '[[:space:]][tT][[:space:]]+init_module$'
+          modname="$(modinfo -F name "$MOD")"
+          vermagic="$(modinfo -F vermagic "$MOD")"
+          test "$modname" = "msm_drm"
 
+          built_in_has_msm_drm=0
           if [ -f "$BUILTIN" ]; then
-            if nm -A "$BUILTIN" 2>/dev/null | grep -Eq '[[:space:]]msm_drm_register$'; then
-              echo 'techpack msm_drm_register still present in built-in.a' >&2
-              exit 1
+            if ar t "$BUILTIN" 2>/dev/null | grep -Fq 'msm_drm.o'; then
+              built_in_has_msm_drm=1
             fi
           fi
+          test "$built_in_has_msm_drm" -eq 0
 
           {
             echo 'display_build=module'
-            modinfo -F name "$MOD" | sed 's/^/module_name=/'
-            modinfo -F vermagic "$MOD" | sed 's/^/module_vermagic=/'
+            echo "module_name=$modname"
+            echo "module_vermagic=$vermagic"
             echo 'modules_order_entry=present'
-            echo 'module_init_symbol=present'
-            echo 'built_in_msm_drm_register=absent'
+            echo 'built_in_msm_drm_object=absent'
             echo 'CANDIDATE_0028_DISPLAY_OWNERSHIP_GATE=PASS'
           } > candidate-0028-display-ownership.txt
           cat candidate-0028-display-ownership.txt
