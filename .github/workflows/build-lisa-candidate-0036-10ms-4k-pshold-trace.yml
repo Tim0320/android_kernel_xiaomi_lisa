@@ -1,11 +1,11 @@
-name: Build Lisa Candidate 0036 10ms 4KiB fast-tail
+name: Build Lisa Candidate 0036 PS_HOLD trace 10ms 4KiB
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - .github/workflows/build-lisa-candidate-0036-10ms-4k-fast-tail.yml
+      - .github/workflows/build-lisa-candidate-0036-10ms-4k-pshold-trace.yml
       - reconstruction/scripts/candidate_0036_build.py
 
 permissions:
@@ -13,7 +13,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: lisa-candidate-0036-10ms-4k-fast-tail
+  group: lisa-candidate-0036-10ms-4k-pshold-trace
   cancel-in-progress: true
 
 jobs:
@@ -257,7 +257,7 @@ jobs:
       - name: Upload Candidate 0036
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-candidate-0036-10ms-4k-fast-tail
+          name: lisa-candidate-0036-10ms-4k-pshold-trace
           retention-days: 14
           compression-level: 1
           if-no-files-found: error
