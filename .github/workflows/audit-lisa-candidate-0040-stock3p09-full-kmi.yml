@@ -125,7 +125,7 @@ jobs:
 
       - name: Download exact Candidate 0040 evidence
         env:
-          GH_TOKEN: \${{ github.token }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           rm -rf candidate0040
