@@ -511,7 +511,7 @@ def patch_mtdoops_fast_snapshot_io():
     out=p.read_text()
     gates=[
         "#define MTDOOPS_FAST_TAIL_MAGIC 0x3146544cU",
-        "#define MTDOOPS_FAST_TAIL_BYTES (1 * 1024)",
+        "#define MTDOOPS_FAST_TAIL_BYTES (4 * 1024)",
         "mtdoops_snapshot_write_fast(cxt, len);",
         "mtd->type != MTD_RAM || mtd->writesize != 1",
         "block2mtd permits direct overwrite",
