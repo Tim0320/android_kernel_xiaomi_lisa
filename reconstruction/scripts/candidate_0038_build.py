@@ -879,7 +879,13 @@ def patch_hh_watchdog_diagnostics():
         inc,
         inc+
         "#include <linux/workqueue.h>\n"
-        "#include <linux/jiffies.h>\n",
+        "#include <linux/jiffies.h>\n"
+        "\n"
+        "static struct delayed_work lisa0038_hh_diag_work;\n"
+        "static int lisa0038_bark_hret = -9999;\n"
+        "static int lisa0038_bite_hret = -9999;\n"
+        "static int lisa0038_enable_hret = -9999;\n"
+        "static int lisa0038_pet_hret = -9999;\n",
         1,
     )
 
@@ -887,12 +893,6 @@ def patch_hh_watchdog_diagnostics():
         "static struct qcom_wdt_ops hh_wdt_ops = {\n"
     )
     diag=(
-        "static struct delayed_work lisa0038_hh_diag_work;\n"
-        "static int lisa0038_bark_hret = -9999;\n"
-        "static int lisa0038_bite_hret = -9999;\n"
-        "static int lisa0038_enable_hret = -9999;\n"
-        "static int lisa0038_pet_hret = -9999;\n"
-        "\n"
         "static void lisa0038_hh_diag_workfn(struct work_struct *work)\n"
         "{\n"
         "\tstruct arm_smccc_res res;\n"
