@@ -1,0 +1,91 @@
+name: Fingerprint Lisa known DTBO valid payloads
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/fingerprint-lisa-known-dtbo-valid-payloads.yml
+
+permissions:
+  contents: read
+
+jobs:
+  fingerprint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout LFS images
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: true
+
+      - name: Fingerprint known DTBO images
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, struct
+          from pathlib import Path
+
+          images = {
+              "stock_3p09": Path("reconstruction/stock/stock-Image-3.09/dtbo.img"),
+              "official_os2p0p16": Path("reconstruction/stock/stock-Image/dtbo.img"),
+          }
+
+          rows = []
+          for name, p in images.items():
+              b = p.read_bytes()
+              if len(b) < 32:
+                  raise SystemExit(f"{name}: too short")
+              be = struct.unpack_from(">8I", b, 0)
+              le = struct.unpack_from("<8I", b, 0)
+              if be[0] == 0xD7B7AB1E:
+                  vals, endian = be, "big"
+              elif le[0] == 0xD7B7AB1E:
+                  vals, endian = le, "little"
+              else:
+                  raise SystemExit(f"{name}: bad magic {b[:4].hex()}")
+              magic,total,header,entry_size,entry_count,entries_off,page_size,version = vals
+              if total > len(b) or total < header:
+                  raise SystemExit(f"{name}: invalid total_size={total} bytes={len(b)}")
+              payload=b[:total]
+              tail=b[total:]
+              tail_nonzero=sum(1 for x in tail if x)
+              row = {
+                  "name": name,
+                  "path": str(p),
+                  "file_bytes": len(b),
+                  "file_sha256": hashlib.sha256(b).hexdigest(),
+                  "endian": endian,
+                  "total_size": total,
+                  "valid_payload_sha256": hashlib.sha256(payload).hexdigest(),
+                  "tail_bytes": len(tail),
+                  "tail_nonzero_bytes": tail_nonzero,
+                  "tail_sha256": hashlib.sha256(tail).hexdigest(),
+                  "header_size": header,
+                  "entry_size": entry_size,
+                  "entry_count": entry_count,
+                  "entries_offset": entries_off,
+                  "page_size": page_size,
+                  "version": version,
+              }
+              rows.append(row)
+              for k,v in row.items():
+                  print(f"{name}.{k}={v}")
+              print()
+
+          out = Path("known-dtbo-valid-payload-fingerprints.tsv")
+          keys = list(rows[0].keys())
+          out.write_text("\t".join(keys)+"\n"+"".join("\t".join(str(r[k]) for k in keys)+"\n" for r in rows))
+          Path("DTBO_VALID_PAYLOAD_FINGERPRINT_GATE.txt").write_text("DTBO_VALID_PAYLOAD_FINGERPRINT_GATE=PASS\n")
+          PY
+
+      - name: Upload fingerprints
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-known-dtbo-valid-payload-fingerprints
+          retention-days: 14
+          path: |
+            known-dtbo-valid-payload-fingerprints.tsv
+            DTBO_VALID_PAYLOAD_FINGERPRINT_GATE.txt
