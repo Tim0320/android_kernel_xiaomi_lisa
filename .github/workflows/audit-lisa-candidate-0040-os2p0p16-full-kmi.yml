@@ -219,17 +219,240 @@ jobs:
 
           find vendor-root -type f -name '*.ko' -print | sort > audit/modules.txt
           find vendor-root -type f -name 'modules.load*' -print | sort > audit/load-files.txt
+          find vendor-root -type f -path '*/lib/modules/modules.load' -print | sort > audit/root-load-files.txt
+          grep -v '/lib/modules/modules.load
+      - name: Compare every stock module KMI against Candidate 0040
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from collections import Counter,defaultdict
+          from pathlib import Path
+          from elftools.elf.elffile import ELFFile
+
+          stock={}
+          for raw in Path('stock.full.crcs').read_text().splitlines():
+              if not raw or raw.startswith('#'):
+                  continue
+              p=raw.split('\t')
+              if len(p) >= 2:
+                  stock[p[1]]=int(p[0],16)
+
+          current={}
+          current_owner={}
+          for raw in Path('candidate0040.Module.symvers').read_text(errors='replace').splitlines():
+              p=raw.split()
+              if len(p) < 3:
+                  continue
+              try: crc=int(p[0],16)
+              except ValueError: continue
+              current[p[1]]=crc
+              current_owner[p[1]]=p[2]
+
+          active_raw={x.strip() for x in Path('audit/active-load-plan.txt').read_text(errors='replace').splitlines() if x.strip()}
+          active_names={Path(x).name for x in active_raw}
+          module_paths=[Path(x) for x in Path('audit/modules.txt').read_text().splitlines() if x.strip()]
+
+          TARGET_RELEASE='5.4.289-qgki-g5987d69e25da'
+          TARGET_LAYOUT=0xba39cbb8
+          rows=[]
+          detail=[]
+          active_seen=set()
+          totals=Counter()
+          qgki=Counter()
+          active=Counter()
+
+          for path in module_paths:
+              vermagic='-'; entries=[]; status='OK'
+              try:
+                  with path.open('rb') as f:
+                      elf=ELFFile(f)
+                      mi=elf.get_section_by_name('.modinfo')
+                      if mi is not None:
+                          for field in mi.data().split(b'\0'):
+                              if field.startswith(b'vermagic='):
+                                  vermagic=field.split(b'=',1)[1].decode('utf-8','replace')
+                                  break
+                      sec=elf.get_section_by_name('__versions')
+                      if sec is None:
+                          status='NO___versions'
+                      else:
+                          data=sec.data()
+                          for off in range(0,len(data),64):
+                              chunk=data[off:off+64]
+                              if len(chunk)<64: break
+                              name=chunk[8:].split(b'\0',1)[0].decode('ascii','replace')
+                              if not name: continue
+                              crc=int.from_bytes(chunk[:8],'little') & 0xffffffff
+                              entries.append((name,crc))
+              except Exception as e:
+                  status='ERROR:'+repr(e)
+
+              layout=next((crc for name,crc in entries if name=='module_layout'),None)
+              is_qgki=(layout==TARGET_LAYOUT and vermagic.startswith(TARGET_RELEASE+' '))
+              is_active=path.name in active_names
+              if is_active: active_seen.add(path.name)
+
+              kernel_entries=[(n,c) for n,c in entries if n in stock]
+              stock_bad=[(n,c,stock[n]) for n,c in kernel_entries if stock[n]!=c]
+              cur_missing=[(n,c) for n,c in kernel_entries if n not in current]
+              cur_bad=[(n,c,current[n]) for n,c in kernel_entries if n in current and current[n]!=c]
+              cur_ok=len(kernel_entries)-len(cur_missing)-len(cur_bad)
+
+              totals['modules']+=1
+              totals['kernel_imports']+=len(kernel_entries)
+              totals['stock_bad']+=len(stock_bad)
+              totals['current_missing']+=len(cur_missing)
+              totals['current_bad']+=len(cur_bad)
+              if is_qgki:
+                  qgki['modules']+=1
+                  qgki['kernel_imports']+=len(kernel_entries)
+                  qgki['stock_bad']+=len(stock_bad)
+                  qgki['current_missing']+=len(cur_missing)
+                  qgki['current_bad']+=len(cur_bad)
+              if is_active:
+                  active['modules']+=1
+                  active['kernel_imports']+=len(kernel_entries)
+                  active['stock_bad']+=len(stock_bad)
+                  active['current_missing']+=len(cur_missing)
+                  active['current_bad']+=len(cur_bad)
+                  active['release_bad']+=int(not vermagic.startswith(TARGET_RELEASE+' '))
+                  active['layout_bad']+=int(layout!=TARGET_LAYOUT)
+
+              rows.append((
+                  str(path),path.name,vermagic,
+                  'MISSING' if layout is None else f'0x{layout:08x}',
+                  int(is_qgki),int(is_active),len(entries),len(kernel_entries),
+                  len(stock_bad),cur_ok,len(cur_bad),len(cur_missing),status
+              ))
+              for n,expected,got in cur_bad:
+                  detail.append(f'CRC_MISMATCH\t{path.name}\t{n}\texpected=0x{expected:08x}\tcurrent=0x{got:08x}\towner={current_owner.get(n,"-")}')
+              for n,expected in cur_missing:
+                  detail.append(f'MISSING\t{path.name}\t{n}\texpected=0x{expected:08x}')
+              for n,expected,got in stock_bad:
+                  detail.append(f'STOCK_MODULE_VS_STOCK_IMAGE_MISMATCH\t{path.name}\t{n}\tmodule=0x{expected:08x}\tstock=0x{got:08x}')
+
+          missing_active=sorted(active_names-active_seen)
+
+          out=['path\tmodule\tvermagic\tmodule_layout\tqgki_cohort\tactive_load\tversion_entries\tstock_kernel_imports\tstock_mismatch\tcurrent_match\tcurrent_mismatch\tcurrent_missing\tstatus']
+          out += ['\t'.join(map(str,r)) for r in rows]
+          Path('audit/module-kmi.tsv').write_text('\n'.join(out)+'\n')
+          Path('audit/module-kmi-details.txt').write_text('\n'.join(detail)+'\n')
+
+          summary=[
+              f'stock_kernel_exports={len(stock)}',
+              f'candidate_exports={len(current)}',
+              f'all_modules={totals["modules"]}',
+              f'all_kernel_imports={totals["kernel_imports"]}',
+              f'all_stock_mismatch={totals["stock_bad"]}',
+              f'all_current_crc_mismatch={totals["current_bad"]}',
+              f'all_current_missing={totals["current_missing"]}',
+              f'qgki_modules={qgki["modules"]}',
+              f'qgki_kernel_imports={qgki["kernel_imports"]}',
+              f'qgki_stock_mismatch={qgki["stock_bad"]}',
+              f'qgki_current_crc_mismatch={qgki["current_bad"]}',
+              f'qgki_current_missing={qgki["current_missing"]}',
+              f'active_modules={active["modules"]}',
+              f'active_kernel_imports={active["kernel_imports"]}',
+              f'active_stock_mismatch={active["stock_bad"]}',
+              f'active_current_crc_mismatch={active["current_bad"]}',
+              f'active_current_missing={active["current_missing"]}',
+              f'active_release_mismatch={active["release_bad"]}',
+              f'active_layout_mismatch={active["layout_bad"]}',
+              'active_names_missing_from_vendor_boot='+','.join(missing_active),
+          ]
+
+          gate=(
+              active['modules'] > 0 and
+              not missing_active and
+              active['stock_bad']==0 and
+              active['current_bad']==0 and
+              active['current_missing']==0 and
+              active['release_bad']==0 and
+              active['layout_bad']==0 and
+              qgki['stock_bad']==0 and
+              qgki['current_bad']==0 and
+              qgki['current_missing']==0
+          )
+          summary.append('CANDIDATE_0040_FULL_STOCK_VENDOR_KMI_GATE='+('PASS' if gate else 'BLOCKED'))
+          Path('audit/final-kmi-gate.txt').write_text('\n'.join(summary)+'\n')
+          print('\n'.join(summary))
+          if detail:
+              print('\nFIRST_KMI_DETAILS:')
+              print('\n'.join(detail[:120]))
+          PY
+
+          cat audit/final-kmi-gate.txt
+
+      - name: Fingerprint DT and companion contract
+        run: |
+          set -euo pipefail
+          python3 - "$BASE/dtbo.img" <<'PY'
+          import hashlib,struct,sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); b=p.read_bytes()
+          MAGIC=0xd7b7ab1e
+          vals=struct.unpack_from('>8I',b,0); endian='>'
+          if vals[0] != MAGIC:
+              vals=struct.unpack_from('<8I',b,0); endian='<'
+          magic,total,hsz,esz,count,eoff,page,ver=vals
+          if magic != MAGIC:
+              raise SystemExit('bad DTBO magic')
+          rows=['index\tid\trev\tcustom0\tcustom1\tcustom2\tcustom3\tsize\tsha256']
+          for i in range(count):
+              size,off,ident,rev,c0,c1,c2,c3=struct.unpack_from(endian+'8I',b,eoff+i*esz)
+              blob=b[off:off+size]
+              rows.append(f'{i}\t{ident}\t{rev}\t{c0}\t{c1}\t{c2}\t{c3}\t{size}\t{hashlib.sha256(blob).hexdigest()}')
+          Path('audit/dtbo-entries.tsv').write_text('\n'.join(rows)+'\n')
+          Path('audit/dt-contract.txt').write_text(
+              'expected_device_boot_a_sha256=e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1\n'
+              'expected_device_vendor_boot_a_sha256=c0a7528e8eacd2a86270ee017dfe90e657f1a0c5c40527869f89e915c2954a5a\n'
+              'expected_device_dtbo_a_sha256=db7c50147d8217c41cd86e53dda6e8ce93a5928a8f06ece8da92955a9c0e7ba7\n'
+              f'dtbo_entries={count}\n'
+              'DEVICE_PARTITION_HASHES_REQUIRE_TWRP_READBACK=1\n'
+          )
+          print('DTBO_ENTRIES='+str(count))
+          PY
+          sha256sum audit/vendor-dtb.bin >> audit/dt-contract.txt
+          cat audit/dt-contract.txt
+
+      - name: Upload Candidate 0040 full KMI contract audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0040-os2p0p16-full-kmi
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            stock-contract.txt
+            stock-version.txt
+            stock.image.crcs
+            stock.full.crcs
+            audit/
+            candidate0040.Module.symvers
+            candidate0040.config
+ audit/load-files.txt > audit/alternate-load-files.txt || true
           test -s audit/modules.txt
           test -s audit/load-files.txt
+          test -s audit/root-load-files.txt
 
           : > audit/active-load-plan.txt
           while IFS= read -r f; do
             sed '/^[[:space:]]*$/d;/^[[:space:]]*#/d' "$f" >> audit/active-load-plan.txt
-          done < audit/load-files.txt
+          done < audit/root-load-files.txt
           sort -u audit/active-load-plan.txt -o audit/active-load-plan.txt
+
+          {
+            echo '# Root QGKI load files used for boot-critical gate'
+            cat audit/root-load-files.txt
+            echo '# Alternate cohort load files retained for inventory only'
+            cat audit/alternate-load-files.txt
+          } > audit/load-plan-classification.txt
 
           echo "STOCK_VENDOR_BOOT_MODULE_FILES=$(wc -l < audit/modules.txt)"
           echo "STOCK_VENDOR_BOOT_ACTIVE_LOAD_ENTRIES=$(wc -l < audit/active-load-plan.txt)"
+          echo "STOCK_VENDOR_BOOT_ROOT_LOAD_FILES=$(wc -l < audit/root-load-files.txt)"
+          echo "STOCK_VENDOR_BOOT_ALTERNATE_LOAD_FILES=$(wc -l < audit/alternate-load-files.txt)"
+          echo "BOOT_CRITICAL_LOAD_POLICY=root_lib_modules_modules_load_only"
 
       - name: Compare every stock module KMI against Candidate 0040
         run: |
