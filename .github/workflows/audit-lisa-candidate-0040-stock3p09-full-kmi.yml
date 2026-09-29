@@ -1,0 +1,429 @@
+name: Audit Candidate 0040 full stock 3.09 module KMI contract
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/audit-lisa-candidate-0040-stock3p09-full-kmi.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0040-stock3p09-full-kmi
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      BASE: reconstruction/stock/stock-Image-3.09
+      EXPECT_STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      EXPECT_STOCK_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      EXPECT_VENDOR_BOOT_SHA256: a94ecc2b8e53666693fd3cfc99ad07b5f24f586e85841728bf1d41333bc4b053
+      EXPECT_DTBO_SHA256: 537655919c72edcba2e1dcbc83edb45fe92484263f3b8d5b29e8c1408282a35c
+      TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
+      TARGET_LAYOUT: ba39cbb8
+      CANDIDATE_ARTIFACT_ID: "11047365059"
+
+    steps:
+      - name: Checkout exact stock 3.09 images with Git LFS
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: true
+
+      - name: Install audit tools
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            binutils cpio file git-lfs gzip lz4 python3 python3-pip \
+            python3-pyelftools unzip xz-utils zstd
+          python3 -m pip install --break-system-packages \
+            git+https://github.com/marin-m/vmlinux-to-elf.git
+          command -v kallsyms-finder
+
+      - name: Authenticate healthy stock 3.09 companion set
+        run: |
+          set -euo pipefail
+          for f in boot.img vendor_boot.img dtbo.img; do
+            test -s "$BASE/$f"
+            ! grep -q '^version https://git-lfs.github.com/spec/v1' "$BASE/$f"
+          done
+          test "$(sha256sum "$BASE/boot.img" | awk '{print $1}')" = "$EXPECT_STOCK_BOOT_SHA256"
+          test "$(sha256sum "$BASE/vendor_boot.img" | awk '{print $1}')" = "$EXPECT_VENDOR_BOOT_SHA256"
+          test "$(sha256sum "$BASE/dtbo.img" | awk '{print $1}')" = "$EXPECT_DTBO_SHA256"
+          printf '%s\n' \
+            "stock_boot_sha256=$EXPECT_STOCK_BOOT_SHA256" \
+            "vendor_boot_sha256=$EXPECT_VENDOR_BOOT_SHA256" \
+            "dtbo_sha256=$EXPECT_DTBO_SHA256" \
+            "target_release=$TARGET_RELEASE" \
+            "target_module_layout=0x$TARGET_LAYOUT" \
+            > stock-contract.txt
+          echo 'STOCK_3P09_INPUT_HASH_GATE=PASS'
+
+      - name: Extract exact stock kernel Image
+        run: |
+          set -euo pipefail
+          python3 - "$BASE/boot.img" stock-Image <<'PY'
+          import struct,sys
+          from pathlib import Path
+          src,out=map(Path,sys.argv[1:])
+          b=src.read_bytes()
+          if b[:8] != b'ANDROID!':
+              raise SystemExit('bad Android boot magic')
+          kernel_size=struct.unpack_from('<I',b,8)[0]
+          header_version=struct.unpack_from('<I',b,40)[0]
+          page=4096 if header_version >= 3 else struct.unpack_from('<I',b,36)[0]
+          image=b[page:page+kernel_size]
+          if len(image) != kernel_size:
+              raise SystemExit('short kernel payload')
+          if len(image) < 0x3c or struct.unpack_from('<I',image,0x38)[0] != 0x644d5241:
+              raise SystemExit('kernel payload is not raw ARM64 Image')
+          out.write_bytes(image)
+          print('BOOT_HEADER_VERSION='+str(header_version))
+          print('BOOT_KERNEL_SIZE='+str(kernel_size))
+          PY
+          test "$(sha256sum stock-Image | awk '{print $1}')" = "$EXPECT_STOCK_IMAGE_SHA256"
+          strings -a stock-Image | grep -m1 '^Linux version ' | tee stock-version.txt
+          grep -Fq "$TARGET_RELEASE" stock-version.txt
+          echo 'STOCK_3P09_KERNEL_IMAGE_GATE=PASS'
+
+      - name: Recover exact stock kernel CRC oracle
+        run: |
+          set -euo pipefail
+          kallsyms-finder stock-Image > stock.kallsyms
+          test -s stock.kallsyms
+          python3 scripts/extract_stock_kcrc.py \
+            --image stock-Image \
+            --kallsyms stock.kallsyms \
+            --oracle reconstruction/stock_module_oracle.txt \
+            --output stock.image.crcs \
+            --full-output stock.full.crcs
+          test -s stock.full.crcs
+          full_count="$(grep -cv '^#\|^$' stock.full.crcs)"
+          echo "STOCK_FULL_EXPORTS=$full_count"
+          test "$full_count" -eq 13360
+          echo 'STOCK_3P09_FULL_CRC_ORACLE_GATE=PASS'
+
+      - name: Download exact Candidate 0040 evidence
+        env:
+          GH_TOKEN: \${{ github.token }}
+        run: |
+          set -euo pipefail
+          rm -rf candidate0040
+          mkdir candidate0040
+          curl -fL --retry 5 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$CANDIDATE_ARTIFACT_ID/zip" \
+            -o candidate0040.zip
+          unzip -q candidate0040.zip -d candidate0040
+          symvers="$(find candidate0040 -type f -name Module.symvers -print -quit)"
+          config="$(find candidate0040 -maxdepth 2 -type f -name 'candidate-0040.config' -print -quit)"
+          test -n "$symvers"
+          test -n "$config"
+          cp "$symvers" candidate0040.Module.symvers
+          cp "$config" candidate0040.config
+          grep -Fqx 'CONFIG_MODVERSIONS=y' candidate0040.config
+          grep -Fqx 'CONFIG_MODULES=y' candidate0040.config
+          grep -Fqx 'CONFIG_QCOM_WDT_CORE=y' candidate0040.config
+          grep -Fqx 'CONFIG_QTI_TZ_LOG=y' candidate0040.config
+          grep -w '^0xba39cbb8[[:space:]]\+module_layout[[:space:]]\+vmlinux' candidate0040.Module.symvers
+          echo 'CANDIDATE_0040_EVIDENCE_GATE=PASS'
+
+      - name: Extract stock 3.09 vendor_boot ramdisks
+        run: |
+          set -euo pipefail
+          rm -rf vendor-ramdisks vendor-root audit
+          mkdir -p vendor-ramdisks vendor-root audit
+
+          python3 - "$BASE/vendor_boot.img" vendor-ramdisks audit/vendor-boot-layout.txt <<'PY'
+          import struct,sys
+          from pathlib import Path
+          img=Path(sys.argv[1]); out=Path(sys.argv[2]); report=Path(sys.argv[3])
+          b=img.read_bytes()
+          if b[:8] != b'VNDRBOOT':
+              raise SystemExit('bad vendor_boot magic')
+          u32=lambda o: struct.unpack_from('<I',b,o)[0]
+          align=lambda v,a:(v+a-1)//a*a
+          ver=u32(8); page=u32(12); rsz=u32(24); hsz=u32(2096); dsz=u32(2100)
+          roff=align(hsz,page); doff=align(roff+rsz,page)
+          frags=[]
+          lines=[
+              'header_version='+str(ver),
+              'page_size='+str(page),
+              'vendor_ramdisk_size='+str(rsz),
+              'vendor_ramdisk_offset='+str(roff),
+              'dtb_size='+str(dsz),
+              'dtb_offset='+str(doff),
+          ]
+          if ver >= 4 and hsz >= 2128:
+              count=u32(2116); esz=u32(2120); table_off=align(doff+dsz,page)
+              lines += ['fragment_count='+str(count),'fragment_entry_size='+str(esz)]
+              if count and esz >= 108:
+                  for i in range(count):
+                      o=table_off+i*esz
+                      size,rel,typ=u32(o),u32(o+4),u32(o+8)
+                      name=b[o+12:o+44].split(b'\0',1)[0].decode('utf-8','replace') or 'fragment'+str(i)
+                      frags.append((i,name,typ,rel,size))
+          if not frags:
+              frags=[(0,'vendor_ramdisk',0,0,rsz)]
+          for i,name,typ,rel,size in frags:
+              start=roff+rel; end=start+size
+              if end > roff+rsz or end > len(b):
+                  raise SystemExit('fragment exceeds ramdisk')
+              safe=''.join(c if c.isalnum() or c in '._-' else '_' for c in name)
+              (out/(f'{i:02d}-'+safe+'.bin')).write_bytes(b[start:end])
+              lines.append(f'fragment[{i}]={name}\ttype={typ}\toffset={rel}\tsize={size}')
+          Path('audit/vendor-dtb.bin').write_bytes(b[doff:doff+dsz])
+          report.write_text('\n'.join(lines)+'\n')
+          PY
+
+          idx=0
+          for frag in vendor-ramdisks/*.bin; do
+            out="vendor-root/fragment-$idx"
+            cpio_file="vendor-ramdisks/fragment-$idx.cpio"
+            mkdir -p "$out"
+            magic="$(xxd -p -l 8 "$frag")"
+            case "$magic" in
+              1f8b*) gzip -dc "$frag" > "$cpio_file" ;;
+              04224d18*|02214c18*) lz4 -dc "$frag" > "$cpio_file" ;;
+              fd377a585a00*) xz -dc "$frag" > "$cpio_file" ;;
+              28b52ffd*) zstd -dc "$frag" > "$cpio_file" ;;
+              303730373031*|303730373032*) cp "$frag" "$cpio_file" ;;
+              *) echo "unknown ramdisk compression: $frag ($magic)" >&2; exit 1 ;;
+            esac
+            abs="$(realpath "$cpio_file")"
+            (cd "$out" && cpio --quiet -idm --no-absolute-filenames < "$abs")
+            idx=$((idx+1))
+          done
+
+          find vendor-root -type f -name '*.ko' -print | sort > audit/modules.txt
+          find vendor-root -type f -name 'modules.load*' -print | sort > audit/load-files.txt
+          test -s audit/modules.txt
+          test -s audit/load-files.txt
+
+          : > audit/active-load-plan.txt
+          while IFS= read -r f; do
+            sed '/^[[:space:]]*$/d;/^[[:space:]]*#/d' "$f" >> audit/active-load-plan.txt
+          done < audit/load-files.txt
+          sort -u audit/active-load-plan.txt -o audit/active-load-plan.txt
+
+          echo "STOCK_VENDOR_BOOT_MODULE_FILES=$(wc -l < audit/modules.txt)"
+          echo "STOCK_VENDOR_BOOT_ACTIVE_LOAD_ENTRIES=$(wc -l < audit/active-load-plan.txt)"
+
+      - name: Compare every stock module KMI against Candidate 0040
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from collections import Counter,defaultdict
+          from pathlib import Path
+          from elftools.elf.elffile import ELFFile
+
+          stock={}
+          for raw in Path('stock.full.crcs').read_text().splitlines():
+              if not raw or raw.startswith('#'):
+                  continue
+              p=raw.split('\t')
+              if len(p) >= 2:
+                  stock[p[1]]=int(p[0],16)
+
+          current={}
+          current_owner={}
+          for raw in Path('candidate0040.Module.symvers').read_text(errors='replace').splitlines():
+              p=raw.split()
+              if len(p) < 3:
+                  continue
+              try: crc=int(p[0],16)
+              except ValueError: continue
+              current[p[1]]=crc
+              current_owner[p[1]]=p[2]
+
+          active_raw={x.strip() for x in Path('audit/active-load-plan.txt').read_text(errors='replace').splitlines() if x.strip()}
+          active_names={Path(x).name for x in active_raw}
+          module_paths=[Path(x) for x in Path('audit/modules.txt').read_text().splitlines() if x.strip()]
+
+          TARGET_RELEASE='5.4.289-qgki-g5987d69e25da'
+          TARGET_LAYOUT=0xba39cbb8
+          rows=[]
+          detail=[]
+          active_seen=set()
+          totals=Counter()
+          qgki=Counter()
+          active=Counter()
+
+          for path in module_paths:
+              vermagic='-'; entries=[]; status='OK'
+              try:
+                  with path.open('rb') as f:
+                      elf=ELFFile(f)
+                      mi=elf.get_section_by_name('.modinfo')
+                      if mi is not None:
+                          for field in mi.data().split(b'\0'):
+                              if field.startswith(b'vermagic='):
+                                  vermagic=field.split(b'=',1)[1].decode('utf-8','replace')
+                                  break
+                      sec=elf.get_section_by_name('__versions')
+                      if sec is None:
+                          status='NO___versions'
+                      else:
+                          data=sec.data()
+                          for off in range(0,len(data),64):
+                              chunk=data[off:off+64]
+                              if len(chunk)<64: break
+                              name=chunk[8:].split(b'\0',1)[0].decode('ascii','replace')
+                              if not name: continue
+                              crc=int.from_bytes(chunk[:8],'little') & 0xffffffff
+                              entries.append((name,crc))
+              except Exception as e:
+                  status='ERROR:'+repr(e)
+
+              layout=next((crc for name,crc in entries if name=='module_layout'),None)
+              is_qgki=(layout==TARGET_LAYOUT and vermagic.startswith(TARGET_RELEASE+' '))
+              is_active=path.name in active_names
+              if is_active: active_seen.add(path.name)
+
+              kernel_entries=[(n,c) for n,c in entries if n in stock]
+              stock_bad=[(n,c,stock[n]) for n,c in kernel_entries if stock[n]!=c]
+              cur_missing=[(n,c) for n,c in kernel_entries if n not in current]
+              cur_bad=[(n,c,current[n]) for n,c in kernel_entries if n in current and current[n]!=c]
+              cur_ok=len(kernel_entries)-len(cur_missing)-len(cur_bad)
+
+              totals['modules']+=1
+              totals['kernel_imports']+=len(kernel_entries)
+              totals['stock_bad']+=len(stock_bad)
+              totals['current_missing']+=len(cur_missing)
+              totals['current_bad']+=len(cur_bad)
+              if is_qgki:
+                  qgki['modules']+=1
+                  qgki['kernel_imports']+=len(kernel_entries)
+                  qgki['stock_bad']+=len(stock_bad)
+                  qgki['current_missing']+=len(cur_missing)
+                  qgki['current_bad']+=len(cur_bad)
+              if is_active:
+                  active['modules']+=1
+                  active['kernel_imports']+=len(kernel_entries)
+                  active['stock_bad']+=len(stock_bad)
+                  active['current_missing']+=len(cur_missing)
+                  active['current_bad']+=len(cur_bad)
+                  active['release_bad']+=int(not vermagic.startswith(TARGET_RELEASE+' '))
+                  active['layout_bad']+=int(layout!=TARGET_LAYOUT)
+
+              rows.append((
+                  str(path),path.name,vermagic,
+                  'MISSING' if layout is None else f'0x{layout:08x}',
+                  int(is_qgki),int(is_active),len(entries),len(kernel_entries),
+                  len(stock_bad),cur_ok,len(cur_bad),len(cur_missing),status
+              ))
+              for n,expected,got in cur_bad:
+                  detail.append(f'CRC_MISMATCH\t{path.name}\t{n}\texpected=0x{expected:08x}\tcurrent=0x{got:08x}\towner={current_owner.get(n,"-")}')
+              for n,expected in cur_missing:
+                  detail.append(f'MISSING\t{path.name}\t{n}\texpected=0x{expected:08x}')
+              for n,expected,got in stock_bad:
+                  detail.append(f'STOCK_MODULE_VS_STOCK_IMAGE_MISMATCH\t{path.name}\t{n}\tmodule=0x{expected:08x}\tstock=0x{got:08x}')
+
+          missing_active=sorted(active_names-active_seen)
+
+          out=['path\tmodule\tvermagic\tmodule_layout\tqgki_cohort\tactive_load\tversion_entries\tstock_kernel_imports\tstock_mismatch\tcurrent_match\tcurrent_mismatch\tcurrent_missing\tstatus']
+          out += ['\t'.join(map(str,r)) for r in rows]
+          Path('audit/module-kmi.tsv').write_text('\n'.join(out)+'\n')
+          Path('audit/module-kmi-details.txt').write_text('\n'.join(detail)+'\n')
+
+          summary=[
+              f'stock_kernel_exports={len(stock)}',
+              f'candidate_exports={len(current)}',
+              f'all_modules={totals["modules"]}',
+              f'all_kernel_imports={totals["kernel_imports"]}',
+              f'all_stock_mismatch={totals["stock_bad"]}',
+              f'all_current_crc_mismatch={totals["current_bad"]}',
+              f'all_current_missing={totals["current_missing"]}',
+              f'qgki_modules={qgki["modules"]}',
+              f'qgki_kernel_imports={qgki["kernel_imports"]}',
+              f'qgki_stock_mismatch={qgki["stock_bad"]}',
+              f'qgki_current_crc_mismatch={qgki["current_bad"]}',
+              f'qgki_current_missing={qgki["current_missing"]}',
+              f'active_modules={active["modules"]}',
+              f'active_kernel_imports={active["kernel_imports"]}',
+              f'active_stock_mismatch={active["stock_bad"]}',
+              f'active_current_crc_mismatch={active["current_bad"]}',
+              f'active_current_missing={active["current_missing"]}',
+              f'active_release_mismatch={active["release_bad"]}',
+              f'active_layout_mismatch={active["layout_bad"]}',
+              'active_names_missing_from_vendor_boot='+','.join(missing_active),
+          ]
+
+          gate=(
+              active['modules'] > 0 and
+              not missing_active and
+              active['stock_bad']==0 and
+              active['current_bad']==0 and
+              active['current_missing']==0 and
+              active['release_bad']==0 and
+              active['layout_bad']==0 and
+              qgki['stock_bad']==0 and
+              qgki['current_bad']==0 and
+              qgki['current_missing']==0
+          )
+          summary.append('CANDIDATE_0040_FULL_STOCK_VENDOR_KMI_GATE='+('PASS' if gate else 'BLOCKED'))
+          Path('audit/final-kmi-gate.txt').write_text('\n'.join(summary)+'\n')
+          print('\n'.join(summary))
+          if detail:
+              print('\nFIRST_KMI_DETAILS:')
+              print('\n'.join(detail[:120]))
+          PY
+
+          cat audit/final-kmi-gate.txt
+
+      - name: Fingerprint DT and companion contract
+        run: |
+          set -euo pipefail
+          python3 - "$BASE/dtbo.img" <<'PY'
+          import hashlib,struct,sys
+          from pathlib import Path
+          p=Path(sys.argv[1]); b=p.read_bytes()
+          MAGIC=0xd7b7ab1e
+          vals=struct.unpack_from('>8I',b,0); endian='>'
+          if vals[0] != MAGIC:
+              vals=struct.unpack_from('<8I',b,0); endian='<'
+          magic,total,hsz,esz,count,eoff,page,ver=vals
+          if magic != MAGIC:
+              raise SystemExit('bad DTBO magic')
+          rows=['index\tid\trev\tcustom0\tcustom1\tcustom2\tcustom3\tsize\tsha256']
+          for i in range(count):
+              size,off,ident,rev,c0,c1,c2,c3=struct.unpack_from(endian+'8I',b,eoff+i*esz)
+              blob=b[off:off+size]
+              rows.append(f'{i}\t{ident}\t{rev}\t{c0}\t{c1}\t{c2}\t{c3}\t{size}\t{hashlib.sha256(blob).hexdigest()}')
+          Path('audit/dtbo-entries.tsv').write_text('\n'.join(rows)+'\n')
+          Path('audit/dt-contract.txt').write_text(
+              'expected_device_boot_a_sha256=e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1\n'
+              'expected_device_vendor_boot_a_sha256=a94ecc2b8e53666693fd3cfc99ad07b5f24f586e85841728bf1d41333bc4b053\n'
+              'expected_device_dtbo_a_sha256=537655919c72edcba2e1dcbc83edb45fe92484263f3b8d5b29e8c1408282a35c\n'
+              f'dtbo_entries={count}\n'
+              'DEVICE_PARTITION_HASHES_REQUIRE_TWRP_READBACK=1\n'
+          )
+          print('DTBO_ENTRIES='+str(count))
+          PY
+          sha256sum audit/vendor-dtb.bin >> audit/dt-contract.txt
+          cat audit/dt-contract.txt
+
+      - name: Upload Candidate 0040 full KMI contract audit
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0040-stock3p09-full-kmi
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            stock-contract.txt
+            stock-version.txt
+            stock.image.crcs
+            stock.full.crcs
+            audit/
+            candidate0040.Module.symvers
+            candidate0040.config
