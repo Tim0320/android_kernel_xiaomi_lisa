@@ -220,7 +220,28 @@ jobs:
           find vendor-root -type f -name '*.ko' -print | sort > audit/modules.txt
           find vendor-root -type f -name 'modules.load*' -print | sort > audit/load-files.txt
           find vendor-root -type f -path '*/lib/modules/modules.load' -print | sort > audit/root-load-files.txt
-          grep -v '/lib/modules/modules.load
+          test -s audit/modules.txt
+          test -s audit/load-files.txt
+          test -s audit/root-load-files.txt
+
+          : > audit/active-load-plan.txt
+          while IFS= read -r f; do
+            sed '/^[[:space:]]*$/d;/^[[:space:]]*#/d' "$f" >> audit/active-load-plan.txt
+          done < audit/root-load-files.txt
+          sort -u audit/active-load-plan.txt -o audit/active-load-plan.txt
+
+          {
+            echo '# All module load files (inventory)'
+            cat audit/load-files.txt
+            echo '# Root QGKI load files (boot-critical gate)'
+            cat audit/root-load-files.txt
+          } > audit/load-plan-classification.txt
+
+          echo "STOCK_VENDOR_BOOT_MODULE_FILES=$(wc -l < audit/modules.txt)"
+          echo "STOCK_VENDOR_BOOT_ACTIVE_LOAD_ENTRIES=$(wc -l < audit/active-load-plan.txt)"
+          echo "STOCK_VENDOR_BOOT_ROOT_LOAD_FILES=$(wc -l < audit/root-load-files.txt)"
+          echo 'BOOT_CRITICAL_LOAD_POLICY=root_lib_modules_modules_load_only'
+
       - name: Compare every stock module KMI against Candidate 0040
         run: |
           set -euo pipefail
