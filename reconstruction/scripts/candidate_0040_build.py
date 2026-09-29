@@ -1009,9 +1009,9 @@ def patch_tz_hyp_diagnostics():
         raise SystemExit(f"tz_log global diagnostic anchor count={x.count(anchor)}")
     x=x.replace(
         anchor,
-        "static struct encrypted_log_info enc_qseelog_info;\\n"
-        "static struct encrypted_log_info enc_tzlog_info;\\n"
-        "\\n"+diag,
+        "static struct encrypted_log_info enc_qseelog_info;\n"
+        "static struct encrypted_log_info enc_tzlog_info;\n"
+        "\n"+diag,
         1,
     )
 
