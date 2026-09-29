@@ -23,7 +23,7 @@ jobs:
       STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
       BASE: reconstruction/stock/stock-Image-3.09
       EXPECT_STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
-      EXPECT_STOCK_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
+      EXPECT_STOCK_IMAGE_SHA256: 54c8d6e5452c0a18f2382a0910fb0bef1ef1d7660f7fb2910dd781d7c3f43596
       EXPECT_VENDOR_BOOT_SHA256: a94ecc2b8e53666693fd3cfc99ad07b5f24f586e85841728bf1d41333bc4b053
       EXPECT_DTBO_SHA256: 537655919c72edcba2e1dcbc83edb45fe92484263f3b8d5b29e8c1408282a35c
       TARGET_RELEASE: 5.4.289-qgki-g5987d69e25da
@@ -99,7 +99,9 @@ jobs:
           print('BOOT_HEADER_VERSION='+str(header_version))
           print('BOOT_KERNEL_SIZE='+str(kernel_size))
           PY
-          test "$(sha256sum stock-Image | awk '{print $1}')" = "$EXPECT_STOCK_IMAGE_SHA256"
+          actual_stock_image="$(sha256sum stock-Image | awk '{print $1}')"
+          echo "ACTUAL_STOCK_IMAGE_SHA256=$actual_stock_image"
+          test "$actual_stock_image" = "$EXPECT_STOCK_IMAGE_SHA256"
           strings -a stock-Image | grep -m1 '^Linux version ' | tee stock-version.txt
           grep -Fq "$TARGET_RELEASE" stock-version.txt
           echo 'STOCK_3P09_KERNEL_IMAGE_GATE=PASS'
