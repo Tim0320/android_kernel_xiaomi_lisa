@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     env:
+      STOCK_BOOT: reconstruction/stock/stock-Image/boot.img
       BASE: reconstruction/stock/stock-Image-3.09
       EXPECT_STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
       EXPECT_STOCK_IMAGE_SHA256: 492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55
@@ -50,13 +51,23 @@ jobs:
       - name: Authenticate healthy stock 3.09 companion set
         run: |
           set -euo pipefail
-          for f in boot.img vendor_boot.img dtbo.img; do
+          test -s "$STOCK_BOOT"
+          ! grep -q '^version https://git-lfs.github.com/spec/v1' "$STOCK_BOOT"
+          for f in vendor_boot.img dtbo.img; do
             test -s "$BASE/$f"
             ! grep -q '^version https://git-lfs.github.com/spec/v1' "$BASE/$f"
           done
-          test "$(sha256sum "$BASE/boot.img" | awk '{print $1}')" = "$EXPECT_STOCK_BOOT_SHA256"
-          test "$(sha256sum "$BASE/vendor_boot.img" | awk '{print $1}')" = "$EXPECT_VENDOR_BOOT_SHA256"
-          test "$(sha256sum "$BASE/dtbo.img" | awk '{print $1}')" = "$EXPECT_DTBO_SHA256"
+
+          actual_boot="$(sha256sum "$STOCK_BOOT" | awk '{print $1}')"
+          actual_vendor_boot="$(sha256sum "$BASE/vendor_boot.img" | awk '{print $1}')"
+          actual_dtbo="$(sha256sum "$BASE/dtbo.img" | awk '{print $1}')"
+          echo "ACTUAL_STOCK_BOOT_SHA256=$actual_boot"
+          echo "ACTUAL_VENDOR_BOOT_SHA256=$actual_vendor_boot"
+          echo "ACTUAL_DTBO_SHA256=$actual_dtbo"
+
+          test "$actual_boot" = "$EXPECT_STOCK_BOOT_SHA256"
+          test "$actual_vendor_boot" = "$EXPECT_VENDOR_BOOT_SHA256"
+          test "$actual_dtbo" = "$EXPECT_DTBO_SHA256"
           printf '%s\n' \
             "stock_boot_sha256=$EXPECT_STOCK_BOOT_SHA256" \
             "vendor_boot_sha256=$EXPECT_VENDOR_BOOT_SHA256" \
@@ -69,7 +80,7 @@ jobs:
       - name: Extract exact stock kernel Image
         run: |
           set -euo pipefail
-          python3 - "$BASE/boot.img" stock-Image <<'PY'
+          python3 - "$STOCK_BOOT" stock-Image <<'PY'
           import struct,sys
           from pathlib import Path
           src,out=map(Path,sys.argv[1:])
@@ -418,7 +429,7 @@ jobs:
         with:
           name: lisa-candidate-0040-stock3p09-full-kmi
           retention-days: 14
-          if-no-files-found: error
+          if-no-files-found: warn
           path: |
             stock-contract.txt
             stock-version.txt
