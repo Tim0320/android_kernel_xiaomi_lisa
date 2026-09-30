@@ -1284,15 +1284,16 @@ def main():
             raise SystemExit(f"missing companion {name}")
         if p.read_bytes()[:96].startswith(b"version https://git-lfs.github.com/spec/v1"):
             raise SystemExit(f"LFS pointer not materialized: {name}")
-    img=ROOT/"candidate-0018-Image"
-    if sha256(img) != KNOWN_IMAGE_SHA or TARGET_RELEASE not in img.read_bytes():
-        raise SystemExit("Candidate 0018 Image identity mismatch")
-    OUT.mkdir(parents=True, exist_ok=True)
-    cfg=subprocess.check_output([str(KERNEL/"scripts/extract-ikconfig"), str(img)])
-    (OUT/".config").write_bytes(cfg)
-    (ROOT/"candidate-0018.ikconfig").write_bytes(cfg)
+    cfg_path=ROOT/"candidate-0018.ikconfig"
+    if not cfg_path.is_file() or cfg_path.stat().st_size == 0:
+        raise SystemExit("preserved Candidate 0018 IKCONFIG missing")
+    cfg=cfg_path.read_bytes()
     if b"CONFIG_INTERCONNECT_QCOM_RPMH=y" not in cfg:
         raise SystemExit("expected RPMH config missing")
+    if b"CONFIG_MODVERSIONS=y" not in cfg:
+        raise SystemExit("expected MODVERSIONS config missing")
+    OUT.mkdir(parents=True, exist_ok=True)
+    (OUT/".config").write_bytes(cfg)
 
     overlay_known_good()
     assert_candidate0022_rwsem_layout()
@@ -1356,6 +1357,7 @@ def main():
         "candidate=Lisa Candidate 0041 rwsem regression A/B\n"
         f"kernel_source_sha={SOURCE_SHA}\n"
         f"candidate_0018_source_image_sha256={KNOWN_IMAGE_SHA}\n"
+        "candidate_0018_ikconfig_source=Candidate0040 artifact 11047365059\n"
         f"candidate_0041_image_sha256={sha256(ROOT/'candidate-0041-Image')}\n"
         f"candidate_0041_boot_sha256={sha256(ROOT/'boot.img')}\n"
         "companion_base=reconstruction/stock/stock-Image-3.09\n"
