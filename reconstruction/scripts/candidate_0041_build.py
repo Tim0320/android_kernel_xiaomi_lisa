@@ -148,7 +148,7 @@ def patch_block2mtd_devpath():
         "cmdline=block2mtd.block2mtd=/dev/block/sda17,2097152\n"
         "source_before=name_to_dev_t strips /dev/block only under CONFIG_BOARD_XIAOMI\n"
         "failure_mode=/dev/block/sda17 becomes block!sda17 and dev_t lookup fails\n"
-        "mutation=single-variable revert of Candidate0023 rwsem vendor reserve; allow CONFIG_BOARD_XIAOMI_LISA to strip /dev/block prefix\n"
+        "mutation=allow CONFIG_BOARD_XIAOMI_LISA to strip /dev/block prefix\n"
         "expected_block_device=sda17\n"
         "expected_mtd_index=0\n"
         "CANDIDATE_0041_BLOCK2MTD_DEVPATH_GATE=PASS\n"
@@ -779,7 +779,7 @@ def patch_yupik():
         "candidate_0019_call_path=qcom_icc_set_qos -> qnoc_probe\n"
         "candidate_0019_fault_register_offset=0x10008\n"
         "candidate_0019_aggre2_registration=not reached\n"
-        "candidate_0040_control=retain qxm_ipa.qosbox=NULL; overlay known-good 5.4.302 secure/UFS + zram paths\n"
+        "candidate_0041_control=retain qxm_ipa.qosbox=NULL; overlay known-good 5.4.302 secure/UFS + zram paths\n"
         "companion_base=reconstruction/stock/stock-Image-3.09\n"
     )
 
@@ -1260,11 +1260,11 @@ def repack():
     (ROOT/"boot.img").write_bytes(out)
     (ROOT/"boot.img.sha256").write_text(f"{sha256(out)}  boot.img\n")
     (ROOT/"candidate-0041-repack.txt").write_text(
-        f"candidate_0040_image_sha256={sha256(kernel)}\n"
-        f"candidate_0040_image_bytes={len(kernel)}\n"
+        f"candidate_0041_image_sha256={sha256(kernel)}\n"
+        f"candidate_0041_image_bytes={len(kernel)}\n"
         f"stock_kernel_region_bytes={ksz}\n"
         f"kernel_zero_pad_bytes={ksz-len(kernel)}\n"
-        f"candidate_0040_boot_sha256={sha256(out)}\n"
+        f"candidate_0041_boot_sha256={sha256(out)}\n"
         "boot_header_byte_exact=1\n"
         "stock_ramdisk_byte_exact=1\n"
         "changed_bytes_outside_kernel_region=0\n"
@@ -1356,10 +1356,10 @@ def main():
         "candidate=Lisa Candidate 0041 rwsem regression A/B\n"
         f"kernel_source_sha={SOURCE_SHA}\n"
         f"candidate_0018_source_image_sha256={KNOWN_IMAGE_SHA}\n"
-        f"candidate_0040_image_sha256={sha256(ROOT/'candidate-0041-Image')}\n"
-        f"candidate_0040_boot_sha256={sha256(ROOT/'boot.img')}\n"
+        f"candidate_0041_image_sha256={sha256(ROOT/'candidate-0041-Image')}\n"
+        f"candidate_0041_boot_sha256={sha256(ROOT/'boot.img')}\n"
         "companion_base=reconstruction/stock/stock-Image-3.09\n"
-        "mutation=Candidate0027 QGKI ABI + techpack display built as module instead of Image built-in\n"
+        "mutation=single-variable revert of Candidate0023 rwsem vendor reserve; all other Candidate0040 runtime patches retained\n"
         "fault_register_offset=0x10008\n"
         "LISA_CANDIDATE_0041_FINAL_GATE=PASS\n"
     )
