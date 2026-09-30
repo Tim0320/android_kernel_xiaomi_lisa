@@ -1385,33 +1385,33 @@ def patch_ipa_pas_sync_checkpoint():
     p=KERNEL/"drivers/mtd/mtdoops.c"
     x=p.read_text()
 
-    old=(
-        "\tstruct kmsg_dumper snapshot_dump;\n"
-        "\tunsigned int snapshot_seq;\n"
-        "\tstruct mtd_info *mtd;\n"
-    )
+    old="\tunsigned int snapshot_seq;\n"
     new=(
-        "\tstruct kmsg_dumper snapshot_dump;\n"
         "\tunsigned int snapshot_seq;\n"
         "\tstruct mutex snapshot_lock;\n"
-        "\tstruct mtd_info *mtd;\n"
     )
     if x.count(old) != 1:
         raise SystemExit(f"sync checkpoint context anchor count={x.count(old)}")
     x=x.replace(old,new,1)
 
+    include_anchor="#include <linux/module.h>\n"
+    if include_anchor not in x:
+        raise SystemExit("mtdoops module include anchor missing")
+    if "#include <linux/mutex.h>\n" not in x:
+        x=x.replace(include_anchor, include_anchor+"#include <linux/mutex.h>\n", 1)
+
     old=(
         "\tif (!cxt->mtd)\n"
         "\t\treturn;\n"
         "\n"
-        "\t/* Keep the next ring slot writable before taking a snapshot. */\n"
+        "\t/* Fast-tail snapshots overwrite block2mtd directly; no 2MiB erase. */\n"
     )
     new=(
         "\tif (!cxt->mtd)\n"
         "\t\treturn;\n"
         "\n"
         "\tmutex_lock(&cxt->snapshot_lock);\n"
-        "\t/* Keep the next ring slot writable before taking a snapshot. */\n"
+        "\t/* Fast-tail snapshots overwrite block2mtd directly; no 2MiB erase. */\n"
     )
     if x.count(old) != 1:
         raise SystemExit(f"sync checkpoint snapshot lock anchor count={x.count(old)}")
@@ -1527,6 +1527,8 @@ def patch_ipa_pas_sync_checkpoint():
         "void lisa_mtdoops_checkpoint(const char *tag)",
         "LISA0043_SYNC_CHECKPOINT tag=%s",
         "EXPORT_SYMBOL_GPL(lisa_mtdoops_checkpoint);",
+        "#include <linux/mutex.h>",
+        "struct mutex snapshot_lock;",
         "mutex_init(&cxt->snapshot_lock);",
     ]
     for g in gates:
