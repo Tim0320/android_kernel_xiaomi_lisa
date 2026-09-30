@@ -93,19 +93,29 @@ jobs:
           test "$(find stock-artifact/stock-kheaders -type f -name '*.h' | wc -l)" -eq 7806
           rsync -a stock-artifact/stock-kheaders/ "$RUNNER_TEMP/stock-abi-root/"
 
-      - name: Fetch exact Candidate 0018 Image
+      - name: Fetch preserved Candidate 0018 IKCONFIG from Candidate 0040
         env:
           GH_TOKEN: ${{ github.token }}
+          C0040_ARTIFACT_ID: "11047365059"
         run: |
           set -euo pipefail
-          curl -fL -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10710943414/zip" -o known-linux.zip
-          mkdir known-linux
-          unzip -q known-linux.zip -d known-linux
-          img="$(find known-linux -type f -path '*/out/arch/arm64/boot/Image' -print -quit)"
-          if [ -z "$img" ]; then img="$(find known-linux -type f -name Image -print -quit)"; fi
-          test -n "$img"
-          cp "$img" candidate-0018-Image
-          test "$(sha256sum candidate-0018-Image | awk '{print $1}')" = "492b0b3910d1425cf434ec946851de73d40003f14adb29e695403bf5b60c2b55"
+          rm -rf c0040-evidence
+          mkdir c0040-evidence
+          curl -fL --retry 5 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/$C0040_ARTIFACT_ID/zip" \
+            -o c0040-evidence.zip
+          unzip -q c0040-evidence.zip -d c0040-evidence
+          cfg="$(find c0040-evidence -type f -name candidate-0018.ikconfig -print -quit)"
+          test -n "$cfg"
+          test -s "$cfg"
+          cp "$cfg" candidate-0018.ikconfig
+          grep -Fqx 'CONFIG_INTERCONNECT_QCOM_RPMH=y' candidate-0018.ikconfig
+          grep -Fqx 'CONFIG_MODVERSIONS=y' candidate-0018.ikconfig
+          sha256sum candidate-0018.ikconfig | tee candidate-0018.ikconfig.sha256
+          echo 'CANDIDATE_0018_IKCONFIG_PRESERVATION_GATE=PASS'
 
       - name: Validate Candidate 0041 build script
         run: python3 -m py_compile reconstruction/scripts/candidate_0041_build.py
