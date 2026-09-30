@@ -178,7 +178,7 @@ def repack():
     (ROOT/"boot.img.sha256").write_text(f"{sha256(out)}  boot.img\n")
     (ROOT/"candidate-0044-repack.txt").write_text(
         f"candidate_0044_image_sha256={sha256(kernel)}\n"
-        f"candidate_0022_image_bytes={len(kernel)}\n"
+        f"candidate_0044_image_bytes={len(kernel)}\n"
         f"stock_kernel_region_bytes={ksz}\n"
         f"kernel_zero_pad_bytes={ksz-len(kernel)}\n"
         f"candidate_0044_boot_sha256={sha256(out)}\n"
@@ -187,7 +187,7 @@ def repack():
         "changed_bytes_outside_kernel_region=0\n"
         "stock_avb0_metadata_byte_exact=1\n"
         "stock_avbf_footer_byte_exact=1\n"
-        "CANDIDATE_0022_FIXED_REGION_REPACK_GATE=PASS\n"
+        "CANDIDATE_0044_FIXED_REGION_REPACK_GATE=PASS\n"
     )
 
 def main():
@@ -270,7 +270,8 @@ def main():
     repack()
 
     manifest=(
-        "candidate=Lisa Candidate 0044 exact Candidate0022 replay control\n"        f"kernel_source_sha={SOURCE_SHA}\n"
+        "candidate=Lisa Candidate 0044 exact Candidate0022 replay control\n"
+        f"kernel_source_sha={SOURCE_SHA}\n"
         f"candidate_0018_source_image_sha256={KNOWN_IMAGE_SHA}\n"
         f"candidate_0044_image_sha256={sha256(ROOT/'candidate-0044-Image')}\n"
         f"candidate_0044_boot_sha256={sha256(ROOT/'boot.img')}\n"
