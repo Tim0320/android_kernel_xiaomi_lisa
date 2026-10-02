@@ -298,11 +298,16 @@ jobs:
           test -s candidate-0047.config
           test -s candidate-0047.ikconfig
           test -s candidate-0047-camera-build.txt
+          test -s candidate-0047-camera-selector.txt
           test -s candidate-0047-manifest.txt
           test -s kernel/out/techpack/camera/drivers/camera.o
           grep -Fq 'CANDIDATE_0047_COMMON_CAMERA_GATE=PASS' candidate-0047-camera-build.txt
+          grep -Fq 'CANDIDATE_0047_LISA_FLASH_SELECTOR_GATE=PASS' candidate-0047-camera-selector.txt
           grep -Fq 'LISA_CANDIDATE_0047_FINAL_GATE=PASS' candidate-0047-manifest.txt
-          grep -Fq 'single_variable=CONFIG_USE_COMMON_CAMERA=y' candidate-0047-camera-build.txt
+          grep -Fq 'primary_variable=CONFIG_USE_COMMON_CAMERA=y' candidate-0047-camera-build.txt
+          grep -Fq 'CANDIDATE_0047_LISA_FLASH_SELECTOR_GATE=PASS' candidate-0047-camera-selector.txt
+          grep -Fq 'pmic_flash_compatible=qcom,pm8350c-flash-led' candidate-0047-camera-selector.txt
+          grep -Fq '#if IS_REACHABLE(CONFIG_LEDS_QTI_FLASH)' kernel/techpack/camera/drivers/cam_sensor_module/cam_flash/cam_flash_dev.h
           grep -Fq 'cam_req_mgr_init' kernel/out/System.map
           grep -Fq 'cam_req_mgr_driver' kernel/out/System.map
           grep -Fq 'cam-req-mgr' candidate-0047-Image
@@ -383,6 +388,7 @@ jobs:
             candidate-0047.ikconfig
             candidate-0047.config
             candidate-0047-camera-build.txt
+            candidate-0047-camera-selector.txt
             candidate-0047-manifest.txt
             candidate-0046-Image
             candidate-0046.ikconfig
