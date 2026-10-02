@@ -1,0 +1,415 @@
+name: Build Lisa Candidate 0047 common camera request-manager repair
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0047-common-camera-request-manager.yml
+      - reconstruction/scripts/candidate_0046_build.py
+      - reconstruction/scripts/candidate_0047_build.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-candidate-0047-common-camera-request-manager
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+
+    steps:
+      - name: Checkout package baseline
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+          lfs: true
+
+      - name: Checkout exact reconstructed kernel source
+        uses: actions/checkout@v4
+        with:
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+
+      - name: Checkout exact known-good 5.4.302 runtime source
+        uses: actions/checkout@v4
+        with:
+          repository: LineageOS/android_kernel_xiaomi_sm8350
+          ref: 46af56554ec50e3ff3752858bf38eaeeb852ca0d
+          path: known-good-302
+          fetch-depth: 1
+          lfs: false
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 curl unzip git rsync kmod
+
+      - name: Install stock-era clang 11.0.2
+        run: |
+          set -euo pipefail
+          DEST="$RUNNER_TEMP/clang-r383902b1"
+          ARCHIVE="$RUNNER_TEMP/clang-r383902b1.tar.gz"
+          MIRROR="$RUNNER_TEMP/android-clang-mirror"
+          rm -rf "$DEST" "$MIRROR"
+          mkdir -p "$DEST"
+
+          if curl -L --fail --retry 5 --retry-all-errors             "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"             -o "$ARCHIVE"; then
+            echo "Using AOSP Gitiles clang-r383902b1 archive"
+            tar -xzf "$ARCHIVE" -C "$DEST"
+          else
+            echo "AOSP Gitiles unavailable; using verified GitHub mirror"
+            git clone --depth 1 --filter=blob:none --sparse --branch relay               https://github.com/Project-Kizashi/android_prebuilts_clang_host_linux-x86.git               "$MIRROR"
+            git -C "$MIRROR" sparse-checkout set clang-r383902b1
+            cp -a "$MIRROR/clang-r383902b1/." "$DEST/"
+          fi
+
+          test -x "$DEST/bin/clang"
+          grep -Fxq "11.0.2" "$DEST/AndroidVersion.txt"
+          grep -Fxq "based on r383902b1" "$DEST/AndroidVersion.txt"
+          "$DEST/bin/clang" --version | tee clang-version.txt
+          grep -Fq "clang version 11.0.2" clang-version.txt
+          grep -Fq "based on r383902b1" "$DEST/AndroidVersion.txt"
+
+      - name: Download exact stock IKHEADERS
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_KHEADERS_ARTIFACT_ID: "10637733529"
+        run: |
+          set -euo pipefail
+          rm -rf stock-artifact "$RUNNER_TEMP/stock-abi-root"
+          mkdir -p stock-artifact "$RUNNER_TEMP/stock-abi-root"
+          curl -fL --retry 5 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${STOCK_KHEADERS_ARTIFACT_ID}/zip" \
+            -o stock-kheaders.zip
+          unzip -q stock-kheaders.zip -d stock-artifact
+          test -d stock-artifact/stock-kheaders
+          test "$(find stock-artifact/stock-kheaders -type f -name '*.h' | wc -l)" -eq 7806
+          rsync -a stock-artifact/stock-kheaders/ "$RUNNER_TEMP/stock-abi-root/"
+
+      - name: Fetch preserved Candidate 0018 IKCONFIG from Candidate 0040
+        env:
+          GH_TOKEN: ${{ github.token }}
+          C0040_ARTIFACT_ID: "11047365059"
+        run: |
+          set -euo pipefail
+          rm -rf c0040-evidence
+          mkdir c0040-evidence
+          curl -fL --retry 5 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/$C0040_ARTIFACT_ID/zip" \
+            -o c0040-evidence.zip
+          unzip -q c0040-evidence.zip -d c0040-evidence
+          cfg="$(find c0040-evidence -type f -name candidate-0018.ikconfig -print -quit)"
+          test -n "$cfg"
+          test -s "$cfg"
+          cp "$cfg" candidate-0018.ikconfig
+          grep -Fqx 'CONFIG_INTERCONNECT_QCOM_RPMH=y' candidate-0018.ikconfig
+          grep -Fqx 'CONFIG_MODVERSIONS=y' candidate-0018.ikconfig
+          sha256sum candidate-0018.ikconfig | tee candidate-0018.ikconfig.sha256
+          echo 'CANDIDATE_0018_IKCONFIG_PRESERVATION_GATE=PASS'
+
+      - name: Validate Candidate 0047 build scripts
+        run: |
+          python3 -m py_compile reconstruction/scripts/candidate_0046_build.py
+          python3 -m py_compile reconstruction/scripts/candidate_0047_build.py
+
+      - name: Build and package Candidate 0047
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: python3 reconstruction/scripts/candidate_0047_build.py
+
+      - name: Download exact stock msm_drm import oracle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VENDOR_BOOT_ARTIFACT_ID: "10648361196"
+        run: |
+          set -euo pipefail
+          rm -rf vendor-abi-oracle
+          mkdir -p vendor-abi-oracle
+          curl -fL --retry 5 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${VENDOR_BOOT_ARTIFACT_ID}/zip" \
+            -o vendor-abi-oracle.zip
+          unzip -q vendor-abi-oracle.zip -d vendor-abi-oracle
+          imports="$(find vendor-abi-oracle -type f -name stock-vendor-boot-module-imports.tsv -print -quit)"
+          summary="$(find vendor-abi-oracle -type f -name stock-vendor-boot-module-summary.tsv -print -quit)"
+          test -n "$imports"
+          test -n "$summary"
+          cp "$imports" stock-msm-drm-imports.tsv
+          cp "$summary" stock-msm-drm-summary.tsv
+
+      - name: Enforce stock msm_drm 736-import ABI
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          summary=Path("stock-msm-drm-summary.tsv").read_text(errors="replace").splitlines()
+          rows=[r.split("\t") for r in summary if r.endswith("\tOK") and "/lib/modules/msm_drm.ko\t" in r]
+          if len(rows) != 1:
+              raise SystemExit(f"expected one stock msm_drm summary row, got {len(rows)}")
+          module,machine,vermagic,layout,count,status=rows[0][:6]
+          if layout.lower() != "0xba39cbb8":
+              raise SystemExit(f"stock oracle layout changed: {layout}")
+          if int(count) != 736:
+              raise SystemExit(f"stock oracle import count changed: {count}")
+
+          required={}
+          for raw in Path("stock-msm-drm-imports.tsv").read_text(errors="replace").splitlines():
+              p=raw.split("\t")
+              if len(p)>=5 and p[0].endswith("/lib/modules/msm_drm.ko"):
+                  required[p[3]]=int(p[4],16)
+
+          current={}
+          for raw in Path("kernel/out/Module.symvers").read_text(errors="replace").splitlines():
+              p=raw.split()
+              if len(p)>=3:
+                  try: current[p[1]]=int(p[0],16)
+                  except ValueError: pass
+
+          mismatches=[]
+          missing=[]
+          for sym,exp in sorted(required.items()):
+              got=current.get(sym)
+              if got is None:
+                  missing.append((sym,exp))
+              elif got != exp:
+                  mismatches.append((sym,exp,got))
+
+          ml=current.get("module_layout")
+          lines=[
+              f"stock_module_layout=0xba39cbb8",
+              f"candidate_module_layout={('0x%08x'%ml) if ml is not None else '<missing>'}",
+              f"stock_imports={len(required)}",
+              f"mismatches={len(mismatches)}",
+              f"missing={len(missing)}",
+          ]
+          for sym,exp,got in mismatches[:100]:
+              lines.append(f"MISMATCH {sym} stock=0x{exp:08x} candidate=0x{got:08x}")
+          for sym,exp in missing[:100]:
+              lines.append(f"MISSING {sym} stock=0x{exp:08x}")
+          Path("candidate-0046-msm-drm-abi.txt").write_text("\n".join(lines)+"\n")
+          print("\n".join(lines[:5]))
+
+          if ml != 0xba39cbb8:
+              raise SystemExit(f"module_layout mismatch: {ml}")
+          if len(required) != 736 or mismatches or missing:
+              raise SystemExit(
+                  f"msm_drm ABI failed imports={len(required)} mismatches={len(mismatches)} missing={len(missing)}"
+              )
+          print("CANDIDATE_0046_MSM_DRM_736_GATE=PASS")
+          PY
+
+      - name: Verify Candidate 0046 display ownership
+        run: |
+          set -euo pipefail
+          MOD=kernel/out/techpack/display/msm/msm_drm.ko
+          ORDER=kernel/out/techpack/display/msm/modules.order
+          BUILTIN=kernel/out/techpack/display/msm/built-in.a
+
+          test -s "$MOD"
+          test -s "$ORDER"
+          grep -Fq 'export CONFIG_DISPLAY_BUILD=m' kernel/techpack/display/config/lahainadisp.conf
+          grep -Fq 'techpack/display/msm/msm_drm.ko' "$ORDER"
+
+          modname="$(modinfo -F name "$MOD")"
+          vermagic="$(modinfo -F vermagic "$MOD")"
+          test "$modname" = "msm_drm"
+
+          built_in_has_msm_drm=0
+          if [ -f "$BUILTIN" ]; then
+            if ar t "$BUILTIN" 2>/dev/null | grep -Fq 'msm_drm.o'; then
+              built_in_has_msm_drm=1
+            fi
+          fi
+          test "$built_in_has_msm_drm" -eq 0
+
+          {
+            echo 'display_build=module'
+            echo "module_name=$modname"
+            echo "module_vermagic=$vermagic"
+            echo 'modules_order_entry=present'
+            echo 'built_in_msm_drm_object=absent'
+            echo 'CANDIDATE_0046_DISPLAY_OWNERSHIP_GATE=PASS'
+          } > candidate-0046-display-ownership.txt
+          cat candidate-0046-display-ownership.txt
+
+      - name: Verify Candidate 0046 IPA PAS synchronous checkpoints
+        run: |
+          set -euo pipefail
+          test -s candidate-0046-ipa-pil-trace.txt
+          test -s candidate-0046-ipa-pas-shmbridge.txt
+          test -s candidate-0046-ipa-pas-sync-checkpoint.txt
+          grep -Fq 'CANDIDATE_0046_IPA_PIL_TRACE_GATE=PASS' candidate-0046-ipa-pil-trace.txt
+          grep -Fq 'CANDIDATE_0046_IPA_PAS_SHMBRIDGE_GATE=PASS' candidate-0046-ipa-pas-shmbridge.txt
+          grep -Fq 'CANDIDATE_0046_IPA_PAS_SYNC_GATE=PASS' candidate-0046-ipa-pas-sync-checkpoint.txt
+          test -s candidate-0046-ipa-pas-sync-checkpoint.txt
+          grep -Fq 'CANDIDATE_0046_IPA_PAS_SYNC_GATE=PASS' candidate-0046-ipa-pas-sync-checkpoint.txt
+          grep -Fq 'void lisa_mtdoops_checkpoint(const char *tag)' kernel/drivers/mtd/mtdoops.c
+          grep -Fq 'LISA0046_SYNC_CHECKPOINT tag=%s' kernel/drivers/mtd/mtdoops.c
+          grep -Fq 'lisa_mtdoops_checkpoint("ipa_before_pas_auth_reset");' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'lisa_mtdoops_checkpoint("ipa_after_pas_auth_reset");' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq '#include <linux/qtee_shmbridge.h>' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'd->pas_id == 0x0f' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'qtee_shmbridge_is_enabled()' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'qtee_shmbridge_query(d->lisa_ipa_fw_addr)' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'qtee_shmbridge_register(d->lisa_ipa_fw_addr' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'VMID_HLOS' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'PERM_READ | PERM_WRITE' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'lisa_mtdoops_checkpoint("ipa_before_shmbridge");' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'lisa_mtdoops_checkpoint("ipa_after_shmbridge");' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'qtee_shmbridge_deregister(shm_handle)' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          test -s candidate-0046-ipa-pas-shmbridge.txt
+          grep -Fq 'CANDIDATE_0046_IPA_PAS_SHMBRIDGE_GATE=PASS' candidate-0046-ipa-pas-shmbridge.txt
+
+          grep -Fq 'LISA0046_IPA_PIL stage=segments_loaded' kernel/drivers/soc/qcom/peripheral-loader.c
+          grep -Fq 'LISA0046_IPA_PIL stage=before_notify' kernel/drivers/soc/qcom/peripheral-loader.c
+          grep -Fq 'LISA0046_IPA_PIL stage=after_notify' kernel/drivers/soc/qcom/peripheral-loader.c
+          grep -Fq 'LISA0046_IPA_PIL stage=before_auth_reset' kernel/drivers/soc/qcom/peripheral-loader.c
+          grep -Fq 'LISA0046_IPA_PIL stage=after_auth_reset' kernel/drivers/soc/qcom/peripheral-loader.c
+
+          grep -Fq 'LISA0046_IPA_SCM stage=entry' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=after_bw' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=after_regulators' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=after_clocks' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=before_pas_auth_reset' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=after_pas_auth_reset' kernel/drivers/soc/qcom/subsys-pil-tz.c
+
+          grep -Fq 'ANDROID_VENDOR_DATA(1);' kernel/include/linux/rwsem.h
+          grep -Fq '#include <linux/android_vendor.h>' kernel/include/linux/rwsem.h
+          echo 'CANDIDATE_0046_IPA_TRACE_SOURCE_STATE=PASS'
+
+      - name: Verify Candidate 0047 common camera request manager
+        run: |
+          set -euo pipefail
+          test -s candidate-0047-Image
+          test -s candidate-0047.config
+          test -s candidate-0047.ikconfig
+          test -s candidate-0047-camera-build.txt
+          test -s candidate-0047-manifest.txt
+          test -s kernel/out/techpack/camera/drivers/camera.o
+          grep -Fq 'CANDIDATE_0047_COMMON_CAMERA_GATE=PASS' candidate-0047-camera-build.txt
+          grep -Fq 'LISA_CANDIDATE_0047_FINAL_GATE=PASS' candidate-0047-manifest.txt
+          grep -Fq 'single_variable=CONFIG_USE_COMMON_CAMERA=y' candidate-0047-camera-build.txt
+          grep -Fq 'cam_req_mgr_init' kernel/out/System.map
+          grep -Fq 'cam_req_mgr_driver' kernel/out/System.map
+          grep -Fq 'cam-req-mgr' candidate-0047-Image
+          echo 'LISA_CANDIDATE_0047_CAMERA_RUNTIME_SURFACE_GATE=PASS'
+
+      - name: Final Candidate 0047 static gate
+        run: |
+          set -euo pipefail
+          test -s boot.img
+          test -s candidate-0046-Image
+          test -s candidate-0046-overlay.txt
+          test -s candidate-0046-layout.txt
+          test -s candidate-0046-logging.txt
+          test -s candidate-0046-devpath.txt
+          test -s candidate-0046-snapshot.txt
+          test -s candidate-0046-fast-tail.txt
+          test -s candidate-0046-restart-diagnostics.txt
+          test -s candidate-0046-watchdog-stock.txt
+          test -s candidate-0046-tz-hyp.txt
+          test -s candidate-0046-qgki.txt
+          test -s candidate-0046-msm-drm-abi.txt
+          test -s candidate-0046-display-mode.txt
+          test -s candidate-0046-display-ownership.txt
+          test -s candidate-0046-ipa-pil-trace.txt
+          test -s kernel/out/techpack/display/msm/msm_drm.ko
+          grep -Fq 'LISA_CANDIDATE_0046_FINAL_GATE=PASS' candidate-0046-manifest.txt
+          test -s candidate-0046-gpu-selector.txt
+          grep -Fq 'CANDIDATE_0046_GPU_SELECTOR_GATE=PASS' candidate-0046-gpu-selector.txt
+          grep -Fq '&adreno_gpu_core_a642.base,' kernel/drivers/gpu/msm/adreno-gpulist.h
+          grep -Fq '&adreno_gpu_core_a642l.base,' kernel/drivers/gpu/msm/adreno-gpulist.h
+          grep -Fq '&adreno_gpu_core_a643.base,' kernel/drivers/gpu/msm/adreno-gpulist.h
+          grep -Fq 'qcom,chipid = <0x06030500>;' kernel/arch/arm64/boot/dts/vendor/qcom/yupik-gpu.dtsi
+          grep -Fqx 'CONFIG_QCOM_KGSL=y' candidate-0046.config
+          grep -Fq 'changed_bytes_outside_kernel_region=0' candidate-0046-repack.txt
+          grep -Fq 'stock_ramdisk_byte_exact=1' candidate-0046-repack.txt
+          grep -Fq 'known_good_sha=46af56554ec50e3ff3752858bf38eaeeb852ca0d' candidate-0046-overlay.txt
+          grep -Fq 'CANDIDATE_0046_RWSEM_LAYOUT_GATE=PASS' candidate-0046-layout.txt
+          grep -Fq 'CANDIDATE_0046_PERSISTENT_KMSG_GATE=PASS' candidate-0046-logging.txt
+          grep -Fq 'CANDIDATE_0046_BLOCK2MTD_DEVPATH_GATE=PASS' candidate-0046-devpath.txt
+          grep -Fq 'CANDIDATE_0046_PERIODIC_KMSG_GATE=PASS' candidate-0046-snapshot.txt
+          grep -Fq 'snapshot_interval_milliseconds=10' candidate-0046-snapshot.txt
+          grep -Fq 'CANDIDATE_0046_FAST_TAIL_GATE=PASS' candidate-0046-fast-tail.txt
+          grep -Fq 'CANDIDATE_0046_RESTART_PATH_DIAG_GATE=PASS' candidate-0046-restart-diagnostics.txt
+          grep -Fq 'CANDIDATE_0046_STOCK_WATCHDOG_GATE=PASS' candidate-0046-watchdog-stock.txt
+          grep -Fq 'CANDIDATE_0046_TZ_HYP_DIAG_GATE=PASS' candidate-0046-tz-hyp.txt
+          grep -Fqx 'CONFIG_QTI_TZ_LOG=y' candidate-0046.config
+          grep -Fqx 'CONFIG_QTI_TZ_LOG=y' candidate-0046.ikconfig
+          grep -Fqx 'CONFIG_QTEE_SHM_BRIDGE=y' candidate-0046.config
+          grep -Fqx 'CONFIG_QTEE_SHM_BRIDGE=y' candidate-0046.ikconfig
+          ! grep -Fqx 'CONFIG_DEBUG_FS=y' candidate-0046.config
+          ! grep -Fqx 'CONFIG_DEBUG_FS=y' candidate-0046.ikconfig
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' candidate-0046.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' candidate-0046.config
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_BARK_TIME=20000' candidate-0046.ikconfig
+          grep -Fqx 'CONFIG_QCOM_WATCHDOG_PET_TIME=15000' candidate-0046.ikconfig
+          grep -Fq 'CANDIDATE_0046_QGKI_ABI_PATCH_GATE=PASS' candidate-0046-qgki.txt
+          grep -Fq 'candidate_module_layout=0xba39cbb8' candidate-0046-msm-drm-abi.txt
+          grep -Fq 'mismatches=0' candidate-0046-msm-drm-abi.txt
+          grep -Fq 'missing=0' candidate-0046-msm-drm-abi.txt
+          grep -Fq 'CANDIDATE_0046_DISPLAY_MODULE_MODE_GATE=PASS' candidate-0046-display-mode.txt
+          grep -Fq 'CANDIDATE_0046_DISPLAY_OWNERSHIP_GATE=PASS' candidate-0046-display-ownership.txt
+          grep -Fq 'CANDIDATE_0046_IPA_PIL_TRACE_GATE=PASS' candidate-0046-ipa-pil-trace.txt
+          grep -Fq 'LISA_CANDIDATE_0047_FINAL_GATE=PASS' candidate-0047-manifest.txt
+          grep -Fq 'CANDIDATE_0047_COMMON_CAMERA_GATE=PASS' candidate-0047-camera-build.txt
+          echo 'LISA_CANDIDATE_0047_ARTIFACT_GATE=PASS'
+
+      - name: Upload Candidate 0047
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0047-common-camera-request-manager
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0047-Image
+            candidate-0047.ikconfig
+            candidate-0047.config
+            candidate-0047-camera-build.txt
+            candidate-0047-manifest.txt
+            candidate-0046-Image
+            candidate-0046.ikconfig
+            candidate-0046.config
+            candidate-0046-repack.txt
+            candidate-0046-root-cause.txt
+            candidate-0046-manifest.txt
+            candidate-0046-gpu-selector.txt
+            candidate-0046-overlay.txt
+            candidate-0046-layout.txt
+            candidate-0046-logging.txt
+            candidate-0046-devpath.txt
+            candidate-0046-snapshot.txt
+            candidate-0046-fast-tail.txt
+            candidate-0046-restart-diagnostics.txt
+            candidate-0046-watchdog-stock.txt
+            candidate-0046-tz-hyp.txt
+            candidate-0046-qgki.txt
+            candidate-0046-msm-drm-abi.txt
+            candidate-0046-display-mode.txt
+            candidate-0046-display-ownership.txt
+            candidate-0046-ipa-pil-trace.txt
+            candidate-0046-ipa-pas-sync-checkpoint.txt
+            candidate-0046-ipa-pas-shmbridge.txt
+            kernel/out/techpack/camera/drivers/camera.o
+            kernel/out/System.map
+            kernel/out/Module.symvers
+            kernel/out/techpack/display/msm/msm_drm.ko
+            candidate-0018.ikconfig
+            clang-version.txt
