@@ -32,6 +32,38 @@ spec = importlib.util.spec_from_file_location("candidate0046_base", BASE)
 base = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(base)
 
+def promote_lisa_qti_flash_builtin():
+    cfg_path = ROOT / "candidate-0018.ikconfig"
+    if not cfg_path.is_file() or cfg_path.stat().st_size == 0:
+        raise SystemExit("Candidate0047 preserved Candidate0018 IKCONFIG missing")
+
+    original = cfg_path.read_bytes()
+    cfg = original.decode("utf-8", "replace")
+
+    for dep in ["CONFIG_LEDS_CLASS_FLASH=y\n", "CONFIG_MFD_SPMI_PMIC=y\n"]:
+        if dep not in cfg:
+            raise SystemExit(f"Candidate0047 QTI flash built-in dependency missing: {dep.strip()}")
+
+    if "CONFIG_LEDS_QTI_FLASH=m\n" in cfg:
+        stock_state = "m"
+        cfg = cfg.replace("CONFIG_LEDS_QTI_FLASH=m\n", "CONFIG_LEDS_QTI_FLASH=y\n", 1)
+    elif "CONFIG_LEDS_QTI_FLASH=y\n" in cfg:
+        stock_state = "y"
+    else:
+        raise SystemExit("Candidate0047 CONFIG_LEDS_QTI_FLASH is neither m nor y in preserved config")
+
+    cfg_path.write_text(cfg)
+    (ROOT / "candidate-0047-flash-linkage.txt").write_text(
+        f"stock_CONFIG_LEDS_QTI_FLASH={stock_state}\n"
+        "effective_CONFIG_LEDS_QTI_FLASH=y\n"
+        "camera_linkage=built-in\n"
+        "reason=IS_REACHABLE(CONFIG_LEDS_QTI_FLASH) is false for a built-in camera caller when QTI flash is modular; "
+        "cam_flash_core also compiles QTI APIs under IS_ENABLED, so the provider must be built-in for a valid direct dependency\n"
+        "original_candidate0018_restored_after_build=1\n"
+        "CANDIDATE_0047_QTI_FLASH_LINKAGE_GATE=PASS\n"
+    )
+    return original
+
 def patch_lisa_camera_flash_selector():
     dev_h = KERNEL / "techpack/camera/drivers/cam_sensor_module/cam_flash/cam_flash_dev.h"
     core_c = KERNEL / "techpack/camera/drivers/cam_sensor_module/cam_flash/cam_flash_core.c"
@@ -93,8 +125,12 @@ def patch_lisa_camera_flash_selector():
         "CANDIDATE_0047_LISA_FLASH_SELECTOR_GATE=PASS\n"
     )
 
+original_candidate0018 = promote_lisa_qti_flash_builtin()
 patch_lisa_camera_flash_selector()
-base.main()
+try:
+    base.main()
+finally:
+    (ROOT / "candidate-0018.ikconfig").write_bytes(original_candidate0018)
 
 camera_obj = OUT / "techpack/camera/drivers/camera.o"
 system_map = OUT / "System.map"
@@ -104,9 +140,10 @@ if not system_map.is_file():
     raise SystemExit("Candidate0047 System.map missing")
 
 sm = system_map.read_text(errors="replace")
-for sym in ["cam_req_mgr_init", "cam_req_mgr_driver"]:
+for sym in ["cam_req_mgr_init", "cam_req_mgr_driver",
+            "qti_flash_led_prepare", "qti_flash_led_set_param"]:
     if sym not in sm:
-        raise SystemExit(f"Candidate0047 built-in camera symbol missing: {sym}")
+        raise SystemExit(f"Candidate0047 required built-in symbol missing: {sym}")
 
 src_img = ROOT / "candidate-0046-Image"
 src_cfg = ROOT / "candidate-0046.config"
@@ -114,6 +151,9 @@ src_ik = ROOT / "candidate-0046.ikconfig"
 for p in [src_img, src_cfg, src_ik, ROOT / "boot.img"]:
     if not p.is_file() or p.stat().st_size == 0:
         raise SystemExit(f"Candidate0047 required output missing: {p.name}")
+for p in [src_cfg, src_ik]:
+    if "CONFIG_LEDS_QTI_FLASH=y\n" not in p.read_text(errors="replace"):
+        raise SystemExit(f"Candidate0047 QTI flash was not built-in in {p.name}")
 
 dst_img = ROOT / "candidate-0047-Image"
 dst_cfg = ROOT / "candidate-0047.config"
@@ -125,7 +165,7 @@ shutil.copy2(src_ik, dst_ik)
 camera_info = (
     "baseline=Candidate0046 A642L GPU selector repair\n"
     "primary_variable=CONFIG_USE_COMMON_CAMERA=y exported into Candidate0046 make environment\n"
-    "source_mutation_relative_to_candidate0046=Lisa PM8350C QTI-over-QPNP camera flash selector only\n"
+    "source_mutation_relative_to_candidate0046=CONFIG_LEDS_QTI_FLASH m-to-y promotion + Lisa PM8350C QTI-over-QPNP selector\n"
     "reason=donor techpack/camera/Makefile wraps the entire camera tree in ifdef CONFIG_USE_COMMON_CAMERA\n"
     "candidate0046_config_fact=CONFIG_ARCH_LAHAINA=y CONFIG_ARCH_YUPIK=y CONFIG_QGKI=y but CONFIG_USE_COMMON_CAMERA absent\n"
     "runtime_evidence=CamX CSLInitializeHW failed to acquire requestManager and camera provider SIGABRT looped\n"
@@ -133,6 +173,9 @@ camera_info = (
     "cam_req_mgr_init_in_system_map=1\n"
     "cam_req_mgr_driver_in_system_map=1\n"
     "camera_linkage=built-in via donor CONFIG_SPECTRA_CAMERA=y\n"
+    "qti_flash_linkage=built-in so camera IS_REACHABLE dependency is valid\n"
+    "qti_flash_prepare_in_system_map=1\n"
+    "qti_flash_set_param_in_system_map=1\n"
     "CANDIDATE_0047_COMMON_CAMERA_GATE=PASS\n"
 )
 (ROOT / "candidate-0047-camera-build.txt").write_text(camera_info)
@@ -142,8 +185,8 @@ manifest = (
     "baseline=Candidate0046\n"
     f"candidate_0047_image_sha256={sha256(dst_img)}\n"
     f"candidate_0047_boot_sha256={sha256(ROOT / 'boot.img')}\n"
-    "mutation=CONFIG_USE_COMMON_CAMERA=y + Lisa PM8350C QTI camera flash selector\n"
-    "kernel_source_mutation_relative_to_candidate0046=camera flash selector only\n"
+    "mutation=CONFIG_USE_COMMON_CAMERA=y + CONFIG_LEDS_QTI_FLASH=y + Lisa PM8350C QTI camera flash selector\n"
+    "kernel_source_mutation_relative_to_candidate0046=camera flash selector + QTI flash linkage promotion\n"
     "retained=Candidate0046 A642L GPU selector + current IPA SHMBridge guard/diagnostics\n"
     "focus=restore built-in Qualcomm camera request manager so CamX can acquire requestManager\n"
     "LISA_CANDIDATE_0047_FINAL_GATE=PASS\n"
