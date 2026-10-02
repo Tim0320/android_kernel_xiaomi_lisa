@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     paths:
-      - .github/workflows/build-lisa-candidate-0046-ipa-pas-shmbridge-ab.yml
+      - .github/workflows/build-lisa-candidate-0046-a642l-gpu-selector.yml
       - reconstruction/scripts/candidate_0046_build.py
 
 permissions:
@@ -13,7 +13,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: lisa-candidate-0046-ipa-pas-shmbridge-ab
+  group: lisa-candidate-0046-a642l-gpu-selector
   cancel-in-progress: true
 
 jobs:
@@ -255,7 +255,7 @@ jobs:
           test -s candidate-0046-ipa-pas-sync-checkpoint.txt
           grep -Fq 'CANDIDATE_0046_IPA_PAS_SYNC_GATE=PASS' candidate-0046-ipa-pas-sync-checkpoint.txt
           grep -Fq 'void lisa_mtdoops_checkpoint(const char *tag)' kernel/drivers/mtd/mtdoops.c
-          grep -Fq 'LISA0045_SYNC_CHECKPOINT tag=%s' kernel/drivers/mtd/mtdoops.c
+          grep -Fq 'LISA0046_SYNC_CHECKPOINT tag=%s' kernel/drivers/mtd/mtdoops.c
           grep -Fq 'lisa_mtdoops_checkpoint("ipa_before_pas_auth_reset");' kernel/drivers/soc/qcom/subsys-pil-tz.c
           grep -Fq 'lisa_mtdoops_checkpoint("ipa_after_pas_auth_reset");' kernel/drivers/soc/qcom/subsys-pil-tz.c
           grep -Fq '#include <linux/qtee_shmbridge.h>' kernel/drivers/soc/qcom/subsys-pil-tz.c
@@ -271,18 +271,18 @@ jobs:
           test -s candidate-0046-ipa-pas-shmbridge.txt
           grep -Fq 'CANDIDATE_0046_IPA_PAS_SHMBRIDGE_GATE=PASS' candidate-0046-ipa-pas-shmbridge.txt
 
-          grep -Fq 'LISA0045_IPA_PIL stage=segments_loaded' kernel/drivers/soc/qcom/peripheral-loader.c
-          grep -Fq 'LISA0045_IPA_PIL stage=before_notify' kernel/drivers/soc/qcom/peripheral-loader.c
-          grep -Fq 'LISA0045_IPA_PIL stage=after_notify' kernel/drivers/soc/qcom/peripheral-loader.c
-          grep -Fq 'LISA0045_IPA_PIL stage=before_auth_reset' kernel/drivers/soc/qcom/peripheral-loader.c
-          grep -Fq 'LISA0045_IPA_PIL stage=after_auth_reset' kernel/drivers/soc/qcom/peripheral-loader.c
+          grep -Fq 'LISA0046_IPA_PIL stage=segments_loaded' kernel/drivers/soc/qcom/peripheral-loader.c
+          grep -Fq 'LISA0046_IPA_PIL stage=before_notify' kernel/drivers/soc/qcom/peripheral-loader.c
+          grep -Fq 'LISA0046_IPA_PIL stage=after_notify' kernel/drivers/soc/qcom/peripheral-loader.c
+          grep -Fq 'LISA0046_IPA_PIL stage=before_auth_reset' kernel/drivers/soc/qcom/peripheral-loader.c
+          grep -Fq 'LISA0046_IPA_PIL stage=after_auth_reset' kernel/drivers/soc/qcom/peripheral-loader.c
 
-          grep -Fq 'LISA0045_IPA_SCM stage=entry' kernel/drivers/soc/qcom/subsys-pil-tz.c
-          grep -Fq 'LISA0045_IPA_SCM stage=after_bw' kernel/drivers/soc/qcom/subsys-pil-tz.c
-          grep -Fq 'LISA0045_IPA_SCM stage=after_regulators' kernel/drivers/soc/qcom/subsys-pil-tz.c
-          grep -Fq 'LISA0045_IPA_SCM stage=after_clocks' kernel/drivers/soc/qcom/subsys-pil-tz.c
-          grep -Fq 'LISA0045_IPA_SCM stage=before_pas_auth_reset' kernel/drivers/soc/qcom/subsys-pil-tz.c
-          grep -Fq 'LISA0045_IPA_SCM stage=after_pas_auth_reset' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=entry' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=after_bw' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=after_regulators' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=after_clocks' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=before_pas_auth_reset' kernel/drivers/soc/qcom/subsys-pil-tz.c
+          grep -Fq 'LISA0046_IPA_SCM stage=after_pas_auth_reset' kernel/drivers/soc/qcom/subsys-pil-tz.c
 
           grep -Fq 'ANDROID_VENDOR_DATA(1);' kernel/include/linux/rwsem.h
           grep -Fq '#include <linux/android_vendor.h>' kernel/include/linux/rwsem.h
@@ -350,7 +350,7 @@ jobs:
       - name: Upload Candidate 0046
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-candidate-0046-ipa-pas-shmbridge-ab
+          name: lisa-candidate-0046-a642l-gpu-selector
           retention-days: 14
           compression-level: 1
           if-no-files-found: error
