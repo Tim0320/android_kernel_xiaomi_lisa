@@ -1,0 +1,137 @@
+name: Build Lisa Candidate0055 UFS mi-memory registry repair
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0055-ufs-registry.yml
+      - reconstruction/scripts/candidate_0055_build.py
+      - reconstruction/scripts/candidate_0055_ufs_patch.py
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lisa-candidate-0055-ufs-registry
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout exact package commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          lfs: false
+      - name: Preflight pinned recipes and Python syntax
+        run: python3 reconstruction/scripts/candidate_0055_build.py preflight
+      - name: Materialize stock LFS inputs
+        run: git lfs pull
+      - name: Checkout exact reconstructed kernel source
+        uses: actions/checkout@v4
+        with:
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+      - name: Checkout exact reference runtime source
+        uses: actions/checkout@v4
+        with:
+          repository: LineageOS/android_kernel_xiaomi_sm8350
+          ref: 46af56554ec50e3ff3752858bf38eaeeb852ca0d
+          path: known-good-302
+          fetch-depth: 1
+          lfs: false
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python3-yaml curl unzip git rsync kmod
+      - name: Prepare pinned compiler and stock oracles
+        run: python3 reconstruction/scripts/candidate_0055_build.py prepare
+      - name: Build and package Candidate0055
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
+        run: python3 reconstruction/scripts/candidate_0055_build.py build
+      - name: Verify inherited gates and compiled UFS LUN0 hook
+        run: python3 reconstruction/scripts/candidate_0055_build.py verify
+      - name: Upload verified Candidate0055 boot and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0055-ufs-registry
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0055-*
+            candidate-0055.config
+            candidate-0055.ikconfig
+            candidate-0046-*.txt
+            kernel/out/System.map
+            kernel/out/Module.symvers
+            kernel/out/techpack/display/msm/msm_drm.ko
+            clang-version.txt
+      - name: Upload failure evidence only
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0055-failure-evidence
+          retention-days: 14
+          if-no-files-found: ignore
+          path: |
+            candidate-0055-checks/
+            candidate-0055-resolved-builder.py
+            candidate-0055-*.txt
+            candidate-0055-ufs-bridge.patch
+            kernel/out/.config
+  observe:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 200
+    steps:
+      - name: Check at 2 minutes, 2 minutes, then every 5 minutes
+        uses: actions/github-script@v7
+        with:
+          script: |
+            let check = 0;
+            while (true) {
+              const delay = check < 2 ? 120000 : 300000;
+              await new Promise(resolve => setTimeout(resolve, delay));
+              check += 1;
+              let jobs;
+              try {
+                jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                  ...context.repo, run_id: context.runId, filter: 'latest', per_page: 100
+                });
+              } catch (error) {
+                core.warning(`Check ${check}: API unavailable: ${error.message}`);
+                continue;
+              }
+              const build = jobs.find(job => job.name === 'build');
+              core.info(`Check ${check}: build=${build?.status || 'not-listed'} conclusion=${build?.conclusion || 'pending'}`);
+              if (!build || build.status !== 'completed') continue;
+              if (build.conclusion !== 'success') {
+                const first = (build.steps || []).find(step => step.conclusion === 'failure');
+                core.setFailed(`Build ended ${build.conclusion}; first failed step: ${first?.name || 'see build job'}`);
+                break;
+              }
+              let artifacts;
+              try {
+                artifacts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts, {
+                  ...context.repo, run_id: context.runId, per_page: 100
+                });
+              } catch (error) {
+                core.warning(`Check ${check}: artifact API unavailable: ${error.message}`);
+                continue;
+              }
+              const artifact = artifacts.find(item => item.name === 'lisa-candidate-0055-ufs-registry' && !item.expired && item.size_in_bytes > 0);
+              if (!artifact) {
+                core.setFailed('Build succeeded but verified boot artifact is missing');
+              } else {
+                core.info(`Verified build/upload finished: artifact ${artifact.id}, ${artifact.size_in_bytes} bytes`);
+                await core.summary.addHeading('Candidate0055 artifact ready').addRaw(`Run ${context.runId}; checks ${check}; artifact ${artifact.id}. Static validation is not a device-boot pass.`).write();
+              }
+              break;
+            }
