@@ -142,10 +142,13 @@ try:
 finally:
     (ROOT / "candidate-0018.ikconfig").write_bytes(original_candidate0018)
 
-camera_obj = OUT / "techpack/camera/drivers/camera.o"
+camera_archive = OUT / "techpack/camera/drivers/built-in.a"
+request_mgr_obj = OUT / "techpack/camera/drivers/cam_req_mgr/cam_req_mgr_dev.o"
 system_map = OUT / "System.map"
-if not camera_obj.is_file() or camera_obj.stat().st_size == 0:
-    raise SystemExit("Candidate0047 camera.o missing: common camera build did not activate")
+if not camera_archive.is_file() or camera_archive.stat().st_size == 0:
+    raise SystemExit("Candidate0047 camera built-in archive missing: common camera build did not activate")
+if not request_mgr_obj.is_file() or request_mgr_obj.stat().st_size == 0:
+    raise SystemExit("Candidate0047 cam_req_mgr_dev.o missing: request-manager sources were not compiled")
 if not system_map.is_file():
     raise SystemExit("Candidate0047 System.map missing")
 
@@ -183,7 +186,8 @@ camera_info = (
     "reason=donor techpack/camera/Makefile wraps the entire camera tree in ifdef CONFIG_USE_COMMON_CAMERA\n"
     "candidate0046_config_fact=CONFIG_ARCH_LAHAINA=y CONFIG_ARCH_YUPIK=y CONFIG_QGKI=y but CONFIG_USE_COMMON_CAMERA absent\n"
     "runtime_evidence=CamX CSLInitializeHW failed to acquire requestManager and camera provider SIGABRT looped\n"
-    f"camera_object_bytes={camera_obj.stat().st_size}\n"
+    f"camera_builtin_archive_bytes={camera_archive.stat().st_size}\n"
+    f"cam_req_mgr_dev_object_bytes={request_mgr_obj.stat().st_size}\n"
     "cam_req_mgr_init_in_system_map=1\n"
     "cam_req_mgr_driver_in_system_map=1\n"
     "camera_linkage=built-in via donor CONFIG_SPECTRA_CAMERA=y\n"
