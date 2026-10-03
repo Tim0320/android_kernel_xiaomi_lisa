@@ -649,7 +649,8 @@ manifest = (
     "retained=Candidate0050 proc_create ABI repair + PAS metadata lifetime + camera + Candidate0046 GPU/display/repack/diagnostics\n"
     "focus=repair remote-subsystem memory extent contract before PAS auth/reset\n"
     "LISA_CANDIDATE_0052_FINAL_GATE=PASS\n"
-)meta_gate = ROOT / "candidate-0052-ipa-metadata-dma-retention.txt"
+)
+meta_gate = ROOT / "candidate-0052-ipa-metadata-dma-retention.txt"
 if not meta_gate.is_file() or "CANDIDATE_0052_IPA_METADATA_DMA_RETENTION_GATE=PASS" not in meta_gate.read_text():
     raise SystemExit("Candidate0052 IPA DMA metadata retention gate missing")
 
