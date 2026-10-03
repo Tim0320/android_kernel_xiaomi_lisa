@@ -32,7 +32,7 @@ spec = importlib.util.spec_from_file_location("candidate0046_base", BASE)
 base = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(base)
 
-def promote_lisa_qti_flash_builtin():
+def promote_lisa_camera_runtime_deps_builtin():
     cfg_path = ROOT / "candidate-0018.ikconfig"
     if not cfg_path.is_file() or cfg_path.stat().st_size == 0:
         raise SystemExit("Candidate0047 preserved Candidate0018 IKCONFIG missing")
@@ -45,22 +45,32 @@ def promote_lisa_qti_flash_builtin():
             raise SystemExit(f"Candidate0047 QTI flash built-in dependency missing: {dep.strip()}")
 
     if "CONFIG_LEDS_QTI_FLASH=m\n" in cfg:
-        stock_state = "m"
+        flash_stock_state = "m"
         cfg = cfg.replace("CONFIG_LEDS_QTI_FLASH=m\n", "CONFIG_LEDS_QTI_FLASH=y\n", 1)
     elif "CONFIG_LEDS_QTI_FLASH=y\n" in cfg:
-        stock_state = "y"
+        flash_stock_state = "y"
     else:
         raise SystemExit("Candidate0047 CONFIG_LEDS_QTI_FLASH is neither m nor y in preserved config")
 
+    if "CONFIG_MI_HARDWARE_ID=m\n" in cfg:
+        hwid_stock_state = "m"
+        cfg = cfg.replace("CONFIG_MI_HARDWARE_ID=m\n", "CONFIG_MI_HARDWARE_ID=y\n", 1)
+    elif "CONFIG_MI_HARDWARE_ID=y\n" in cfg:
+        hwid_stock_state = "y"
+    else:
+        raise SystemExit("Candidate0047 CONFIG_MI_HARDWARE_ID is neither m nor y in preserved config")
+
     cfg_path.write_text(cfg)
-    (ROOT / "candidate-0047-flash-linkage.txt").write_text(
-        f"stock_CONFIG_LEDS_QTI_FLASH={stock_state}\n"
+    (ROOT / "candidate-0047-camera-deps-linkage.txt").write_text(
+        f"stock_CONFIG_LEDS_QTI_FLASH={flash_stock_state}\n"
         "effective_CONFIG_LEDS_QTI_FLASH=y\n"
+        f"stock_CONFIG_MI_HARDWARE_ID={hwid_stock_state}\n"
+        "effective_CONFIG_MI_HARDWARE_ID=y\n"
         "camera_linkage=built-in\n"
-        "reason=IS_REACHABLE(CONFIG_LEDS_QTI_FLASH) is false for a built-in camera caller when QTI flash is modular; "
-        "cam_flash_core also compiles QTI APIs under IS_ENABLED, so the provider must be built-in for a valid direct dependency\n"
+        "reason_qti_flash=built-in camera cannot directly depend on modular QTI flash through IS_REACHABLE/IS_ENABLED mixed guards\n"
+        "reason_hwid=built-in camera directly calls get_hw_version_platform from drivers/misc/hwid.c, so MI_HARDWARE_ID must be built-in too\n"
         "original_candidate0018_restored_after_build=1\n"
-        "CANDIDATE_0047_QTI_FLASH_LINKAGE_GATE=PASS\n"
+        "CANDIDATE_0047_CAMERA_DEPS_LINKAGE_GATE=PASS\n"
     )
     return original
 
@@ -125,7 +135,7 @@ def patch_lisa_camera_flash_selector():
         "CANDIDATE_0047_LISA_FLASH_SELECTOR_GATE=PASS\n"
     )
 
-original_candidate0018 = promote_lisa_qti_flash_builtin()
+original_candidate0018 = promote_lisa_camera_runtime_deps_builtin()
 patch_lisa_camera_flash_selector()
 try:
     base.main()
@@ -141,7 +151,8 @@ if not system_map.is_file():
 
 sm = system_map.read_text(errors="replace")
 for sym in ["cam_req_mgr_init", "cam_req_mgr_driver",
-            "qti_flash_led_prepare", "qti_flash_led_set_param"]:
+            "qti_flash_led_prepare", "qti_flash_led_set_param",
+            "get_hw_version_platform"]:
     if sym not in sm:
         raise SystemExit(f"Candidate0047 required built-in symbol missing: {sym}")
 
@@ -152,8 +163,11 @@ for p in [src_img, src_cfg, src_ik, ROOT / "boot.img"]:
     if not p.is_file() or p.stat().st_size == 0:
         raise SystemExit(f"Candidate0047 required output missing: {p.name}")
 for p in [src_cfg, src_ik]:
-    if "CONFIG_LEDS_QTI_FLASH=y\n" not in p.read_text(errors="replace"):
+    config_text = p.read_text(errors="replace")
+    if "CONFIG_LEDS_QTI_FLASH=y\n" not in config_text:
         raise SystemExit(f"Candidate0047 QTI flash was not built-in in {p.name}")
+    if "CONFIG_MI_HARDWARE_ID=y\n" not in config_text:
+        raise SystemExit(f"Candidate0047 Xiaomi HWID was not built-in in {p.name}")
 
 dst_img = ROOT / "candidate-0047-Image"
 dst_cfg = ROOT / "candidate-0047.config"
@@ -165,7 +179,7 @@ shutil.copy2(src_ik, dst_ik)
 camera_info = (
     "baseline=Candidate0046 A642L GPU selector repair\n"
     "primary_variable=CONFIG_USE_COMMON_CAMERA=y exported into Candidate0046 make environment\n"
-    "source_mutation_relative_to_candidate0046=CONFIG_LEDS_QTI_FLASH m-to-y promotion + Lisa PM8350C QTI-over-QPNP selector\n"
+    "source_mutation_relative_to_candidate0046=CONFIG_LEDS_QTI_FLASH m-to-y + CONFIG_MI_HARDWARE_ID m-to-y promotions + Lisa PM8350C QTI-over-QPNP selector\n"
     "reason=donor techpack/camera/Makefile wraps the entire camera tree in ifdef CONFIG_USE_COMMON_CAMERA\n"
     "candidate0046_config_fact=CONFIG_ARCH_LAHAINA=y CONFIG_ARCH_YUPIK=y CONFIG_QGKI=y but CONFIG_USE_COMMON_CAMERA absent\n"
     "runtime_evidence=CamX CSLInitializeHW failed to acquire requestManager and camera provider SIGABRT looped\n"
@@ -176,6 +190,7 @@ camera_info = (
     "qti_flash_linkage=built-in so camera IS_REACHABLE dependency is valid\n"
     "qti_flash_prepare_in_system_map=1\n"
     "qti_flash_set_param_in_system_map=1\n"
+    "get_hw_version_platform_in_system_map=1\n"
     "CANDIDATE_0047_COMMON_CAMERA_GATE=PASS\n"
 )
 (ROOT / "candidate-0047-camera-build.txt").write_text(camera_info)
@@ -185,8 +200,8 @@ manifest = (
     "baseline=Candidate0046\n"
     f"candidate_0047_image_sha256={sha256(dst_img)}\n"
     f"candidate_0047_boot_sha256={sha256(ROOT / 'boot.img')}\n"
-    "mutation=CONFIG_USE_COMMON_CAMERA=y + CONFIG_LEDS_QTI_FLASH=y + Lisa PM8350C QTI camera flash selector\n"
-    "kernel_source_mutation_relative_to_candidate0046=camera flash selector + QTI flash linkage promotion\n"
+    "mutation=CONFIG_USE_COMMON_CAMERA=y + CONFIG_LEDS_QTI_FLASH=y + CONFIG_MI_HARDWARE_ID=y + Lisa PM8350C QTI camera flash selector\n"
+    "kernel_source_mutation_relative_to_candidate0046=camera flash selector + QTI flash/HWID linkage promotions\n"
     "retained=Candidate0046 A642L GPU selector + current IPA SHMBridge guard/diagnostics\n"
     "focus=restore built-in Qualcomm camera request manager so CamX can acquire requestManager\n"
     "LISA_CANDIDATE_0047_FINAL_GATE=PASS\n"
