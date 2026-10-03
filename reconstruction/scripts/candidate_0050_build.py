@@ -561,7 +561,8 @@ manifest = (
     "retained=Candidate0049 PAS15 DMA metadata retention + Candidate0047 camera + Candidate0046 GPU/display/repack/firmware-carveout diagnostics\n"
     "focus=eliminate direct post-System mi_memory procfs CFI panic without disabling CFI\n"
     "LISA_CANDIDATE_0050_FINAL_GATE=PASS\n"
-)meta_gate = ROOT / "candidate-0050-ipa-metadata-dma-retention.txt"
+)
+meta_gate = ROOT / "candidate-0050-ipa-metadata-dma-retention.txt"
 if not meta_gate.is_file() or "CANDIDATE_0050_IPA_METADATA_DMA_RETENTION_GATE=PASS" not in meta_gate.read_text():
     raise SystemExit("Candidate0050 IPA DMA metadata retention gate missing")
 
