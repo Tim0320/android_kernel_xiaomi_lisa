@@ -1,0 +1,37 @@
+name: Audit Lisa camera and WLAN module ownership
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/audit-lisa-camera-wlan-ownership.yml
+      - reconstruction/scripts/lisa_camera_wlan_ownership_audit.py
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lisa-camera-wlan-ownership-audit
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          lfs: false
+      - name: Syntax preflight
+        run: python3 -m py_compile reconstruction/scripts/lisa_camera_wlan_ownership_audit.py reconstruction/scripts/lisa_driver_audit.py
+      - name: Audit pinned module dependency closure and camera call sites
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 reconstruction/scripts/lisa_camera_wlan_ownership_audit.py
+      - name: Upload reference evidence - no boot modification
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-camera-wlan-ownership-audit
+          path: lisa-camera-wlan-audit/
+          retention-days: 14
+          if-no-files-found: error
