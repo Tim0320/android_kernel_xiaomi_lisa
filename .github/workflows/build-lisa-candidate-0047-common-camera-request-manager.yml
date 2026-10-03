@@ -301,7 +301,8 @@ jobs:
           test -s candidate-0047-camera-selector.txt
           test -s candidate-0047-camera-deps-linkage.txt
           test -s candidate-0047-manifest.txt
-          test -s kernel/out/techpack/camera/drivers/camera.o
+          test -s kernel/out/techpack/camera/drivers/built-in.a
+          test -s kernel/out/techpack/camera/drivers/cam_req_mgr/cam_req_mgr_dev.o
           grep -Fq 'CANDIDATE_0047_COMMON_CAMERA_GATE=PASS' candidate-0047-camera-build.txt
           grep -Fq 'CANDIDATE_0047_LISA_FLASH_SELECTOR_GATE=PASS' candidate-0047-camera-selector.txt
           grep -Fq 'LISA_CANDIDATE_0047_FINAL_GATE=PASS' candidate-0047-manifest.txt
@@ -431,7 +432,7 @@ jobs:
             candidate-0046-ipa-pil-trace.txt
             candidate-0046-ipa-pas-sync-checkpoint.txt
             candidate-0046-ipa-pas-shmbridge.txt
-            kernel/out/techpack/camera/drivers/camera.o
+            kernel/out/techpack/camera/drivers/cam_req_mgr/cam_req_mgr_dev.o
             kernel/out/System.map
             kernel/out/Module.symvers
             kernel/out/techpack/display/msm/msm_drm.ko
