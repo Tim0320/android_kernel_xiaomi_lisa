@@ -1,0 +1,55 @@
+name: Audit Lisa driver contracts against Candidate0055
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/audit-lisa-driver-contracts.yml
+      - reconstruction/scripts/lisa_driver_audit.py
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: lisa-driver-contract-audit
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact audit commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          lfs: false
+      - name: Validate audit syntax before downloads
+        run: python3 -m py_compile reconstruction/scripts/lisa_driver_audit.py
+      - name: Compare pinned reference modules and stock prototypes
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 reconstruction/scripts/lisa_driver_audit.py
+      - name: Require complete contract report
+        run: |
+          set -euo pipefail
+          test -s lisa-driver-audit/module-contracts.json
+          test -s lisa-driver-audit/stock-header-symbols.json
+          test -s lisa-driver-audit/REPORT.md
+      - name: Upload audit evidence - not a boot release
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-driver-contract-audit
+          path: lisa-driver-audit/
+          retention-days: 14
+          if-no-files-found: error
+      - name: Upload partial audit on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-driver-contract-audit-incomplete
+          path: |
+            lisa-driver-audit/*.json
+            lisa-driver-audit/*.md
+            lisa-driver-audit/*.config
+          retention-days: 14
+          if-no-files-found: ignore
