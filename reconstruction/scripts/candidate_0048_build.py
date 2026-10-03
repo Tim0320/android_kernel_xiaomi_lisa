@@ -468,7 +468,7 @@ camera_info = (
 (ROOT / "candidate-0048-camera-build.txt").write_text(camera_info)
 
 manifest = (
-    "candidate=Lisa Candidate 0047 common-camera request-manager repair\n"
+    "candidate=Lisa Candidate 0048 IPA PAS metadata SHMBridge repair\n"
     "baseline=Candidate0047-equivalent camera stack on Candidate0046 base\n"
     f"candidate_0048_image_sha256={sha256(dst_img)}\n"
     f"candidate_0048_boot_sha256={sha256(ROOT / 'boot.img')}\n"
