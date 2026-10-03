@@ -642,7 +642,8 @@ manifest = (
     "retained=Candidate0050 legacy proc_create ABI bridge + Candidate0049/0050 PAS metadata lifetime + Candidate0047 camera + Candidate0046 GPU/display/repack/diagnostics\n"
     "focus=determine whether manual firmware carveout SHMBridge is the remaining PAS15 -EINVAL trigger\n"
     "LISA_CANDIDATE_0051_FINAL_GATE=PASS\n"
-)meta_gate = ROOT / "candidate-0051-ipa-metadata-dma-retention.txt"
+)
+meta_gate = ROOT / "candidate-0051-ipa-metadata-dma-retention.txt"
 if not meta_gate.is_file() or "CANDIDATE_0051_IPA_METADATA_DMA_RETENTION_GATE=PASS" not in meta_gate.read_text():
     raise SystemExit("Candidate0051 IPA DMA metadata retention gate missing")
 
