@@ -37,6 +37,7 @@ PKG_STAT_H = r'''/* SPDX-License-Identifier: GPL-2.0-only */
 
 struct task_struct;
 struct user_struct;
+struct package_runtime_info;
 
 enum cluster_type {
 	LITTLE_CLUSTER = 0,
@@ -140,6 +141,7 @@ PKG_STATE_C = r'''// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/sched/user.h>
 #include <linux/slab.h>
 #include <linux/spinlock.h>
+#include <linux/string.h>
 
 static struct package_runtime_info root_user_pkg_state;
 
