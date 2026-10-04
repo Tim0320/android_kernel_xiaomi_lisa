@@ -1,0 +1,62 @@
+name: Audit Lisa Candidate0059 Stage8 frequency API
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - reconstruction/scripts/candidate_0059_stage8_freq_api_audit.py
+      - reconstruction/c0059_stage8_freq_api_20261005.md
+      - .github/workflows/audit-lisa-candidate-0059-stage8-freq-api.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-c0059-stage8-freq-api
+  cancel-in-progress: true
+
+jobs:
+  stage8-api:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout Candidate0059 package
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: package
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact pinned Lisa source
+        uses: actions/checkout@v4
+        with:
+          repository: Tim0320/android_kernel_xiaomi_lisa
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Audit exact frequency-control API
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0059_stage8_freq_api_audit.py \
+            --source-root kernel \
+            --json candidate-0059-stage8-freq-api.json | tee candidate-0059-stage8-freq-api.txt
+          grep -q '^CANDIDATE0059_STAGE8_FREQ_API=PASS$' candidate-0059-stage8-freq-api.txt
+          grep -q '^LEGACY_CPUFREQ_ADJUST_COMPATIBLE=false$' candidate-0059-stage8-freq-api.txt
+          grep -q '^TARGET_FREQ_QOS_PRESENT=true$' candidate-0059-stage8-freq-api.txt
+          grep -q '^RAW_DONOR_NOTIFIER_PORT_ALLOWED=false$' candidate-0059-stage8-freq-api.txt
+
+      - name: Publish Stage8 API evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0059-stage8-freq-api-a${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            candidate-0059-stage8-freq-api.json
+            candidate-0059-stage8-freq-api.txt
