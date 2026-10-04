@@ -56,14 +56,15 @@ def audit(root: Path) -> dict:
         if token not in qos_h:
             failures.append("MISSING_FREQ_QOS_API:" + token)
 
+    normalized_cpufreq_h = " ".join(cpufreq_h.split())
     required_core = (
-        "struct freq_constraints constraints;",
-        "freq_qos_add_request(&policy->constraints",
-        "CPUFREQ_CREATE_POLICY, policy",
-        "CPUFREQ_REMOVE_POLICY, policy",
+        ("struct freq_constraints constraints;", normalized_cpufreq_h),
+        ("freq_qos_add_request(&policy->constraints", cpufreq_c),
+        ("CPUFREQ_CREATE_POLICY, policy", cpufreq_c),
+        ("CPUFREQ_REMOVE_POLICY, policy", cpufreq_c),
     )
-    for token in required_core:
-        if token not in cpufreq_c and token not in cpufreq_h:
+    for token, body in required_core:
+        if token not in body:
             failures.append("MISSING_CPUFREQ_CORE_SEMANTIC:" + token)
 
     if "core_ctl_set_boost" not in core_ctl_h:
