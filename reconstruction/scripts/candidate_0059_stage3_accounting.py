@@ -26,6 +26,7 @@ PKG_CORE_C = r'''// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/compiler.h>
 #include <linux/init.h>
 #include <linux/jiffies.h>
+#include <linux/module.h>
 #include <linux/pkg_stat.h>
 #include <linux/sched.h>
 #include <linux/sched/user.h>
@@ -209,7 +210,7 @@ void package_runtime_monitor(u64 now)
 		   (READ_ONCE(pkg_history_slot) + 1) % HISTORY_ITMES);
 }
 
-static int __init pkg_runtime_core_init(void)
+static int __init pkg_init(void)
 {
 	pkg_build_cluster_map();
 	WRITE_ONCE(pkg_history_slot, 0);
@@ -218,7 +219,7 @@ static int __init pkg_runtime_core_init(void)
 	pr_info("Candidate0059 package runtime accounting core enabled\n");
 	return 0;
 }
-late_initcall(pkg_runtime_core_init);
+module_init(pkg_init);
 '''
 
 def replace_once(path: Path, old: str, new: str) -> None:
@@ -258,7 +259,7 @@ def verify(root: Path) -> dict:
             "void package_runtime_monitor(",
             "void __weak migt_hook(",
             "arch_scale_cpu_capacity",
-            "late_initcall(pkg_runtime_core_init);",
+            "module_init(pkg_init);",
         ),
         "kernel/sched/Makefile": (
             "obj-$(CONFIG_PACKAGE_RUNTIME_INFO) += pkg_core.o",
