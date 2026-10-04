@@ -247,7 +247,7 @@ static int account_pkg_busy_time(struct rq *rq, struct task_struct *p, int event
 		return 1;
 	}
 
-	if (exiting_task(p))
+	if (p->wts.sum_history[0] == EXITING_TASK_MARKER)
 		return 0;
 
 	if (event == TASK_WAKE ||
