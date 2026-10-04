@@ -1,0 +1,67 @@
+name: Audit Lisa Candidate0059 KABI port
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - reconstruction/scripts/candidate_0059_kabi_port_audit.py
+      - reconstruction/c0059_kabi_pointer_port_20261005.md
+      - .github/workflows/audit-lisa-candidate-0059-kabi-port.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-c0059-kabi-port-audit
+  cancel-in-progress: true
+
+jobs:
+  kabi-port-audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Candidate0059 package
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: package
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact pinned Lisa source
+        uses: actions/checkout@v4
+        with:
+          repository: Tim0320/android_kernel_xiaomi_lisa
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: target-kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact Xiaomi 5.4 donor
+        uses: actions/checkout@v4
+        with:
+          repository: LeviMarvin/android_kernel_xiaomi_alioth
+          ref: e7065bc9ead4a0ca183f51101e07dd45a9d5c558
+          path: donor-kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Audit KABI-safe package-runtime strategy
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0059_kabi_port_audit.py             --target target-kernel             --donor donor-kernel             --json candidate-0059-kabi-port-audit.json             --text candidate-0059-kabi-port-audit.txt
+          cat candidate-0059-kabi-port-audit.txt
+
+      - name: Publish KABI audit evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0059-kabi-port-audit-a${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            candidate-0059-kabi-port-audit.json
+            candidate-0059-kabi-port-audit.txt
