@@ -215,7 +215,7 @@ void pkg_task_rebind_user(struct task_struct *task, struct user_struct *user)
 
     exit_c = root / "kernel/exit.c"
     insert_after(exit_c, "#include <linux/sched/task.h>\n", "#include <linux/pkg_stat.h>\n")
-    insert_after(exit_c, "repeat:\n", "\tpkg_task_unbind_user(p);\n")
+    insert_after(exit_c, "\tint zap_leader;\nrepeat:\n", "\tpkg_task_unbind_user(p);\n")
 
     cred_c = root / "kernel/cred.c"
     insert_after(cred_c, "#include <linux/sched.h>\n", "#include <linux/pkg_stat.h>\n")
