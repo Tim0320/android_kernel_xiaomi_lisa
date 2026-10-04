@@ -146,6 +146,9 @@ void pkg_task_bind_user(struct task_struct *task, struct user_struct *user)
 	if (!task_state || !user)
 		return;
 
+	if (!user_pkg(user->uid.val))
+		return;
+
 	user_state = pkg_user_state(user);
 	if (!user_state)
 		return;
