@@ -1,0 +1,56 @@
+name: Audit Lisa BPF510 port inputs
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: [.github/workflows/lisa-bpf510-source-audit.yml]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: package
+          persist-credentials: false
+      - name: Checkout actual Lisa kernel input
+        uses: actions/checkout@v4
+        with:
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: baseline
+          persist-credentials: false
+          lfs: false
+      - name: Checkout pinned feature reference
+        uses: actions/checkout@v4
+        with:
+          repository: MiYume0721/android_kernel_xiaomi_sm8350_miyume
+          ref: 6f0290557329655f29c9b1bc52eec33e36f859ba
+          path: reference
+          persist-credentials: false
+          lfs: false
+          submodules: false
+      - name: Export tracked code for bounded offline dependency review
+        run: |
+          set -euo pipefail
+          mkdir review
+          for source in baseline reference; do
+            git -C "$source" rev-parse HEAD > "review/$source.commit"
+            git -C "$source" archive --format=tar.gz -o "$PWD/review/$source.tar.gz" HEAD \
+              Makefile Kconfig COPYING include kernel net mm lib init security arch/arm64 \
+              fs/file.c fs/file_table.c fs/proc fs/seq_file.c fs/eventpoll.c fs/file_table.c \
+              tools/testing/selftests/bpf tools/lib/bpf tools/include
+          done
+          git -C package archive --format=tar.gz -o "$PWD/review/package.tar.gz" HEAD \
+            reconstruction/scripts reconstruction/overlays reconstruction/manifest.env .github/workflows
+          (cd review && sha256sum *.tar.gz > SHA256SUMS)
+          printf '%s\n' 'Source inspection only; this run does not build a boot or establish runtime BPF compatibility.' > review/README.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lisa-bpf510-port-inputs
+          retention-days: 14
+          compression-level: 0
+          if-no-files-found: error
+          path: review/
