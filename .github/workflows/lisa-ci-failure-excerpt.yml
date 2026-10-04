@@ -1,0 +1,57 @@
+name: Inspect Lisa CI failure log
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: Failed build job in this repository
+        required: true
+        default: '111361868869'
+  push:
+    branches: [main]
+    paths: [.github/workflows/lisa-ci-failure-excerpt.yml]
+permissions:
+  contents: read
+  actions: read
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Retrieve existing failed job log only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_ID: ${{ inputs.job_id || '111361868869' }}
+        run: |
+          set -euo pipefail
+          [[ "$JOB_ID" =~ ^[0-9]+$ ]]
+          mkdir -p failure-log
+          curl -fL --retry 3 --retry-all-errors \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/jobs/$JOB_ID/logs" \
+            -o failure-log/job.log
+          python3 - <<'PY'
+          from pathlib import Path
+          import os, re
+          p = Path('failure-log/job.log')
+          lines = p.read_text(encoding='utf-8-sig', errors='replace').splitlines()
+          hits = [i for i, text in enumerate(lines) if re.search(r'Traceback|RuntimeError:|SyntaxError:|error:|##\[error\]|Error [0-9]|FAILED', text)]
+          selected = set()
+          for i in hits[-20:]:
+              selected.update(range(max(0, i - 12), min(len(lines), i + 18)))
+          selected.update(range(max(0, len(lines) - 100), len(lines)))
+          text = '\n'.join(f'{i+1}: {lines[i]}' for i in sorted(selected))
+          # Keep this job's console small; full source log is in the artifact.
+          excerpt = text[-45000:]
+          Path('failure-log/excerpt.txt').write_text(excerpt + '\n')
+          print(excerpt)
+          Path('failure-log/provenance.txt').write_text(
+              f"source_repository={os.environ['GITHUB_REPOSITORY']}\nsource_job={os.environ['JOB_ID']}\nsource_lines={len(lines)}\ndiagnostic_only=1\n")
+          PY
+      - name: Upload diagnostic log, not a boot release
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-ci-failure-log
+          path: failure-log/
+          retention-days: 7
+          if-no-files-found: error
