@@ -11,7 +11,7 @@ def identity():
     sha = os.environ.get('GITHUB_SHA', '')
     if not re.fullmatch(r'[0-9a-f]{40}', sha):
         raise RuntimeError('GITHUB_SHA must identify the exact build package')
-    return '5.4.289-qgki-lisa-c0057-r' + sha[:7]
+    return '5.4.289-qgki-lisa-c0057-r' + sha[:7] + '-by-Tim0320'
 
 
 def set_config(text, key, value):

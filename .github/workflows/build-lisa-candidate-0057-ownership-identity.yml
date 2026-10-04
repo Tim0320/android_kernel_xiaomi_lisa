@@ -8,6 +8,8 @@ on:
       - reconstruction/scripts/candidate_0057_build.py
       - reconstruction/scripts/candidate_0057_identity.py
       - reconstruction/scripts/candidate_0057_ownership_patch.py
+      - reconstruction/scripts/candidate_0057_flash_contract.py
+      - reconstruction/scripts/test_candidate_0057_flash_contract.py
 permissions:
   contents: read
   actions: read
@@ -52,12 +54,16 @@ jobs:
           name: lisa-c0057-source-review
           retention-days: 7
           if-no-files-found: error
+          include-hidden-files: true
           path: |
             reconstruction/scripts/candidate_00*.py
+            reconstruction/scripts/test_candidate_0057_flash_contract.py
             reconstruction/scripts/test_lisa_power_compat.c
             reconstruction/overlays/lisa_power_compat.*
             .github/workflows/build-lisa-candidate-0053-arm64-fault-capture.yml
             kernel/kernel/module.c
+            kernel/drivers/leds/leds-qti-flash.c
+            kernel/include/linux/soc/qcom/battery_charger.h
             kernel/drivers/gpu/msm/adreno-gpulist.h
             kernel/drivers/gpu/msm/adreno_a6xx.c
             kernel/drivers/gpu/msm/kgsl.c
@@ -78,9 +84,13 @@ jobs:
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
           STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
-        run: python3 reconstruction/scripts/candidate_0057_build.py build
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/candidate_0057_build.py build 2>&1 | tee candidate-0057-build.log
       - name: Verify inherited ABI modular ownership and truthful identity
-        run: python3 reconstruction/scripts/candidate_0057_build.py verify
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/candidate_0057_build.py verify 2>&1 | tee candidate-0057-verify.log
       - name: Upload verified Candidate0057 boot and evidence
         uses: actions/upload-artifact@v4
         with:
@@ -106,11 +116,18 @@ jobs:
           name: lisa-candidate-0057-failure-evidence
           retention-days: 14
           if-no-files-found: ignore
+          include-hidden-files: true
           path: |
             candidate-0057-checks/
             candidate-0057-resolved-builder.py
             candidate-0057-*.txt
+            candidate-0057-*.log
+            candidate-0057-*.json
             kernel/out/.config
+            kernel/out/System.map
+            kernel/out/Module.symvers
+            kernel/out/drivers/leds/leds-qti-flash.ko
+            kernel/include/linux/soc/qcom/battery_charger.h
   observe:
     runs-on: ubuntu-24.04
     timeout-minutes: 200

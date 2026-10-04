@@ -211,9 +211,11 @@ def verify(root: Path) -> None:
     if not {'leds-qti-flash', 'hwid'}.issubset(camera_depends):
         raise RuntimeError(f'Candidate0057 rebuilt donor camera dependency metadata unexpected: {sorted(camera_depends)}')
 
-    flash_undef = undefined_symbols(modules['leds-qti-flash'])
-    if 'qti_battery_charger_get_prop' not in flash_undef:
-        raise RuntimeError('Candidate0057 QTI flash -> battery module import not proven')
+    # The rebuilt generic donor has CONFIG_QTI_BATTERY_CHARGER=n and an
+    # inline -EINVAL fallback. It is not the stock runtime flash module.
+    # Verify the actual pinned stock flash -> battery edge and CRCs instead.
+    from candidate_0057_flash_contract import verify as verify_stock_flash
+    verify_stock_flash(root)
 
     # Do not confuse the rebuilt donor camera dependency with the public stock
     # Lisa camera module.  The latter was audited as depending only on flash.
@@ -225,7 +227,8 @@ def verify(root: Path) -> None:
         'reference_stock_camera_imports_hwid=0\n'
         'donor_camera_imports_qti_flash=1\n'
         'donor_camera_imports_hwid=1\n'
-        'qti_flash_imports_battery_provider=1\n'
+        'reference_stock_flash_imports_battery_provider=1\n'
+        'rebuilt_donor_flash_uses_disabled_generic_charger_stub=1\n'
         'runtime_validation=pending device test\n'
         'wifi_repaired=0\n'
         'camera_runtime_validated=0\n'

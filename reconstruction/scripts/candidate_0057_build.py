@@ -17,7 +17,7 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 PINS = {
     'candidate_0056_build.py': '2bc00712a980203f134e0e9615a8be1f99f02d58',
-    'candidate_0057_ownership_patch.py': '41a460386bc7c2c980682731cdf83e7522554e20',
+    'candidate_0057_ownership_patch.py': '4c3152361dc338fbc92673a9be7d8941da9de200',
     'candidate_0046_build.py': '5d5f5f1bcfe9d979b3c3352ae10308e5377b2793',
 }
 
@@ -114,8 +114,10 @@ def preflight():
     parent = previous.preflight()
     source = transform(parent.preflight())
     for name in ('candidate_0057_build.py', 'candidate_0057_identity.py',
-                 'candidate_0057_ownership_patch.py'):
+                 'candidate_0057_ownership_patch.py', 'candidate_0057_flash_contract.py',
+                 'test_candidate_0057_flash_contract.py'):
         py_compile.compile(str(ROOT / 'reconstruction/scripts' / name), doraise=True)
+    subprocess.run([sys.executable, str(ROOT / 'reconstruction/scripts/test_candidate_0057_flash_contract.py')], check=True)
     (ROOT / 'candidate-0057-resolved-builder.py').write_text(source)
     print('LISA_CANDIDATE_0057_PREFLIGHT=PASS', flush=True)
     return parent, source
@@ -197,6 +199,8 @@ def main():
     phase = parser.parse_args().phase
     parent, source = preflight()
     if phase == 'prepare':
+        from candidate_0057_flash_contract import prepare as prepare_stock_flash
+        prepare_stock_flash(ROOT)
         parent.inherited.run_parent_phase('prepare')
     elif phase == 'build':
         build(parent, source)
