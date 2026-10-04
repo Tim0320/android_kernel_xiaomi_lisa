@@ -233,6 +233,10 @@ def main() -> int:
         "TARGET_OEM_KERNEL_REFERENCE_COUNT=" + str(
             report["target_symbol_reference_scan"]["CONFIG_OEM_KERNEL"]["count"]
         ),
+        "TARGET_OEM_KERNEL_REFERENCES=" + json.dumps(
+            report["target_symbol_reference_scan"]["CONFIG_OEM_KERNEL"]["references"],
+            sort_keys=True,
+        ),
     ]
     if failures:
         summary.extend("FAILURE=" + item for item in failures)
