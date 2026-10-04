@@ -1,0 +1,71 @@
+name: Audit Lisa Candidate0059 performance port
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - reconstruction/scripts/candidate_0059_perf_port_audit.py
+      - reconstruction/c0059_perf_port_map_20261005.md
+      - .github/workflows/audit-lisa-candidate-0059-perf-port.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-c0059-perf-port-audit
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout Candidate0059 package commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: package
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact pinned Lisa kernel source
+        uses: actions/checkout@v4
+        with:
+          repository: Tim0320/android_kernel_xiaomi_lisa
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: target-kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact same-generation Xiaomi 5.4 donor
+        uses: actions/checkout@v4
+        with:
+          repository: LeviMarvin/android_kernel_xiaomi_alioth
+          ref: e7065bc9ead4a0ca183f51101e07dd45a9d5c558
+          path: donor-kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Run no-build semantic port audit
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0059_perf_port_audit.py \
+            --target target-kernel \
+            --donor donor-kernel \
+            --json candidate-0059-perf-port-audit.json \
+            --text candidate-0059-perf-port-audit.txt
+          cat candidate-0059-perf-port-audit.txt
+
+      - name: Publish exact audit evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0059-perf-port-audit-a${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            candidate-0059-perf-port-audit.json
+            candidate-0059-perf-port-audit.txt
