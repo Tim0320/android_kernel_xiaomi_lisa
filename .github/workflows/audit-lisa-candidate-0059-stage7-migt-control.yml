@@ -1,0 +1,107 @@
+name: Audit Lisa Candidate0059 Stage7 MIGT control
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - reconstruction/scripts/candidate_0059_stage7_migt_control.py
+      - reconstruction/scripts/candidate_0059_stage6_render.py
+      - reconstruction/c0059_stage7_migt_control_20261005.md
+      - .github/workflows/audit-lisa-candidate-0059-stage7-migt-control.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-c0059-stage7-migt-control
+  cancel-in-progress: true
+
+jobs:
+  stage7:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout Candidate0059 package
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: package
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact pinned Lisa source
+        uses: actions/checkout@v4
+        with:
+          repository: Tim0320/android_kernel_xiaomi_lisa
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Apply Stages1 through 7
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0059_state_layer.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage2_hooks.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage3_accounting.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage4_migt_sched.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage5_game_load.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage6_render.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage7_migt_control.py apply --source kernel --json candidate-0059-stage7.json
+          python3 package/reconstruction/scripts/candidate_0059_stage7_migt_control.py verify --source kernel --json candidate-0059-stage7-verify.json
+          git -C kernel diff --check
+          git -C kernel diff > candidate-0059-stage7.patch
+
+      - name: Install ARM64 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+
+      - name: Prepare stock-based config
+        run: |
+          set -euo pipefail
+          mkdir -p kernel/out
+          cp kernel/reconstruction/stock_ikconfig kernel/out/.config
+          kernel/scripts/config --file kernel/out/.config -e MIHW -e PACKAGE_RUNTIME_INFO -e MIGT
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -q '^CONFIG_MIGT=y$' kernel/out/.config
+
+      - name: Compile Stage7 affected objects
+        run: |
+          set -euo pipefail
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 prepare
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 \
+            kernel/sched/pkg_state.o kernel/sched/pkg_bridge.o kernel/sched/pkg_core.o \
+            kernel/sched/migt_sched.o kernel/sched/migt_render.o kernel/sched/glk.o \
+            drivers/mihw/migt.o \
+            kernel/fork.o kernel/user.o kernel/cred.o kernel/exit.o \
+            kernel/time/timekeeping.o kernel/sched/walt/walt.o
+          aarch64-linux-gnu-nm kernel/out/drivers/mihw/migt.o | \
+            grep -E ' (migt_init|migt_ioctl|migt_enable|get_cur_render_uid|package_runtime_should_stop)$'
+          aarch64-linux-gnu-nm -u kernel/out/drivers/mihw/migt.o | tee candidate-0059-stage7-undefined.txt
+          grep -q 'update_render_info' candidate-0059-stage7-undefined.txt
+          grep -q 'reset_render_info' candidate-0059-stage7-undefined.txt
+          printf '%s\n' \
+            'CANDIDATE0059_STAGE7_COMPILE=PASS' \
+            'LEGACY_MIGT_DEVICE_SOURCE_PRESENT=true' \
+            'QUEUE_DEQUEUE_SEMANTICS_PRESENT=true' \
+            'CEILING_POLICY_PORTED=false' \
+            'BOOST_POLICY_ACTIVE=false' \
+            'RUNTIME_TESTED=false' \
+            | tee candidate-0059-stage7-result.txt
+
+      - name: Publish Stage7 evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0059-stage7-migt-control-a${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            candidate-0059-stage7*.json
+            candidate-0059-stage7*.txt
+            candidate-0059-stage7.patch
+            kernel/out/.config
+            kernel/out/drivers/mihw/migt.o
