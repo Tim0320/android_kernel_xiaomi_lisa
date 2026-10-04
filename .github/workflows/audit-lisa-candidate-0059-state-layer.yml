@@ -1,0 +1,116 @@
+name: Audit Lisa Candidate0059 state layer
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - reconstruction/scripts/candidate_0059_state_layer.py
+      - reconstruction/c0059_state_layer_20261005.md
+      - .github/workflows/audit-lisa-candidate-0059-state-layer.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-c0059-state-layer
+  cancel-in-progress: true
+
+jobs:
+  state-layer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Candidate0059 package
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: package
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact pinned Lisa source
+        uses: actions/checkout@v4
+        with:
+          repository: Tim0320/android_kernel_xiaomi_lisa
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Apply and verify bounded Stage1 state layer
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0059_state_layer.py apply \
+            --source kernel --json candidate-0059-state-layer.json
+          python3 package/reconstruction/scripts/candidate_0059_state_layer.py verify \
+            --source kernel --json candidate-0059-state-layer-verify.json
+          git -C kernel diff --check
+          git -C kernel diff -- \
+            drivers/mihw/Kconfig kernel/sched/Makefile \
+            include/linux/sched.h include/linux/sched/user.h \
+            kernel/fork.c kernel/user.c \
+            > candidate-0059-state-layer.patch
+          git -C kernel diff --no-index /dev/null include/linux/pkg_stat.h \
+            >> candidate-0059-state-layer.patch || test $? -eq 1
+          git -C kernel diff --no-index /dev/null kernel/sched/pkg_state.c \
+            >> candidate-0059-state-layer.patch || test $? -eq 1
+
+      - name: Install ARM64 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison flex build-essential libssl-dev libelf-dev \
+            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+
+      - name: Prepare stock-based Stage1 config
+        run: |
+          set -euo pipefail
+          mkdir -p kernel/out
+          cp kernel/reconstruction/stock_ikconfig kernel/out/.config
+          kernel/scripts/config --file kernel/out/.config -e MIHW -e PACKAGE_RUNTIME_INFO
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -E '^(CONFIG_MIHW|CONFIG_PACKAGE_RUNTIME_INFO|CONFIG_SCHED_WALT|CONFIG_MODVERSIONS)=' \
+            kernel/out/.config | tee candidate-0059-state-layer-config.txt
+          grep -q '^CONFIG_MIHW=y$' kernel/out/.config
+          grep -q '^CONFIG_PACKAGE_RUNTIME_INFO=y$' kernel/out/.config
+          grep -q '^CONFIG_SCHED_WALT=y$' kernel/out/.config
+          grep -q '^CONFIG_MODVERSIONS=y$' kernel/out/.config
+
+      - name: Compile affected Stage1 objects only
+        run: |
+          set -euo pipefail
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- -j2 prepare
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- -j2 \
+            kernel/sched/pkg_state.o kernel/fork.o kernel/user.o
+          test -s kernel/out/kernel/sched/pkg_state.o
+          test -s kernel/out/kernel/fork.o
+          test -s kernel/out/kernel/user.o
+          aarch64-linux-gnu-nm kernel/out/kernel/sched/pkg_state.o \
+            | grep -E 'pkg_(task|user)_state_(prepare|release)'
+          printf '%s\n' \
+            'CANDIDATE0059_STAGE1_COMPILE=PASS' \
+            'FULL_MIGT_PORTED=false' \
+            'RUNTIME_TESTED=false' \
+            'JANK_FIXED=false' \
+            | tee candidate-0059-state-layer-result.txt
+
+      - name: Publish Stage1 evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0059-state-layer-a${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            candidate-0059-state-layer*.json
+            candidate-0059-state-layer*.txt
+            candidate-0059-state-layer.patch
+            kernel/out/.config
+            kernel/out/kernel/sched/pkg_state.o
+            kernel/out/kernel/fork.o
+            kernel/out/kernel/user.o
