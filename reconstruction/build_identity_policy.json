@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "author": "Tim0320",
+  "uts_release_template": "{linux_base}-qgki-lisa-c{candidate}-r{package_sha7}-by-Tim0320",
+  "build_user": "Tim0320",
+  "build_host": "lisa-ci",
+  "max_uts_release_bytes": 64,
+  "use_actual_build_timestamp": true,
+  "fake_linux_base_version_forbidden": true,
+  "preserve_modversions_and_cfi": true,
+  "activation": "next necessary rebuild; do not cancel the active Candidate0057 run merely for branding",
+  "pending_patch": "reconstruction/patches/c0057-tim0320-suffix.pending.patch",
+  "validated_against_identity_blob": "35d98913093458e35586803fdffb15ac86848fd9",
+  "tests": {
+    "syntax": "PASS",
+    "git_apply_check_and_apply_in_temporary_copy": "PASS",
+    "release_example": "5.4.289-qgki-lisa-c0057-rfdf1a54-by-Tim0320",
+    "release_example_bytes": 43,
+    "invalid_sha_cases_rejected": 5,
+    "all_other_functions_ast_unchanged": true,
+    "kernel_build_with_suffix": "NOT_RUN"
+  },
+  "active_run_not_rewritten": {
+    "candidate": "0057",
+    "commit": "fdf1a54e3e254ce32a3078cfd57b4ee1726f9adf",
+    "run_id": 37177089277,
+    "release_template": "5.4.289-qgki-lisa-c0057-r{package_sha7}",
+    "note": "Existing run includes Tim0320@lisa-ci but not the new terminal author suffix. Documentation commits are not boot build identities."
+  }
+}
