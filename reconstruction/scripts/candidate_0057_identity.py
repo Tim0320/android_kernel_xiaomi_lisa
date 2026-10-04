@@ -86,17 +86,36 @@ def install(base, root: Path, kernel: Path):
     base.sh = sh
 
 
-def verify(root: Path):
-    release = identity()
-    image = (root / 'candidate-0057-Image').read_bytes()
-    banner = re.search(rb'Linux version [^\x00\n]+', image)
-    if not banner:
-        raise RuntimeError('Final Image has no Linux banner')
-    text = banner.group().decode('ascii', 'replace')
+def concrete_banner(image: bytes, release: str) -> str:
+    # Image also contains the linux_proc_banner printf template. It is not the
+    # boot's compiled linux_banner; never select a bare first substring match.
+    banners = {m.decode('ascii', 'strict') for m in
+               re.findall(rb'Linux version [0-9]+\.[0-9]+\.[0-9]+[^\x00\n]*', image)}
+    if len(banners) != 1:
+        raise RuntimeError(f'Expected one distinct concrete Linux banner, got {len(banners)}')
+    text = banners.pop()
     if not text.startswith('Linux version ' + release + ' ') or '(Tim0320@lisa-ci)' not in text:
         raise RuntimeError('Final Image branding differs from requested identity: ' + text)
     if '#57 SMP PREEMPT ' not in text or 'pangu-build-component-vendor' in text or 'g5987d69e25da' in text:
         raise RuntimeError('Old stock build identity survived in Linux banner')
+    return text
+
+
+def verify(root: Path):
+    release = identity()
+    text = concrete_banner((root / 'candidate-0057-Image').read_bytes(), release)
+    recorded = json.loads((root / 'candidate-0057-identity.json').read_text())
+    for key, expected in {'release': release, 'package_commit': os.environ['GITHUB_SHA'],
+                          'build_user': 'Tim0320', 'build_host': 'lisa-ci',
+                          'build_version': 57, 'linux_base': '5.4.289'}.items():
+        if recorded.get(key) != expected:
+            raise RuntimeError(f'Compiled identity record mismatch: {key}')
+    uts = (root / 'kernel/out/include/generated/utsrelease.h').read_text()
+    if f'#define UTS_RELEASE "{release}"' not in uts:
+        raise RuntimeError('Compiled UTS header differs from final Image')
+    check_loader((root / 'kernel/kernel/module.c').read_text())
+    if hashlib.sha256((root / 'kernel/kernel/module.c').read_bytes()).hexdigest() != recorded['module_loader_unchanged_sha256']:
+        raise RuntimeError('Saved module loader differs from compiled identity record')
     for name in ('candidate-0057.config', 'candidate-0057.ikconfig'):
         cfg = (root / name).read_text()
         for token in ('CONFIG_MODVERSIONS=y\n', 'CONFIG_CFI_CLANG=y\n',

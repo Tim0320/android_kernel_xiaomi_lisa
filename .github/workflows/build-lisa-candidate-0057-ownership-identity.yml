@@ -1,23 +1,64 @@
 name: Build Lisa Candidate0057 module ownership and identity
 on:
   workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: 'Optional: reverify the checkpoint from this run without compiling'
+        required: false
+        default: ''
+        type: string
   push:
     branches: [main]
     paths:
       - .github/workflows/build-lisa-candidate-0057-ownership-identity.yml
       - reconstruction/scripts/candidate_0057_build.py
-      - reconstruction/scripts/candidate_0057_identity.py
       - reconstruction/scripts/candidate_0057_ownership_patch.py
+      - reconstruction/scripts/candidate_0057_identity.py
       - reconstruction/scripts/candidate_0057_flash_contract.py
-      - reconstruction/scripts/test_candidate_0057_flash_contract.py
+      - reconstruction/scripts/candidate_0057_artifacts.py
+      - reconstruction/scripts/test_candidate_0057_*.py
+      - reconstruction/candidate_0057_reverify_request.json
 permissions:
   contents: read
   actions: read
 concurrency:
-  group: lisa-candidate-0057-ownership-identity
-  cancel-in-progress: true
+  group: lisa-candidate-0057-${{ inputs.source_run_id || 'build' }}
+  cancel-in-progress: false
 jobs:
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      source-run-id: ${{ steps.mode.outputs.source-run-id }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          lfs: false
+          persist-credentials: false
+      - name: Choose new build or explicit no-rebuild validation request
+        id: mode
+        env:
+          REQUESTED_SOURCE_RUN: ${{ inputs.source_run_id }}
+        run: |
+          python3 - <<'PYCODE'
+          import json, os, re, subprocess
+          from pathlib import Path
+          source = os.environ.get('REQUESTED_SOURCE_RUN', '')
+          request = 'reconstruction/candidate_0057_reverify_request.json'
+          if not source and os.environ['GITHUB_EVENT_NAME'] == 'push':
+              changed = subprocess.check_output(['git', 'diff', '--name-only', 'HEAD^', 'HEAD'], text=True).splitlines()
+              if request in changed:
+                  source = str(json.loads(Path(request).read_text())['source_run_id'])
+          if source and not re.fullmatch(r'[1-9][0-9]*', source):
+              raise SystemExit('source_run_id must be a positive numeric run ID')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('source-run-id=' + source + '\n')
+          print('REVERIFY_WITHOUT_BUILD source_run=' + source if source else 'NEW_BUILD_WITH_CHECKPOINT')
+          PYCODE
   build:
+    needs: plan
+    if: ${{ needs.plan.outputs.source-run-id == '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 180
     env:
@@ -29,18 +70,25 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
           lfs: false
-      - name: Preflight pinned recipes syntax and source transform
-        run: python3 reconstruction/scripts/candidate_0057_build.py preflight
+          persist-credentials: false
+      - name: Preflight pinned recipes and regression tests before compiling
+        run: |
+          python3 reconstruction/scripts/test_candidate_0057_identity.py
+          python3 reconstruction/scripts/test_candidate_0057_artifacts.py
+          python3 reconstruction/scripts/candidate_0057_build.py preflight
       - name: Materialize stock LFS inputs
         run: git lfs pull
       - name: Checkout exact reconstructed kernel
+        id: kernel_source
         uses: actions/checkout@v4
         with:
           ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
           path: kernel
           fetch-depth: 1
           lfs: false
+          persist-credentials: false
       - name: Checkout exact runtime reference
+        id: runtime_reference
         uses: actions/checkout@v4
         with:
           repository: LineageOS/android_kernel_xiaomi_sm8350
@@ -48,109 +96,266 @@ jobs:
           path: known-good-302
           fetch-depth: 1
           lfs: false
-      - name: Export source inputs for independent review
+          persist-credentials: false
+      - name: Export source recipes for independent review
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-c0057-source-review
+          name: lisa-c0057-source-review-a${{ github.run_attempt }}
           retention-days: 7
           if-no-files-found: error
           include-hidden-files: true
           path: |
             reconstruction/scripts/candidate_00*.py
-            reconstruction/scripts/test_candidate_0057_flash_contract.py
+            reconstruction/scripts/test_candidate_0057_*.py
             reconstruction/scripts/test_lisa_power_compat.c
             reconstruction/overlays/lisa_power_compat.*
             .github/workflows/build-lisa-candidate-0053-arm64-fault-capture.yml
-            kernel/kernel/module.c
-            kernel/drivers/leds/leds-qti-flash.c
-            kernel/include/linux/soc/qcom/battery_charger.h
-            kernel/drivers/gpu/msm/adreno-gpulist.h
-            kernel/drivers/gpu/msm/adreno_a6xx.c
-            kernel/drivers/gpu/msm/kgsl.c
-            kernel/include/linux/dma-buf.h
-            kernel/include/linux/dma-fence.h
-            kernel/include/linux/reservation.h
-            kernel/include/linux/dma-resv.h
-            kernel/include/uapi/linux/msm_kgsl.h
-            kernel/drivers/dma-buf/
-            kernel/techpack/camera/config/
-            kernel/techpack/camera/Makefile
-            kernel/techpack/camera/drivers/Makefile
+            .github/workflows/build-lisa-candidate-0057-ownership-identity.yml
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi python3 python3-yaml curl unzip git rsync kmod
       - name: Prepare pinned compiler and stock oracles
+        id: toolchain
         run: python3 reconstruction/scripts/candidate_0057_build.py prepare
       - name: Build and package Candidate0057
+        id: compile
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
           STOCK_ABI_ROOT: ${{ runner.temp }}/stock-abi-root
         run: |
           set -euo pipefail
           python3 reconstruction/scripts/candidate_0057_build.py build 2>&1 | tee candidate-0057-build.log
-      - name: Verify inherited ABI modular ownership and truthful identity
+      - name: Mark available boot as unverified even after a packaging error
+        id: available
+        if: ${{ always() }}
         run: |
-          set -euo pipefail
-          python3 reconstruction/scripts/candidate_0057_build.py verify 2>&1 | tee candidate-0057-verify.log
-      - name: Upload verified Candidate0057 boot and evidence
+          printf '%s\n' 'UNVERIFIED BUILD OUTPUT - DO NOT FLASH AS AN APPROVED RELEASE' \
+            'This backup does not mean validation passed. Static checks are not a device pass.' \
+            > UNVERIFIED-DO-NOT-FLASH.txt
+          if test -s boot.img; then
+            echo 'boot_present=true' >> "$GITHUB_OUTPUT"
+            sha256sum boot.img > unverified-boot.img.sha256
+          fi
+      - name: Save unverified boot immediately BEFORE any verification
+        id: raw_boot
+        if: ${{ always() && steps.available.outputs.boot_present == 'true' }}
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-candidate-0057-ownership-identity
+          name: lisa-c0057-UNVERIFIED-boot-a${{ github.run_attempt }}
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            UNVERIFIED-DO-NOT-FLASH.txt
+            boot.img
+            boot.img.sha256
+            unverified-boot.img.sha256
+            candidate-0057-Image
+            candidate-0057.config
+            candidate-0057.ikconfig
+            candidate-0057-manifest.txt
+            candidate-0057-identity.json
+            candidate-0057-build.log
+            kernel/out/System.map
+            kernel/out/Module.symvers
+      - name: Save complete hashed verification checkpoint
+        run: python3 reconstruction/scripts/candidate_0057_artifacts.py save --archive .checkpoint-upload/checkpoint.tar.gz
+      - name: Upload reusable checkpoint independently of verification result
+        id: checkpoint
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0057-reverify-inputs-a${{ github.run_attempt }}
+          retention-days: 14
+          compression-level: 0
+          include-hidden-files: true
+          if-no-files-found: error
+          path: |
+            .checkpoint-upload/checkpoint.tar.gz
+            .checkpoint-upload/checkpoint.tar.gz.sha256
+      - name: Record saved outputs
+        run: |
+          printf '%s\n' '## Build saved; verification pending' \
+            'The UNVERIFIED boot and reusable checkpoint are already available in Artifacts.' \
+            'Only the separate verify job may publish a verified artifact.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve build diagnostics regardless of outcome
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0057-build-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0057-*.log
+            candidate-0057-*.json
+            candidate-0057-*.txt
+            candidate-0057-checks/
+            kernel/out/.config
+            kernel/out/System.map
+            kernel/out/Module.symvers
+            lisa-build-checkpoint.json
+  verify:
+    needs: [plan, build]
+    if: ${{ always() && !cancelled() && needs.plan.result == 'success' && (needs.build.result == 'success' || needs.plan.outputs.source-run-id != '') }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      GH_TOKEN: ${{ github.token }}
+      LISA_VERIFIER_COMMIT: ${{ github.sha }}
+    steps:
+      - name: Checkout verifier commit without stock LFS download
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+      - name: Resolve checkpoint from this repository and workflow
+        id: source
+        uses: actions/github-script@v7
+        env:
+          SOURCE_RUN_ID: ${{ needs.plan.outputs.source-run-id }}
+        with:
+          script: |
+            const raw = process.env.SOURCE_RUN_ID || String(context.runId);
+            if (!/^[1-9][0-9]*$/.test(raw)) throw new Error('source_run_id must be numeric');
+            const run_id = Number(raw);
+            if (!Number.isSafeInteger(run_id)) throw new Error('Invalid source run ID');
+            const {data: run} = await github.rest.actions.getWorkflowRun({...context.repo, run_id});
+            if (run.path !== '.github/workflows/build-lisa-candidate-0057-ownership-identity.yml')
+              throw new Error('Checkpoint source is not the Candidate0057 workflow');
+            const arts = await github.paginate(github.rest.actions.listWorkflowRunArtifacts,
+              {...context.repo, run_id, per_page:100});
+            const usable = arts.filter(a => /^lisa-c0057-reverify-inputs-a[0-9]+$/.test(a.name)
+              && !a.expired && a.size_in_bytes > 0)
+              .sort((a,b) => Number(b.name.split('-a').pop()) - Number(a.name.split('-a').pop()));
+            if (!usable.length) throw new Error('No reusable checkpoint in source run; do not silently recompile');
+            core.setOutput('run-id', String(run_id));
+            core.setOutput('artifact-id', String(usable[0].id));
+            core.setOutput('build-commit', run.head_sha);
+      - name: Download compiled checkpoint only
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: ${{ steps.source.outputs.artifact-id }}
+          run-id: ${{ steps.source.outputs.run-id }}
+          github-token: ${{ github.token }}
+          path: .checkpoint-download
+          merge-multiple: true
+      - name: Install verifier tools without kernel toolchain download
+        run: sudo apt-get update && sudo apt-get install -y build-essential python3 python3-yaml binutils-aarch64-linux-gnu kmod curl unzip
+      - name: Restore checkpoint and confirm unchanged build recipe and file hashes
+        env:
+          BUILD_COMMIT: ${{ steps.source.outputs.build-commit }}
+          BUILD_RUN_ID: ${{ steps.source.outputs.run-id }}
+        run: |
+          set -euo pipefail
+          (cd .checkpoint-download && sha256sum -c checkpoint.tar.gz.sha256)
+          python3 reconstruction/scripts/candidate_0057_artifacts.py restore \
+            --archive .checkpoint-download/checkpoint.tar.gz --commit "$BUILD_COMMIT" --run "$BUILD_RUN_ID"
+      - name: Revalidate all gates without running make or packaging
+        id: gates
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/test_candidate_0057_identity.py
+          python3 reconstruction/scripts/test_candidate_0057_artifacts.py
+          GITHUB_SHA="$LISA_BUILD_COMMIT" python3 reconstruction/scripts/candidate_0057_build.py verify \
+            2>&1 | tee candidate-0057-verify.log
+      - name: Record original build and verifier identities separately
+        run: |
+          python3 - <<'PYCODE'
+          import hashlib, json, os
+          from pathlib import Path
+          p = Path('candidate-0057-verification.json')
+          result = json.loads(p.read_text())
+          if result['package_commit'] != os.environ['LISA_BUILD_COMMIT']:
+              raise SystemExit('Verifier relabelled the source build')
+          h = hashlib.sha256()
+          with open('boot.img', 'rb') as f:
+              for b in iter(lambda: f.read(1048576), b''):
+                  h.update(b)
+          checkpoint = json.loads(Path('lisa-build-checkpoint.json').read_text())
+          if h.hexdigest() != checkpoint['files']['boot.img']['sha256']:
+              raise SystemExit('Verification changed boot bytes')
+          result.update(build_run_id=os.environ['LISA_BUILD_RUN_ID'],
+                        verifier_commit=os.environ['LISA_VERIFIER_COMMIT'],
+                        verification_run_id=os.environ['GITHUB_RUN_ID'],
+                        checkpoint_boot_bytes_unchanged=True)
+          p.write_text(json.dumps(result, indent=2) + '\n')
+          PYCODE
+      - name: Publish separately verified boot and evidence
+        if: ${{ success() && steps.gates.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0057-verified-a${{ github.run_attempt }}
           retention-days: 14
           compression-level: 1
           if-no-files-found: error
           path: |
             boot.img
             boot.img.sha256
-            candidate-0057-*
+            candidate-0057-Image
             candidate-0057.config
             candidate-0057.ikconfig
+            candidate-0057-*.json
+            candidate-0057-*.txt
+            candidate-0057-verify.log
             candidate-0046-*.txt
             kernel/out/System.map
             kernel/out/Module.symvers
-            kernel/out/techpack/display/msm/msm_drm.ko
             clang-version.txt
-      - name: Upload failure evidence only
-        if: failure()
+      - name: Preserve verification evidence on PASS or FAIL
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-candidate-0057-failure-evidence
+          name: lisa-c0057-verification-evidence-a${{ github.run_attempt }}
           retention-days: 14
-          if-no-files-found: ignore
-          include-hidden-files: true
+          if-no-files-found: warn
           path: |
+            candidate-0057-verify.log
             candidate-0057-checks/
-            candidate-0057-resolved-builder.py
-            candidate-0057-*.txt
-            candidate-0057-*.log
             candidate-0057-*.json
-            kernel/out/.config
-            kernel/out/System.map
-            kernel/out/Module.symvers
-            kernel/out/drivers/leds/leds-qti-flash.ko
-            kernel/include/linux/soc/qcom/battery_charger.h
+            candidate-0057-*.txt
+            lisa-build-checkpoint.json
+      - name: Explain validation status and no-rebuild retry
+        if: ${{ always() }}
+        env:
+          GATE_OUTCOME: ${{ steps.gates.outcome }}
+          SOURCE_RUN: ${{ steps.source.outputs.run-id }}
+        run: |
+          printf '## Verification: %s\n\nSource build run: %s\n' "$GATE_OUTCOME" "$SOURCE_RUN" >> "$GITHUB_STEP_SUMMARY"
+          printf '%s\n' 'A failed verifier does not delete the saved UNVERIFIED boot/checkpoint.' \
+            'Rerun only the verify job for a transient failure. After a verifier-only fix, use workflow_dispatch with source_run_id.' \
+            'Never call an UNVERIFIED backup a verified release or a device pass.' >> "$GITHUB_STEP_SUMMARY"
   observe:
     runs-on: ubuntu-24.04
-    timeout-minutes: 200
+    timeout-minutes: 220
     steps:
-      - name: Check after 2 minutes then 2 minutes then every 5 minutes
+      - name: Check build and independent verifier after 2 minutes then 2 then every 5
         uses: actions/github-script@v7
         with:
           script: |
-            for (let check=1; ; check++) {
+            for (let check=1; check<=42; check++) {
               await new Promise(r => setTimeout(r, check <= 2 ? 120000 : 300000));
               try {
-                const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {...context.repo, run_id:context.runId, filter:'latest', per_page:100});
+                const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun,
+                  {...context.repo, run_id:context.runId, filter:'latest', per_page:100});
                 const build = jobs.find(j=>j.name==='build');
-                core.info(`Check ${check}: ${build?.status} / ${build?.conclusion}`);
-                if (!build || build.status!=='completed') continue;
-                if (build.conclusion!=='success') {
-                  core.setFailed(`First failure: ${build.steps.find(s=>s.conclusion==='failure')?.name || build.conclusion}`);
-                  break;
+                const verify = jobs.find(j=>j.name==='verify');
+                core.info(`Check ${check}: build=${build?.status}/${build?.conclusion}; verify=${verify?.status}/${verify?.conclusion}`);
+                if (build?.status==='completed' && !['success','skipped'].includes(build.conclusion)) {
+                  core.setFailed(`Build stopped: ${build.steps.find(s=>s.conclusion==='failure')?.name}; inspect saved diagnostics/UNVERIFIED output.`);
+                  return;
                 }
-                const arts=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,{...context.repo,run_id:context.runId,per_page:100});
-                const a=arts.find(a=>a.name==='lisa-candidate-0057-ownership-identity' && !a.expired && a.size_in_bytes>0);
+                if (!verify || verify.status!=='completed') continue;
+                if (verify.conclusion!=='success') {
+                  core.setFailed(`Verification stopped: ${verify.steps.find(s=>s.conclusion==='failure')?.name || verify.conclusion}; reuse saved checkpoint, do not rebuild for verifier-only changes.`);
+                  return;
+                }
+                const arts=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,
+                  {...context.repo,run_id:context.runId,per_page:100});
+                const a=arts.find(a=>a.name===`lisa-candidate-0057-verified-a${process.env.GITHUB_RUN_ATTEMPT}` && !a.expired && a.size_in_bytes>0);
                 if (!a) core.setFailed('Verified boot artifact missing');
-                else await core.summary.addHeading('Candidate0057 build verified').addRaw(`Artifact ${a.id}; static checks are not a device pass; overlay corruption is not claimed fixed.`).write();
-                break;
+                else await core.summary.addHeading('Candidate0057 static verification passed').addRaw(`Artifact ${a.id}; device validation remains pending.`).write();
+                return;
               } catch(e) { core.warning(`Check ${check}: ${e.message}`); }
             }
+            core.setFailed('Observation timeout; not a successful build/verification verdict.');
