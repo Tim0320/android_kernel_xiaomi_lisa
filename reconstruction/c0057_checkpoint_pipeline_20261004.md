@@ -119,3 +119,42 @@ verification failures from artifact retention and recompilation.
 Keep the existing hourly Lisa automation `6ab2be5b63348191a2883afc462945b7`.
 The observer watches both build and verification on its existing 2/2/5-minute
 pattern; it is not a self-modifying repair agent. Read current CI before acting.
+
+
+## Hosted checkpoint result: fa96c94 / Run 37183496384
+
+The first complete checkpointed Candidate0057 pipeline has now finished static verification.
+Original build/package commit: `fa96c94a1ee076660c6c2ce80f967baa6a601820` (short `fa96c94`).
+Workflow Run `37183496384`: plan `111380595106` SUCCESS, build `111380616163` SUCCESS,
+independent verify `111382970109` SUCCESS. The observer was still polling when this note was written;
+its state does not supersede the already-completed build/verify results.
+
+Published artifacts:
+
+- `11296217223 lisa-c0057-UNVERIFIED-boot-a1`, ZIP SHA256 `91f2d20885fa55f0f0c2f77c0b767880d47b66502f55ee52cf1523cc446f46f6`.
+  This remains a diagnostic pre-verification backup and is not the approved artifact.
+- `11295653451 lisa-c0057-reverify-inputs-a1`, artifact digest `sha256:b6512db771658e13f917cbd42d6b17f3aa526040320955e8262f128c307cc44b`.
+  Checkpoint build commit/run/attempt are fa96c94 / 37183496384 / 1, recipe fingerprint
+  `838a058c7a4d3cd9b580c1d2620822bfa7183dc52401c33281fef97e21d868c0`.
+- `11296730529 lisa-candidate-0057-verified-a1`, ZIP SHA256 / GitHub digest
+  `7f9cc6f97b832846d09647cb3183b06cd097207a1f880f85c6ea5eb8948a224d`.
+- `11296730531 lisa-c0057-verification-evidence-a1`, digest
+  `sha256:7b6124612c9054802d8a1dcbe54e1d088d1e6df47898d25d5870247318685ad9`.
+
+Independent download/readback confirms the verified package contains a 201326592-byte `boot.img`
+with SHA256 `9376cef8adaa542847538faac968b24bf50f30cf152b48d45f58ac845f93ed4d`, and
+`candidate-0057-Image` SHA256 `aeca56d8a570fb9fe696f4f22863b72454181cf1bc1496e5afd8a47998b8c811`.
+The pre-verification backup boot and the independently verified boot are byte-for-byte identical
+(`cmp` success; same SHA256). The compiled banner is:
+
+`Linux version 5.4.289-qgki-lisa-c0057-rfa96c94-by-Tim0320 (Tim0320@lisa-ci) ... #57 SMP PREEMPT Sun Oct 04 06:44:11 UTC 2026`.
+
+Static verification passed: 84/84 camera/HWID/flash duplicate exports removed from vmlinux with
+rebuilt camera.ko/hwid.ko/leds-qti-flash.ko ownership, stock flash/battery contract PASS,
+power providers 2/2 CRC plus code symbols, UFS providers 7/7 plus linked LUN0 setter call,
+msm_drm 736 imports with 0 mismatches/0 missing, MODVERSIONS enabled, CFI enabled and non-permissive,
+PAS/IPA/proc/raw-fault inherited gates, boot layout/repack and identity/provenance gates.
+
+This is a build/static-verification completion only. `runtime_pass=false`, Wi-Fi repaired=0,
+camera runtime validated=0, overlay repaired=false. Candidate0057 still requires actual device testing;
+do not infer Wi-Fi/camera/graphics runtime success from this artifact.
