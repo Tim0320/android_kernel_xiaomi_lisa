@@ -1,0 +1,99 @@
+{
+  "schema": 1,
+  "scope": "BPF5.10 ring-buffer stage1; not full 5.10 BPF replacement",
+  "linux_base": "5.4.289",
+  "baseline": "6e568aabc77a06fa787baec1d9e60e4b559874a3",
+  "reference": "MiYume0721/android_kernel_xiaomi_sm8350_miyume@6f0290557329655f29c9b1bc52eec33e36f859ba",
+  "upstream": [
+    "457f44363a8894135c85b7a9afd2bd8196db24ab",
+    "5b029a32cfe4600f5e10e36b41778506b90fd4de",
+    "4e9077638301816a7d73fa1e1b4c1db4a7e3b59c"
+  ],
+  "additional_review": [
+    "PTR_TO_MEM spilling",
+    "reject offset/double release",
+    "preserve reference id in pointer arithmetic",
+    "bound allocation size and mmap page offsets",
+    "pending reservation overrun protection and counter wrap"
+  ],
+  "gzip_sha256": "d5a07d7a7e02291657d7c166dc311964fa3231d5c6c9f8dff40042251b9de0ee",
+  "patch_sha256": "bc0bf3f5366b85d966f570a1dadcead2bbea6313c59de336cc1cada8b6df77e0",
+  "files": {
+    "include/linux/bpf.h": {
+      "before": "83390873440cd7defc5dcbaa588ab8becf43b06dee4d1603b954b4140f410f59",
+      "after": "3df4c534ac6502482e7ffe040e0a3332c9faa2a6e1b14dc5329ab17c167e53a2"
+    },
+    "include/linux/bpf_types.h": {
+      "before": "246e6a5ea26c6c35a0260e2d5b3fc00c91c3dc54575ed14e0111e9eeafe3757f",
+      "after": "5f4e4dff3719d93ea56cc97bde56a4225a9d4773e7da7423801fa3982e29dc51"
+    },
+    "include/linux/bpf_verifier.h": {
+      "before": "6acfa57713a051d615f3549e05a0054c004a3ed9de9d0cf8db461c9cc63e6e0e",
+      "after": "221996211af386486b3bef6d29e714f3ff3b4b21175e18becd0276f60fd013d3"
+    },
+    "include/uapi/linux/bpf.h": {
+      "before": "5089232aba186ac0309bc978ae2a9b3e3ff7848212bf2417f2f74c79d3e8ab66",
+      "after": "8f5e2bc47dd782bf4455541bf4ca094ba8468c567235652b1ec590ffd3b076da"
+    },
+    "kernel/bpf/Makefile": {
+      "before": "d20da9270ec891f2a569a5bb51eedc1bef5df8dd7037cbb7c0c92c7b2bd9ebfd",
+      "after": "4c5b57dba3822b687e569d1ac538ff1ec91d9f07ae4a2b8a1e54bf8e55703de3"
+    },
+    "kernel/bpf/ringbuf.c": {
+      "before": null,
+      "after": "2e213a4ccd39ba3ad6894ff1e575834b28c3fb644784c4827fa3a3a1cbaceaf9"
+    },
+    "kernel/bpf/syscall.c": {
+      "before": "32b7c52e26cf41620f41fae9daade31a094635af2b5b417072c0e5e438bf44cb",
+      "after": "4739e125b90eeb8a1c08771abcea37f4348d2eba1c504ed40c26e99f6e70df2a"
+    },
+    "kernel/bpf/verifier.c": {
+      "before": "7acd1caf0d75aa3fead91235b66dc437b17552539a143ce45ed5b1e0fdc51f47",
+      "after": "73e2d45cf20ae79bac6f46a9ffe0ad3f568f4d6291944d35ed18db419d7214af"
+    },
+    "kernel/trace/bpf_trace.c": {
+      "before": "8aef3cde22ab6468fa448a3e5bea708a65496ba8c78700b66a9a7f43a9caa673",
+      "after": "7eb2f3aaeaf7af39ac43cad9638569c26f0425908d7dffe83b53c8423e4d476e"
+    },
+    "net/core/filter.c": {
+      "before": "cf0ab69cf3e8d187d9f0a765fe46a375cd46672aa8d941852ffd3db9b6b3e505",
+      "after": "a94c9752efd159e4411ec814fbb7cabf1b49dabf34859ee4618ddade315d771e"
+    },
+    "tools/include/uapi/linux/bpf.h": {
+      "before": "061a2c2834245037946ca16637682d94db89cda4f538e86545f79f93f841e483",
+      "after": "0d8e657ab2ab4d2cb49119d7300d106e16383d66950bddd15ad62f4f5c52d57e"
+    },
+    "tools/testing/selftests/bpf/verifier/and.c": {
+      "before": "6714693375612e7aba0db667841823b7e43644e792f62d9f115cd4450b012c0b",
+      "after": "9c437dd17b6d1ae2c90b8ae5a481d00ae886007d968a01a1f54a3d96d6965b71"
+    },
+    "tools/testing/selftests/bpf/verifier/array_access.c": {
+      "before": "7d9235bc42e279dd158d7c60afb1d914f4f48adf808e488700265cefe59e6e8f",
+      "after": "e59e3f61e8580e31bc9e1b9c4b31a0317810459058dd51fa69bc8ca67ff030d2"
+    },
+    "tools/testing/selftests/bpf/verifier/bounds.c": {
+      "before": "0b3dd58f5c63bfdd4e8ce7453c1804cdd758aef5277588fcd95ccd7c0f8e9e0f",
+      "after": "4d7dfb3bf3730fd4cada5b3f41c00e51c20f9a4246d81ace417a4a35c2732f9a"
+    },
+    "tools/testing/selftests/bpf/verifier/calls.c": {
+      "before": "d39e76a364c5ed825ab137fbe1694a29898ca559a04b2c61de22b7ab8ba097a1",
+      "after": "324cbdea2fba905d5883d099712bd9b548c88104fd87fc4ed83e3c647107e8fa"
+    },
+    "tools/testing/selftests/bpf/verifier/direct_value_access.c": {
+      "before": "ddb117cca04c3ffabbd8ed1e033d7caa2bb5bb7d475ee387de6a96966481d1ab",
+      "after": "4423898705a839a7bb85f7d9ffc13d187fc9c3cb2b12d5374e1f2b33ee61f0cb"
+    },
+    "tools/testing/selftests/bpf/verifier/helper_access_var_len.c": {
+      "before": "66efe914f6d4951caaffa7ab2fbb49796b5dba3dbadc33c7817eb1005dcb1afb",
+      "after": "811f8141f68fe4924dcf5e6e2a7c1016d665d6cee526b57fff8f805ca663ff27"
+    },
+    "tools/testing/selftests/bpf/verifier/helper_value_access.c": {
+      "before": "ff2fa40f117db372dc30a1f5a41390bcce2980f69a94a845c267d568610bac0e",
+      "after": "ddf80fca3fcc675b810acc4db96f1c54cdbaccbcadfb2e24d319be919a27cb78"
+    },
+    "tools/testing/selftests/bpf/verifier/value_ptr_arith.c": {
+      "before": "568b396796e51248c60645baffa900b703869ff3a92571c6a1ae5235445db253",
+      "after": "6973e0fd91b6591f53fb03fc997380c1a70891e38bc4f71f61aab583a6e6e78e"
+    }
+  }
+}

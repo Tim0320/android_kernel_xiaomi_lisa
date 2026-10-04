@@ -1,0 +1,177 @@
+--- a/reconstruction/scripts/candidate_0058_build.py
++++ b/reconstruction/scripts/candidate_0058_build.py
+@@ -17,7 +17,7 @@
+ ROOT = Path(__file__).resolve().parents[2]
+ PINS = {
+     'candidate_0056_build.py': '2bc00712a980203f134e0e9615a8be1f99f02d58',
+-    'candidate_0058_ownership_patch.py': '4c3152361dc338fbc92673a9be7d8941da9de200',
++    'candidate_0058_ownership_patch.py': '0f0ec87855b5db42910bf8cdc516d11d62079d80',
+     'candidate_0046_build.py': '5d5f5f1bcfe9d979b3c3352ae10308e5377b2793',
+ }
+ 
+@@ -103,7 +103,9 @@
+     hook = 'original_candidate0018 = promote_lisa_camera_runtime_deps_builtin()\n'
+     text = once(text, hook,
+         'from candidate_0058_identity import install as install_lisa_identity\n'
+-        'install_lisa_identity(base, ROOT, KERNEL)\n\n' + hook)
++        'install_lisa_identity(base, ROOT, KERNEL)\n'
++        'from candidate_0058_bpf_port import install as install_bpf58\n'
++        'install_bpf58(base, ROOT, KERNEL)\n\n' + hook)
+     compile(text, 'candidate0058_resolved', 'exec')
+     return text
+ 
+@@ -115,9 +117,12 @@
+     source = transform(parent.preflight())
+     for name in ('candidate_0058_build.py', 'candidate_0058_identity.py',
+                  'candidate_0058_ownership_patch.py', 'candidate_0058_flash_contract.py',
+-                 'test_candidate_0058_flash_contract.py'):
++                 'test_candidate_0058_flash_contract.py', 'candidate_0058_bpf_port.py',
++                 'test_candidate_0058_bpf_port.py'):
+         py_compile.compile(str(ROOT / 'reconstruction/scripts' / name), doraise=True)
+     subprocess.run([sys.executable, str(ROOT / 'reconstruction/scripts/test_candidate_0058_flash_contract.py')], check=True)
++    from candidate_0058_bpf_port import payload
++    payload(ROOT)
+     (ROOT / 'candidate-0058-resolved-builder.py').write_text(source)
+     print('LISA_CANDIDATE_0058_PREFLIGHT=PASS', flush=True)
+     return parent, source
+@@ -127,17 +132,19 @@
+     scope = {'__file__': str(parent.inherited.PARENT), '__name__': '__main__'}
+     exec(compile(source, 'candidate0058_resolved', 'exec'), scope)
+     from candidate_0058_identity import identity
++    from candidate_0058_bpf_port import check_source
++    check_source(ROOT / 'kernel')
+     manifest = (
+-        'candidate=Lisa Candidate0058 vendor camera flash HWID ownership and truthful identity\n'
+-        'baseline=Candidate0056 battery fix plus Candidate0055 UFS registry\n'
++        'candidate=Lisa Candidate0058 privileged BPF5.10 ring-buffer stage1 on verified0057\n'
++        'baseline=Candidate0057 runtime ownership plus0056battery and0055UFS\n'
+         f"package_commit={os.environ.get('GITHUB_SHA')}\n"
+         f"workflow_run={os.environ.get('GITHUB_RUN_ID')}\n"
+         f'kernel_release={identity()}\n'
+         f"candidate_0058_image_sha256={digest(ROOT / 'candidate-0058-Image')}\n"
+         f"candidate_0058_boot_sha256={digest(ROOT / 'boot.img')}\n"
+-        'mutation=remove 84 duplicate camera/flash/HWID providers from vmlinux; vendor modules remain original\n'
+-        'unchanged=battery algorithms/UFS/procfs/CFI/PAS/display/GPU/audio/thermal/boot layout\n'
+-        'not_claimed=WiFi runtime pass, overlay corruption fix, camera capture or charging safety validation\n'
++        'mutation=first-stage BPF5.10 ringbuf helpers+verifier+mmap/poll; preserve vendor module ownership\n'
++        'unchanged=battery algorithms/UFS/procfs/CFI/PAS/display/GPU/audio/thermal/boot layout; no system/vendor APK or modem firmware changes\n'
++        'not_claimed=full BPF5.10 parity, Android16 ROM repair, cellular/graphics fix, target verifier runtime pass\n'
+         'runtime_validation=pending device test\n'
+         'LISA_CANDIDATE_0058_FINAL_GATE=PASS\n')
+     (ROOT / 'candidate-0058-manifest.txt').write_text(manifest)
+@@ -179,6 +186,8 @@
+                            cwd=ROOT, env=env, check=True)
+         print('::endgroup::', flush=True)
+     verify_identity(ROOT)
++    from candidate_0058_bpf_port import verify as verify_bpf
++    verify_bpf(ROOT)
+     sha = digest(ROOT / 'boot.img')
+     if sha != (ROOT / 'boot.img.sha256').read_text().split()[0]:
+         raise RuntimeError('boot.img checksum mismatch')
+@@ -188,7 +197,8 @@
+                   boot_sha256=sha, boot_bytes=(ROOT / 'boot.img').stat().st_size,
+                   inherited_non_camera_gates='PASS', module_ownership_gate='84/84',
+                   power_provider_crc_matches=2, ufs_provider_crc_matches=7,
+-                  compiled_identity='PASS', runtime_pass=False, overlay_repaired=False)
++                  compiled_identity='PASS', bpf_stage='ringbuf-v1', full_bpf510_parity=False,
++                  runtime_pass=False, overlay_repaired=False)
+     (ROOT / 'candidate-0058-verification.json').write_text(json.dumps(result, indent=2) + '\n')
+     print('LISA_CANDIDATE_0058_VERIFICATION=PASS', flush=True)
+ 
+--- a/reconstruction/scripts/candidate_0058_identity.py
++++ b/reconstruction/scripts/candidate_0058_identity.py
+@@ -66,7 +66,7 @@
+                 configured = True
+             actual = dict(os.environ if env is None else env)
+             actual.update(LOCALVERSION='', KBUILD_BUILD_USER='Tim0320',
+-                          KBUILD_BUILD_HOST='lisa-ci', KBUILD_BUILD_VERSION='57',
++                          KBUILD_BUILD_HOST='lisa-ci', KBUILD_BUILD_VERSION='58',
+                           KBUILD_BUILD_TIMESTAMP=build_time)
+             result = original_sh(cmd, cwd=cwd, env=actual)
+             if hashlib.sha256((kernel / 'kernel/module.c').read_bytes()).hexdigest() != loader_hash:
+@@ -77,7 +77,7 @@
+                     raise RuntimeError(f'Unexpected compiled UTS release: {uts}')
+                 data = {'release': release, 'package_commit': os.environ['GITHUB_SHA'],
+                         'build_user': 'Tim0320', 'build_host': 'lisa-ci',
+-                        'build_version': 57, 'build_utc': build_time,
++                        'build_version': 58, 'build_utc': build_time,
+                         'linux_base': '5.4.289', 'module_loader_unchanged_sha256': loader_hash,
+                         'stock_module_crcs_required': True, 'runtime_tested': False}
+                 (root / 'candidate-0058-identity.json').write_text(json.dumps(data, indent=2) + '\n')
+@@ -96,7 +96,7 @@
+     text = banners.pop()
+     if not text.startswith('Linux version ' + release + ' ') or '(Tim0320@lisa-ci)' not in text:
+         raise RuntimeError('Final Image branding differs from requested identity: ' + text)
+-    if '#57 SMP PREEMPT ' not in text or 'pangu-build-component-vendor' in text or 'g5987d69e25da' in text:
++    if '#58 SMP PREEMPT ' not in text or 'pangu-build-component-vendor' in text or 'g5987d69e25da' in text:
+         raise RuntimeError('Old stock build identity survived in Linux banner')
+     return text
+ 
+@@ -107,7 +107,7 @@
+     recorded = json.loads((root / 'candidate-0058-identity.json').read_text())
+     for key, expected in {'release': release, 'package_commit': os.environ['GITHUB_SHA'],
+                           'build_user': 'Tim0320', 'build_host': 'lisa-ci',
+-                          'build_version': 57, 'linux_base': '5.4.289'}.items():
++                          'build_version': 58, 'linux_base': '5.4.289'}.items():
+         if recorded.get(key) != expected:
+             raise RuntimeError(f'Compiled identity record mismatch: {key}')
+     uts = (root / 'kernel/out/include/generated/utsrelease.h').read_text()
+--- a/reconstruction/scripts/candidate_0058_artifacts.py
++++ b/reconstruction/scripts/candidate_0058_artifacts.py
+@@ -26,6 +26,8 @@
+     'boot.img', 'boot.img.sha256', 'candidate-0058-Image', 'candidate-0046-Image',
+     'candidate-0058.config', 'candidate-0058.ikconfig', 'candidate-0046.config',
+     'candidate-0046.ikconfig', 'candidate-0058-identity.json', 'candidate-0058-manifest.txt',
++    'candidate-0058-bpf-source.json', 'candidate-0058-bpf-scope.txt',
++    'kernel/out/kernel/bpf/ringbuf.o', 'kernel/out/kernel/bpf/verifier.o',
+     'kernel/out/.config', 'kernel/out/System.map', 'kernel/out/Module.symvers',
+     'kernel/out/include/generated/utsrelease.h', 'kernel/out/include/generated/compile.h',
+     'kernel/out/kernel/power/lisa_power_compat.o',
+@@ -50,6 +52,8 @@
+     '.lisa-reference-0058/leds-qti-flash.ko',
+     '.lisa-reference-0058/qti_battery_charger_main_k8.ko',
+ )
++REQUIRED += ('kernel/include/linux/bpf.h', 'kernel/include/linux/bpf_types.h', 'kernel/include/linux/bpf_verifier.h', 'kernel/include/uapi/linux/bpf.h', 'kernel/kernel/bpf/Makefile', 'kernel/kernel/bpf/ringbuf.c', 'kernel/kernel/bpf/syscall.c', 'kernel/kernel/bpf/verifier.c', 'kernel/kernel/trace/bpf_trace.c', 'kernel/net/core/filter.c', 'kernel/tools/include/uapi/linux/bpf.h', 'kernel/tools/testing/selftests/bpf/verifier/and.c', 'kernel/tools/testing/selftests/bpf/verifier/array_access.c', 'kernel/tools/testing/selftests/bpf/verifier/bounds.c', 'kernel/tools/testing/selftests/bpf/verifier/calls.c', 'kernel/tools/testing/selftests/bpf/verifier/direct_value_access.c', 'kernel/tools/testing/selftests/bpf/verifier/helper_access_var_len.c', 'kernel/tools/testing/selftests/bpf/verifier/helper_value_access.c', 'kernel/tools/testing/selftests/bpf/verifier/value_ptr_arith.c')
++
+ OPTIONAL = ('kernel/out/vmlinux', 'clang-version.txt',
+             'stock-msm-drm-imports.tsv', 'stock-msm-drm-summary.tsv')
+ RECIPE_PARTS = {
+@@ -71,7 +75,7 @@
+     scripts = root / 'reconstruction/scripts'
+     for path in sorted(scripts.glob('candidate_00*.py')):
+         # These are never used to generate kernel/boot bytes.
+-        if path.name in ('candidate_0058_artifacts.py', 'candidate_0058_flash_contract.py'):
++        if path.name in ('candidate_0058_artifacts.py', 'candidate_0058_flash_contract.py', 'candidate_0058_qemu_probe.py', 'candidate_0058_factory.py'):
+             continue
+         if path.name in RECIPE_PARTS:
+             wanted = RECIPE_PARTS[path.name]
+@@ -94,7 +98,8 @@
+         if 'reconstruction/scripts/' + name not in entries:
+             raise RuntimeError('Build fingerprint recipe missing: ' + name)
+     for path in sorted((root / 'reconstruction/overlays').glob('*')):
+-        if path.is_file():
++        if path.is_file() and path.name != 'candidate_0058_recipe_delta.patch':
++            # Generated runtime recipe functions are fingerprinted above.
+             entries[str(path.relative_to(root))] = sha256(path)
+     workflow = root / '.github/workflows/build-lisa-candidate-0053-arm64-fault-capture.yml'
+     entries[str(workflow.relative_to(root))] = sha256(workflow)
+--- a/reconstruction/scripts/test_candidate_0058_identity.py
++++ b/reconstruction/scripts/test_candidate_0058_identity.py
+@@ -7,7 +7,7 @@
+ SHA = '3d372a0e663fcf3fca0bc9c5389c26c1d52ff112'
+ RELEASE = '5.4.289-qgki-lisa-c0058-r3d372a0-by-Tim0320'
+ BANNER = ('Linux version '+RELEASE+' (Tim0320@lisa-ci) (Android clang 11.0.2) '
+-          '#57 SMP PREEMPT Sun Oct 04 06:02:00 UTC 2026')
++          '#58 SMP PREEMPT Sun Oct 04 06:02:00 UTC 2026')
+ 
+ class IdentityTests(unittest.TestCase):
+     def test_printf_template_before_banner(self):
+@@ -20,7 +20,7 @@
+     def test_wrong_author(self):
+         with self.assertRaises(RuntimeError): concrete_banner(BANNER.replace('Tim0320@lisa-ci','stock@build').encode(), RELEASE)
+     def test_wrong_build_number(self):
+-        with self.assertRaises(RuntimeError): concrete_banner(BANNER.replace('#57','#56').encode(), RELEASE)
++        with self.assertRaises(RuntimeError): concrete_banner(BANNER.replace('#58','#56').encode(), RELEASE)
+     def test_multiple_conflicting_concrete_banners(self):
+         with self.assertRaises(RuntimeError):
+             concrete_banner(BANNER.encode()+b'\x00Linux version 5.4.289-stock (stock@build)\x00', RELEASE)
