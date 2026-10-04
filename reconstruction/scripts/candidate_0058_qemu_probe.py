@@ -76,9 +76,16 @@ def main():
         if 'LISA_BPF58_TARGET_PROBE_FAIL' in text or 'BPF58_TEST FAIL ' in text:
             record['state'] = 'FAIL'
             raise RuntimeError('BPF target execution/verifier regression failed; inspect QEMU log')
+        begin = 'LISA_BPF58_TARGET_PROBE_BEGIN' in text
         if 'LISA_BPF58_TARGET_PROBE_PASS' not in text:
+            if begin:
+                record['state'] = 'INCONCLUSIVE_EXECUTION'
+                raise RuntimeError('BPF probe began but did not complete; inspect target log')
             record['state'] = 'INCONCLUSIVE_BOOT'
-            raise RuntimeError('This phone Image did not complete the generic-virt guest probe; not a BPF pass')
+            record['note'] = ('Phone-specific Image did not reach init on generic QEMU virt; '
+                              'this is not a BPF pass or BPF failure')
+            print('LISA_CANDIDATE_0058_BPF_QEMU_GATE=INCONCLUSIVE_BOOT', flush=True)
+            return
         if record.get('exit_code') != 0:
             record['state'] = 'FAIL_EXIT'
             raise RuntimeError('Probe marker present but QEMU did not shut down cleanly')

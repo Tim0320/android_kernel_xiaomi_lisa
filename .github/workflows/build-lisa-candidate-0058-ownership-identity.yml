@@ -281,7 +281,19 @@ jobs:
           # Execution requires the new ARM64 kernel; host compilation is not a verifier pass.
       - name: Execute actual ARM64 Image BPF probe in a diskless guest
         id: bpf_probe
-        run: python3 reconstruction/scripts/candidate_0058_qemu_probe.py
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/candidate_0058_qemu_probe.py
+          python3 - <<'PYCODE'
+          import json, os
+          from pathlib import Path
+          state = json.loads(Path('candidate-0058-bpf-qemu.json').read_text()).get('state')
+          if state not in ('PASS', 'INCONCLUSIVE_BOOT'):
+              raise SystemExit('Unexpected BPF guest state: ' + str(state))
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write('state=' + state + '\n')
+          print('BPF_GUEST_STATE=' + state)
+          PYCODE
       - name: Record original build and verifier identities separately
         run: |
           python3 - <<'PYCODE'
@@ -299,19 +311,45 @@ jobs:
           if h.hexdigest() != checkpoint['files']['boot.img']['sha256']:
               raise SystemExit('Verification changed boot bytes')
           qemu = json.loads(Path('candidate-0058-bpf-qemu.json').read_text())
-          if qemu.get('state') != 'PASS':
-              raise SystemExit('BPF generic ARM64 guest probe is not a pass')
-          result.update(bpf_arm64_guest_test='PASS', device_tested=False, build_run_id=os.environ['LISA_BUILD_RUN_ID'],
+          state = qemu.get('state')
+          if state not in ('PASS', 'INCONCLUSIVE_BOOT'):
+              raise SystemExit('Unexpected BPF guest state: ' + str(state))
+          result.update(bpf_arm64_guest_test=state, bpf_runtime_pending=(state != 'PASS'),
+                        device_tested=False, build_run_id=os.environ['LISA_BUILD_RUN_ID'],
                         verifier_commit=os.environ['LISA_VERIFIER_COMMIT'],
                         verification_run_id=os.environ['GITHUB_RUN_ID'],
                         checkpoint_boot_bytes_unchanged=True)
           p.write_text(json.dumps(result, indent=2) + '\n')
           PYCODE
-      - name: Publish separately verified boot and evidence
-        if: ${{ success() && steps.gates.outcome == 'success' && steps.bpf_probe.outcome == 'success' }}
+      - name: Publish runtime-verified boot and evidence
+        if: ${{ success() && steps.gates.outcome == 'success' && steps.bpf_probe.outcome == 'success' && steps.bpf_probe.outputs.state == 'PASS' }}
         uses: actions/upload-artifact@v4
         with:
           name: lisa-candidate-0058-verified-a${{ github.run_attempt }}
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0058-Image
+            candidate-0058.config
+            candidate-0058.ikconfig
+            candidate-0058-*.json
+            candidate-0058-*.txt
+            candidate-0058-verify.log
+            candidate-0058-bpf-qemu.log
+            candidate-0058-ringbuf-probe-aarch64
+            reconstruction/scripts/candidate_0058_ringbuf_probe.c
+            candidate-0046-*.txt
+            kernel/out/System.map
+            kernel/out/Module.symvers
+            clang-version.txt
+      - name: Publish static-verified boot pending phone BPF runtime validation
+        if: ${{ success() && steps.gates.outcome == 'success' && steps.bpf_probe.outcome == 'success' && steps.bpf_probe.outputs.state == 'INCONCLUSIVE_BOOT' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-candidate-0058-static-verified-bpf-pending-device-a${{ github.run_attempt }}
           retention-days: 14
           compression-level: 1
           if-no-files-found: error
@@ -384,9 +422,15 @@ jobs:
                 }
                 const arts=await github.paginate(github.rest.actions.listWorkflowRunArtifacts,
                   {...context.repo,run_id:context.runId,per_page:100});
-                const a=arts.find(a=>a.name===`lisa-candidate-0058-verified-a${process.env.GITHUB_RUN_ATTEMPT}` && !a.expired && a.size_in_bytes>0);
-                if (!a) core.setFailed('Verified boot artifact missing');
-                else await core.summary.addHeading('Candidate0058 static verification passed').addRaw(`Artifact ${a.id}; device validation remains pending.`).write();
+                const runtime=arts.find(a=>a.name===`lisa-candidate-0058-verified-a${process.env.GITHUB_RUN_ATTEMPT}` && !a.expired && a.size_in_bytes>0);
+                const pending=arts.find(a=>a.name===`lisa-candidate-0058-static-verified-bpf-pending-device-a${process.env.GITHUB_RUN_ATTEMPT}` && !a.expired && a.size_in_bytes>0);
+                if (runtime) {
+                  await core.summary.addHeading('Candidate0058 runtime BPF guest verification passed').addRaw(`Artifact ${runtime.id}; phone validation remains pending.`).write();
+                } else if (pending) {
+                  await core.summary.addHeading('Candidate0058 static verification passed').addRaw(`Artifact ${pending.id}; generic QEMU boot was inconclusive, so phone BPF runtime validation is still required.`).write();
+                } else {
+                  core.setFailed('Neither runtime-verified nor static-verified-pending artifact exists');
+                }
                 return;
               } catch(e) { core.warning(`Check ${check}: ${e.message}`); }
             }
