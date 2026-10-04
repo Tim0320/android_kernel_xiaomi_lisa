@@ -40,6 +40,7 @@ MIGT_SCHED_C = r'''// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/compiler.h>
 #include <linux/cred.h>
 #include <linux/init.h>
+#include <linux/module.h>
 #include <linux/pkg_stat.h>
 #include <linux/sched.h>
 #include <linux/user_namespace.h>
@@ -140,7 +141,7 @@ static int __init migt_sched_init(void)
 	pr_info("Candidate0059 MIGT scheduler statistics enabled\n");
 	return 0;
 }
-late_initcall(migt_sched_init);
+module_init(migt_sched_init);
 '''
 
 def replace_once(path: Path, old: str, new: str) -> None:
@@ -207,7 +208,7 @@ def verify(root: Path) -> dict:
             "void migt_monitor_hook(",
             "void migt_hook(",
             "migt_sched_init",
-            "late_initcall(migt_sched_init);",
+            "module_init(migt_sched_init);",
             "state->migt.run_times += delta;",
         ),
         "include/linux/pkg_stat.h": (
