@@ -104,6 +104,29 @@ def require(root: Path, table: dict[str, tuple[str, ...]], failures: list[str]) 
     return out
 
 
+def scan_symbol_references(root: Path, symbols: tuple[str, ...]) -> dict:
+    result = {symbol: {"references": [], "count": 0} for symbol in symbols}
+    allowed = {".c", ".h", ".S", ".Kconfig", ".mk", ""}
+    for path in root.rglob("*"):
+        if not path.is_file():
+            continue
+        name = path.name
+        if not (name == "Kconfig" or name == "Makefile" or path.suffix in allowed):
+            continue
+        try:
+            lines = text(path).splitlines()
+        except (UnicodeDecodeError, OSError):
+            continue
+        rel = str(path.relative_to(root))
+        for i, line in enumerate(lines, 1):
+            for symbol in symbols:
+                if symbol in line or (symbol.startswith("CONFIG_") and ("config " + symbol[7:]) in line):
+                    result[symbol]["count"] += 1
+                    if len(result[symbol]["references"]) < 80:
+                        result[symbol]["references"].append({"path": rel, "line": i, "text": line.strip()[:240]})
+    return result
+
+
 def scan_cross_cutting(donor: Path) -> dict:
     result = {}
     needles = ("CONFIG_PACKAGE_RUNTIME_INFO", "pkg.", "pkg_", "migt", "game_load", "glk")
@@ -182,6 +205,10 @@ def main() -> int:
         "donor_cross_cutting_hooks": scan_cross_cutting(args.donor),
         "target_perf_files_already_present": target_baseline,
         "target_perf_config_already_present": baseline_config,
+        "target_symbol_reference_scan": scan_symbol_references(
+            args.target,
+            ("CONFIG_MIHW", "CONFIG_MIGT", "CONFIG_PACKAGE_RUNTIME_INFO", "CONFIG_OEM_KERNEL"),
+        ),
         "failures": failures,
         "result": "PASS" if not failures else "FAIL",
         "claims": {
@@ -203,6 +230,9 @@ def main() -> int:
         f"REQUIRED_PORT_STRATEGY={strategy}",
         "TARGET_PERF_BASELINE=" + json.dumps(target_baseline, sort_keys=True),
         "TARGET_PERF_CONFIG_BASELINE=" + json.dumps(baseline_config, sort_keys=True),
+        "TARGET_OEM_KERNEL_REFERENCE_COUNT=" + str(
+            report["target_symbol_reference_scan"]["CONFIG_OEM_KERNEL"]["count"]
+        ),
     ]
     if failures:
         summary.extend("FAILURE=" + item for item in failures)
