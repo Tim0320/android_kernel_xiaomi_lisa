@@ -28,6 +28,7 @@ PKG_CORE_C = r'''// SPDX-License-Identifier: GPL-2.0-only
 #include <linux/jiffies.h>
 #include <linux/pkg_stat.h>
 #include <linux/sched.h>
+#include <linux/sched/user.h>
 #include <linux/spinlock.h>
 #include <linux/topology.h>
 
