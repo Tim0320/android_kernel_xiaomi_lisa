@@ -1,55 +1,95 @@
 # Candidate0059 preflight research status
 
-This file records the evidence that must be satisfied before Candidate0059 is allowed to start a full kernel build.
+## Current repository state
+
+Candidate0059 remains a two-fix build. Full CI59 is blocked until the prebuild gate passes for both Developer Options and Android16 performance. This document records the latest narrowed evidence and explicitly separates prebuild evidence from post-device acceptance.
 
 ## Goal A — Developer Options
 
-Working stock runtime baseline is now treated as:
+The working stock runtime baseline is confirmed as:
 - ro.debuggable=0
 - ro.force.debuggable=0
 - ro.secure=1
 - ro.adb.secure=1
 
-Candidate0058 runtime diverges to 1/1/0/0 even though the published Candidate0058 boot ramdisk still contains stock-like user values and does not contain force_debuggable, adb_debug.prop, or userdebug_plat_sepolicy.cil.
+Candidate0058 runtime diverges to 1/1/0/0.
 
-Boot-order evidence narrows the failure further: vendor_init later tries to apply ro.adb.secure=1 from /vendor/default.prop, but property-service/SELinux denies that write. Therefore the bad ro.adb.secure=0 value already exists before that vendor property file can repair it. The repair must identify the actual earlier source rather than weaken SELinux or grant broad property access.
+The published Candidate0058 boot artifact was unpacked directly. Its boot ramdisk SHA256 is `0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae`, matching the healthy stock boot ramdisk used by the reconstruction flow. Its ramdisk still contains stock-like user values and no `/force_debuggable`, `adb_debug.prop`, or `userdebug_plat_sepolicy.cil`.
 
-Current unresolved blocker:
-- identify the first early-boot source that creates the 1/1/0/0 runtime state, then restore the stock-equivalent 0/0/1/1 behavior.
+The fixed-region repack also gates header, ramdisk, non-kernel bytes, AVB metadata and footer byte-exact. Therefore the current evidence does **not** support blaming a changed Candidate0058 boot ramdisk.
 
-Accepted fix classes include a proven correction in the actual boot-chain/debug fragment/init/root overlay source. Global permissive, broad system_app property grants, or fake property success are rejected.
+Stock and Candidate0058 also share the examined SELinux/debug/cmdline knobs, including `CONFIG_SECURITY_SELINUX_DEVELOP=y`, `CONFIG_DEBUG_KERNEL=y`, and the same command-line mode. Those are not candidate-only differences and must not be disabled as a speculative fix.
 
-## Goal B — Android16 reconstructed-boot jank
+AOSP debug-ramdisk behavior gives a useful signature: `adb_debug.prop` sets `ro.adb.secure=0`, `ro.debuggable=1`, and `ro.force.debuggable=1`. Candidate0058 matches that triplet, but it also has `ro.secure=0`, which that AOSP debug property file does not explain. The final repair therefore must prove both:
+1. the first path that creates the debug triplet; and
+2. the independent source of `ro.secure=0`.
 
-Stock-vs-candidate evidence:
-- Stock Lisa: CONFIG_MIHW=y, CONFIG_MIGT=y, CONFIG_PACKAGE_RUNTIME_INFO=y, CONFIG_OEM_KERNEL=y.
-- Candidate0058: CONFIG_MIHW=y, but MIGT/PACKAGE_RUNTIME_INFO/OEM_KERNEL are absent.
-- Historical stock probes expose migt_init, migt_sched_init, game_load_init, and pkg_init.
+Later boot logs show `vendor_init` trying to set `ro.adb.secure=1` from `/vendor/default.prop` and being denied by property-service/SELinux. This proves the bad zero exists earlier, but it does not identify the original source.
 
-Same-generation Xiaomi 5.4 source review shows the dependency chain is not a single-file feature:
+Prebuild acceptance for Goal A requires a structured evidence record with:
+- resolved=true
+- first_override_path_proven=true
+- ro_secure_zero_source_resolved=true
+- override_source
+- fix_location
+- source_evidence
+- affected_files
+
+Forbidden fixes remain: global permissive, broad `system_app` property grants, fake property-service success, or kernel/BPF workarounds for a userspace property-policy mismatch.
+
+Post-device acceptance requires candidate runtime properties to return to 0/0/1/1 and Developer Options to open repeatedly without the logpersistd property denial or Settings fatal exception.
+
+## Goal B — Android16 performance
+
+The stock-vs-candidate difference remains strong:
+- Stock Lisa: `CONFIG_MIHW=y`, `CONFIG_MIGT=y`, `CONFIG_PACKAGE_RUNTIME_INFO=y`, `CONFIG_OEM_KERNEL=y`.
+- Candidate0058: MIHW remains, but MIGT, PACKAGE_RUNTIME_INFO and OEM_KERNEL are absent.
+- Historical stock probes expose `migt_init`, `migt_sched_init`, `game_load_init`, and `pkg_init`.
+
+Same-generation Xiaomi 5.4 source review shows that PACKAGE_RUNTIME_INFO is broader than one driver plus four scheduler objects. It touches scheduler/task/user lifecycle and accounting plumbing, including package runtime hooks and WALT-related paths. The donor tree references include:
 - drivers/mihw/migt.c
 - kernel/sched/pkg_core.c
 - kernel/sched/pkg_interface.c
 - kernel/sched/migt_sched.c
 - kernel/sched/glk.c
 - include/linux/pkg_stat.h
-- kernel/sched/Makefile wiring for pkg_core.o, pkg_interface.o, migt_sched.o, glk.o
+- scheduler Makefile wiring
+- task/user/fork/exit/cred/sysctl/cpuset/timekeeping/cpufreq-schedutil integration points
 
-The Lisa port must therefore be a minimal coherent port after dependency/ABI review. Enabling CONFIG_MIGT without the package-runtime/scheduler plumbing is not accepted.
+The pinned Lisa source does not expose these package-runtime/MIGT markers in the already-inspected corresponding files, and its WALT implementation path must be located before hook mapping is complete. Therefore simply copying `migt.c` or toggling `CONFIG_MIGT=y` is not accepted.
 
-The Android16 capture also shows an iorapd restart loop because /dev/iorap_dev is absent. Old Lisa stock policy historically disabled iorapd, while newer Xiaomi generations use a real launch-boost/iorap2 ABI. Do not create a fake node or return success for unknown ioctls. Treat this as a separate compatibility decision: stock-faithful disable versus a semantically correct 5.4 implementation only after the caller ABI is proven.
+The Android16 capture also contains an `iorapd` restart loop because `/dev/iorap_dev` is absent. Old Lisa stock behavior historically disabled iorapd, while newer Xiaomi launch-boost/iorap2 uses a real multi-command ABI. Candidate0059 must choose one explicit policy:
+- `stock-faithful-disable`
+- `semantic-5.4-port`
+- `defer-outside-c0059`
 
-MIGT and Metis are not interchangeable. Old /dev/migt and newer /dev/metis use different command contracts. A direct alias is explicitly rejected.
+Fake device nodes and unknown-ioctl-success shims are forbidden. Old `/dev/migt` and newer `/dev/metis` are also different ABIs and must not be aliased.
 
-## No-build gate
+## Two-stage gate
 
-Use `reconstruction/scripts/candidate_0059_preflight.py` before creating the full Candidate0059 build workflow.
+`reconstruction/scripts/candidate_0059_preflight.py` now has two phases.
 
-The gate must fail until all of the following are true:
-1. CONFIG_MIHW, CONFIG_MIGT, CONFIG_PACKAGE_RUNTIME_INFO, and CONFIG_OEM_KERNEL are restored in the staged source/config.
-2. migt_init, migt_sched_init, game_load_init, pkg_init and the required scheduler objects are present.
-3. Candidate runtime debug/security properties match the working stock baseline.
-4. The actual early debug-property override source/fix location is documented.
-5. No direct MIGT-to-Metis device alias is introduced.
+### prebuild
 
-A preflight PASS is not a runtime PASS. Candidate0059 remains device-test-ready only after the later full build/static verification; Developer Options and Android16 jank still require real-device validation.
+This phase is allowed to pass before a Candidate0059 device exists. It checks:
+- required stock-proven performance config
+- MIGT/package-runtime source and scheduler wiring
+- working stock runtime property baseline
+- resolved Developer Options early-boot provenance/fix location
+- explicit iorap strategy
+- no direct MIGT/Metis alias
+
+A prebuild PASS only permits one full Candidate0059 build. It is not runtime proof.
+
+### postdevice
+
+This phase is run only after a real Candidate0059 boot has been collected. It re-runs prebuild requirements and additionally checks:
+- candidate runtime properties match the working stock baseline
+- no logpersistd property denial remains
+- no Settings fatal remains in the Developer Options path
+
+Android16 jank still requires the existing same-workload collector and measurable before/after reduction; this script intentionally does not fabricate that runtime measurement.
+
+## Build scope
+
+Candidate0059 must retain Candidate0058 BPF StageA, Candidate0057 Wi-Fi ownership, Candidate0056 battery, Candidate0055 UFS, CFI/MODVERSIONS, display736, PAS/boot-layout/checkpoint/identity gates. Do not mix in BPF StageB-F, F2FS, 5.4.302, IPA experiments, or new display experiments.
