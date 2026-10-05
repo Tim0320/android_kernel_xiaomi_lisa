@@ -89,17 +89,16 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "f861836d00412eee1bb164a4d706b81c3ab4ec78",
+  "last_checked_commit": "0864ae51f41ec466b37b17e6fb66c7f00a09dc14",
   "last_checked_run": 37267450300,
-  "blocker": "BATCH_A_REVIEW_RERUN_PENDING",
-  "next_action": "Inspect the audit triggered by f861836. Consume candidate-0061-batch-a-review.json after the four known semantic conflicts are classified. If SEMANTIC_REVIEW is non-zero, classify the next remaining paths. If it reaches zero, prepare the isolated Candidate0061 Batch A source application/build workflow and run olddefconfig, Image/modules, modpost, Module.symvers/CRC gates.",
+  "blocker": "BATCH_A_AUDIT_EVIDENCE_PENDING",
+  "next_action": "Read reconstruction/generated/c0061_batch_a_review_latest.json produced by the uplift audit triggered by 0864ae5. If present, use workflow_run_id and remaining SEMANTIC_REVIEW paths to continue classification. If SEMANTIC_REVIEW is zero, create the isolated Candidate0061 Batch A source/build gate. If the generated evidence is absent, inspect/fix the audit workflow's first failure, then retrigger.",
   "next_expected_evidence": [
-    "Fresh Candidate0061 audit after f861836",
-    "candidate-0061-batch-a-review.json with known hrtimer/clk-rpmh/clk-alpha-pll/socinfo conflicts removed from SEMANTIC_REVIEW",
-    "Count and paths of remaining unclassified Batch A conflicts",
-    "Candidate0061 Batch A source application/build workflow once semantic review reaches zero",
-    "Batch A compile and modpost result",
-    "Batch A Module.symvers and CRC result",
+    "reconstruction/generated/c0061_batch_a_review_latest.json",
+    "workflow_source_sha and workflow_run_id recorded by the audit",
+    "remaining SEMANTIC_REVIEW count/path list",
+    "Candidate0061 Batch A source/build gate once semantic review reaches zero",
+    "Batch A compile/modpost/Module.symvers/CRC results",
     "HyperOS 3.0.9 A16 touch control capture"
   ],
   "forbidden": [
@@ -139,7 +138,9 @@
     "5.4.291 clk-rpmh fix classified ADAPT: unsigned-long multiplication cast",
     "5.4.291 clk-alpha-pll fix classified ADAPT: preserve vendor flow and add alpha mode bits to update mask",
     "5.4.291 socinfo fix classified ADAPT: item-size-aware serial_num bounds in Lisa vendor semantics",
-    "5.4.290 hrtimer hotplug fix classified NOT_APPLICABLE to Lisa older CPUHP hrtimer model"
+    "5.4.290 hrtimer hotplug fix classified NOT_APPLICABLE to Lisa older CPUHP hrtimer model",
+    "Lisa automation hardened: every unfinished run must update the same one-shot DTSTART and keep itself enabled",
+    "Candidate0061 uplift audit now persists its Batch A semantic review JSON back into repository evidence for push-run observability"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
