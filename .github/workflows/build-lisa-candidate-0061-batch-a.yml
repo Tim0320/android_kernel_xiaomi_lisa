@@ -10,6 +10,7 @@ on:
       - reconstruction/scripts/candidate_0061_batch_a_manual.py
       - reconstruction/scripts/candidate_0061_batch_a_review.py
       - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
+      - reconstruction/scripts/extract_stock_ikheaders_from_boot.py
       - reconstruction/scripts/candidate_0046_build.py
       - reconstruction/scripts/candidate_0050_proc_abi_patch.py
       - reconstruction/scripts/candidate_0059_factory.py
@@ -28,6 +29,7 @@ on:
       - reconstruction/scripts/candidate_0059_stage7_migt_control.py
       - reconstruction/scripts/candidate_0059_stage9_freq_qos.py
       - reconstruction/scripts/candidate_0058_bpf_port.py
+      - reconstruction/stock/stock-Image/boot.img
 
 permissions:
   contents: read
@@ -41,7 +43,7 @@ concurrency:
 jobs:
   batch-a:
     runs-on: ubuntu-24.04
-    timeout-minutes: 180
+    timeout-minutes: 240
     steps:
       - name: Checkout Candidate0061 package
         uses: actions/checkout@v4
@@ -66,41 +68,32 @@ jobs:
         run: |
           set -euo pipefail
           stable=https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
-          git -C kernel fetch --no-tags --depth=1 "$stable" \
-            refs/tags/v5.4.289:refs/tags/upstream-v5.4.289 \
-            refs/tags/v5.4.292:refs/tags/upstream-v5.4.292
+          git -C kernel fetch --no-tags --depth=1 "$stable"             refs/tags/v5.4.289:refs/tags/upstream-v5.4.289             refs/tags/v5.4.292:refs/tags/upstream-v5.4.292
           git -C kernel show upstream-v5.4.292:Makefile | grep -E '^(VERSION|PATCHLEVEL|SUBLEVEL)'
 
       - name: Materialize Candidate0058 BPF Stage-A payload
         run: |
           set -euo pipefail
-          cat package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part00 \
-              package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part01 \
-              package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part02 \
-              package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part03 \
-            > package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz
+          cat package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part00               package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part01               package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part02               package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part03             > package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz
 
-      - name: Download frozen Candidate0059 ABI/config and stock ABI headers
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Materialize durable stock ABI oracle
+        id: stock_abi
         run: |
           set -euo pipefail
-          mkdir -p c0059-baseline stock-abi
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/11322443300/zip" \
-            -o c0059-baseline.zip
-          unzip -q c0059-baseline.zip -d c0059-baseline
-          test -s c0059-baseline/candidate-0059.config
-          find c0059-baseline -name Module.symvers -type f -print
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10637733529/zip" \
-            -o stock-abi.zip
-          unzip -q stock-abi.zip -d stock-abi
+          git -C package lfs install --local
+          git -C package lfs pull --include="reconstruction/stock/stock-Image/boot.img"
+          boot="package/reconstruction/stock/stock-Image/boot.img"
+          test -s "$boot"
+          test "$(stat -c %s "$boot")" -eq 201326592
+          boot_sha="$(sha256sum "$boot" | awk '{print $1}')"
+          echo "STOCK_BOOT_SHA256=$boot_sha"
+          test "$boot_sha" = e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+          rm -rf stock-abi
+          mkdir -p stock-abi
+          python3 package/reconstruction/scripts/extract_stock_ikheaders_from_boot.py             --boot "$boot"             --out stock-abi/stock-kheaders             --manifest candidate-0061-stock-ikheaders.json             2>&1 | tee candidate-0061-stock-ikheaders.log
+          grep -q '^LISA_STOCK_IKHEADERS_EXTRACT=PASS$' candidate-0061-stock-ikheaders.log
           test -s stock-abi/stock-kheaders/include/linux/power_debug.h
+          test -s stock-abi/stock-kheaders/include/linux/kconfig.h
 
       - name: Recreate frozen Candidate0059 inherited source stack
         id: c0059
@@ -111,25 +104,21 @@ jobs:
           set -euo pipefail
           rm -rf kernel/out
           mkdir -p kernel/out
-          cp c0059-baseline/candidate-0059.config kernel/out/.config
+          cp kernel/reconstruction/stock_ikconfig kernel/out/.config
           python3 package/reconstruction/scripts/candidate_0059_factory.py
           python3 - <<'PY' 2>&1 | tee candidate-0061-c0059-source.log
           from pathlib import Path
           from types import SimpleNamespace
           import candidate_0046_build as c46
           import candidate_0050_proc_abi_patch as proc50
-          import candidate_0061_c0059_abi_compat as abi_compat
           import candidate_0056_power_patch as power
           import candidate_0059_ownership_patch as ownership
           import candidate_0059_perf_port as perf
           import candidate_0059_bpf_port as bpf
+
           root = Path("package").resolve()
           kernel = Path("kernel").resolve()
 
-          # The pinned 5.4.289 source already contains the Candidate0055 UFS
-          # registry bridge. Re-applying the retained chain double-patches it.
-          # Recreate only the missing later layers, preserving the existing UFS
-          # source bytes.
           ufs = (kernel / "drivers/scsi/ufs/ufshcd.c").read_text()
           mem = (kernel / "drivers/misc/mi-memory/mem_interface.c").read_text()
           if "set_ufs_hba_data(sdev);" not in ufs or "void set_ufs_hba_data(" not in mem:
@@ -139,14 +128,12 @@ jobs:
           if not (kernel / "kernel/power/lisa_power_compat.c").exists():
               power.apply(root, kernel)
 
-          # Restore the QGKI ABI contract inherited by Candidate0059.
           c46.ROOT = root
           c46.KERNEL = kernel
           c46.OUT = kernel / "out"
           c46.patch_qgki_module_abi()
 
           proc50.apply(root, kernel)
-          abi_compat.apply(root, kernel)
 
           ownership.retained = lambda _root: SimpleNamespace(apply=lambda _r, _k: None)
           ownership.apply(root, kernel)
@@ -155,6 +142,7 @@ jobs:
           bpf.apply(root, kernel)
           print("C0059_INHERITED_SOURCE_STACK_RECREATED=PASS")
           PY
+          grep -q '^C0059_INHERITED_SOURCE_STACK_RECREATED=PASS$' candidate-0061-c0059-source.log
           git -C kernel diff --check
           git -C kernel diff --stat | tee candidate-0061-c0059-source-stat.txt
 
@@ -162,10 +150,7 @@ jobs:
         id: apply
         run: |
           set -euo pipefail
-          python3 package/reconstruction/scripts/candidate_0061_batch_a_apply.py \
-            --source kernel \
-            --report candidate-0061-batch-a-apply.json \
-            2>&1 | tee candidate-0061-batch-a-apply.log
+          python3 package/reconstruction/scripts/candidate_0061_batch_a_apply.py             --source kernel             --report candidate-0061-batch-a-apply.json             2>&1 | tee candidate-0061-batch-a-apply.log
           grep -q '^C0061_BATCH_A_APPLY=PASS$' candidate-0061-batch-a-apply.log
           grep -q '^SUBLEVEL = 292$' kernel/Makefile
           git -C kernel diff --check
@@ -175,10 +160,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y \
-            bc bison flex build-essential libssl-dev libelf-dev \
-            gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi \
-            python3 curl xz-utils unzip git rsync kmod
+          sudo apt-get install -y             bc bison flex build-essential libssl-dev libelf-dev             gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi             python3 curl xz-utils unzip git rsync kmod
 
       - name: Cache stock-generation AOSP clang 11.0.2
         uses: actions/cache@v4
@@ -193,14 +175,12 @@ jobs:
           ARCHIVE="${RUNNER_TEMP}/clang-r383902b1.tar.gz"
           mkdir -p "$DEST"
           if [[ ! -x "$DEST/bin/clang" ]]; then
-            curl -L --fail --retry 5 --retry-all-errors \
-              "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz" \
-              -o "$ARCHIVE"
+            curl -L --fail --retry 5 --retry-all-errors               "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/tags/android-11.0.0_r48/clang-r383902b1.tar.gz"               -o "$ARCHIVE"
             tar -xzf "$ARCHIVE" -C "$DEST"
           fi
           "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
 
-      - name: Prepare Batch A stock-derived config
+      - name: Prepare reviewed Batch A control config
         id: config
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -210,29 +190,60 @@ jobs:
           set -euo pipefail
           rm -rf kernel/out
           mkdir -p kernel/out
-          # Preserve the exact Candidate0059 build scope before allowing
-          # Linux 5.4.292 olddefconfig to resolve only newly introduced Kconfig.
-          cp c0059-baseline/candidate-0059.config kernel/out/.config
-          kernel/scripts/config --file kernel/out/.config \
-            -e BOARD_XIAOMI_LISA -e MIHW -e PACKAGE_RUNTIME_INFO -e MIGT
-          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" \
-            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts \
-            2>&1 | tee candidate-0061-batch-a-config.log
-          grep -E '^(CONFIG_MIHW|CONFIG_MIGT|CONFIG_PACKAGE_RUNTIME_INFO|CONFIG_MODVERSIONS|CONFIG_CFI_CLANG)=' \
-            kernel/out/.config | tee candidate-0061-batch-a-config.txt
+          cp kernel/reconstruction/stock_ikconfig kernel/out/.config
+          kernel/scripts/config --file kernel/out/.config             -e BOARD_XIAOMI_LISA -e MIHW -e PACKAGE_RUNTIME_INFO -e MIGT
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-config.log
+          grep -E '^(CONFIG_MIHW|CONFIG_MIGT|CONFIG_PACKAGE_RUNTIME_INFO|CONFIG_MODVERSIONS|CONFIG_CFI_CLANG|CONFIG_QCOM_WATCHDOG_BARK_TIME|CONFIG_QCOM_WATCHDOG_PET_TIME)='             kernel/out/.config | tee candidate-0061-batch-a-config.txt
           grep -q '^CONFIG_MIHW=y$' kernel/out/.config
           grep -q '^CONFIG_MIGT=y$' kernel/out/.config
           grep -q '^CONFIG_PACKAGE_RUNTIME_INFO=y$' kernel/out/.config
           grep -q '^CONFIG_MODVERSIONS=y$' kernel/out/.config
           grep -q '^CONFIG_CFI_CLANG=y$' kernel/out/.config
+          grep -q '^CONFIG_LEDS_QTI_FLASH=m$' kernel/out/.config
+          grep -q '^CONFIG_MI_HARDWARE_ID=m$' kernel/out/.config
           grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
           grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
           grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
 
-      - name: Compile Image modules and dtbs
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
         id: build
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -240,28 +251,27 @@ jobs:
           CONFIG_USE_COMMON_CAMERA: y
         run: |
           set -euo pipefail
-          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" \
-            ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 \
-            CROSS_COMPILE=aarch64-linux-gnu- \
-            CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-            CLANG_TRIPLE=aarch64-linux-gnu- \
-            Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
           test -s kernel/out/arch/arm64/boot/Image
           test -s kernel/out/Module.symvers
           test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
           sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
           echo C0061_BATCH_A_COMPILE_MODPOST=PASS
 
-      - name: Audit Module.symvers CRC delta
+      - name: Audit exact ABI compatibility delta
         id: abi
         if: ${{ steps.build.outcome == 'success' }}
         run: |
           set -euo pipefail
-          BASELINE="$(find c0059-baseline -name Module.symvers -type f | head -n1)"
-          test -n "$BASELINE"
-          python3 - "$BASELINE" kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
           import json, sys
           from pathlib import Path
+
           def load(path):
               out = {}
               for raw in Path(path).read_text(errors="replace").splitlines():
@@ -269,50 +279,49 @@ jobs:
                   if len(fields) >= 2:
                       out[fields[1]] = fields[0].lower()
               return out
-          base = load(sys.argv[1])
-          now = load(sys.argv[2])
-          changed = {k: {"c0059": base[k], "batch_a": now[k]}
-                     for k in sorted(base.keys() & now.keys()) if base[k] != now[k]}
-          removed = {k: base[k] for k in sorted(base.keys() - now.keys())}
-          added = {k: now[k] for k in sorted(now.keys() - base.keys())}
-          reviewed_changed = {
-              "xhci_dbg_trace",
-              "xhci_ext_cap_init",
-              "xhci_gen_setup",
-              "xhci_resume",
-              "xhci_suspend",
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
           }
-          reviewed_added = {
-              "flow_rule_match_ports_range",
-              "page_get_link_raw",
-              "tasklet_setup",
-          }
-          unexpected_changed = sorted(set(changed) - reviewed_changed)
-          unexpected_added = sorted(set(added) - reviewed_added)
           result = {
-              "baseline": "Candidate0059 r43da7c5 / artifact 11322443300",
-              "target": "Candidate0061 Batch A Linux 5.4.292",
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
               "changed_crc_count": len(changed),
               "removed_symbol_count": len(removed),
               "added_symbol_count": len(added),
               "changed": changed,
               "removed": removed,
               "added": added,
-              "reviewed_stable_changed": sorted(set(changed) & reviewed_changed),
-              "reviewed_stable_added": sorted(set(added) & reviewed_added),
-              "unexpected_changed": unexpected_changed,
-              "unexpected_added": unexpected_added,
-              "provenance": {
-                  "xhci": "STABLE_ONLY: official Batch A modifies drivers/usb/host/xhci*.c,h",
-                  "page_get_link_raw": "STABLE_ONLY: official Batch A modifies fs/namei.c",
-                  "tasklet_setup": "STABLE_ONLY: official Batch A modifies kernel/softirq.c",
-                  "flow_rule_match_ports_range": "STABLE_ONLY: official Batch A modifies net/core/flow_offload.c",
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
               },
           }
           Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
-          print(json.dumps({k: result[k] for k in ("changed_crc_count","removed_symbol_count","added_symbol_count")}))
-          if removed or unexpected_changed or unexpected_added:
-              raise SystemExit("ABI_REVIEW_REQUIRED")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
           print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
           PY
 
@@ -320,8 +329,12 @@ jobs:
         if: ${{ always() }}
         env:
           GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
           APPLY_OUTCOME: ${{ steps.apply.outcome }}
           CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
           BUILD_OUTCOME: ${{ steps.build.outcome }}
           ABI_OUTCOME: ${{ steps.abi.outcome }}
         run: |
@@ -331,28 +344,39 @@ jobs:
             echo
             echo "- source_sha: ${GITHUB_SHA}"
             echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
             echo "- apply: $APPLY_OUTCOME"
             echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
             echo "- build: $BUILD_OUTCOME"
             echo "- abi: $ABI_OUTCOME"
             if test -s candidate-0061-batch-a-apply.json; then
               python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
             fi
             if test -s candidate-0061-batch-a-abi.json; then
-              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- crc_changed:', p.get('changed_crc_count')); print('- symbols_removed:', p.get('removed_symbol_count')); print('- symbols_added:', p.get('added_symbol_count'))"
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
             fi
+            echo
             if test -s candidate-0061-batch-a-build.log; then
-              echo
-              echo "build-log-tail:"
+              echo "target-build-log-tail:"
               tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
             elif test -s candidate-0061-batch-a-apply.log; then
-              echo
               echo "apply-log-tail:"
               tail -n 30 candidate-0061-batch-a-apply.log
             elif test -s candidate-0061-c0059-source.log; then
-              echo
               echo "c0059-source-log-tail:"
               tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
             fi
           } > candidate-0061-batch-a-issue.md
           gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
@@ -366,6 +390,8 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
           path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
             candidate-0061-c0059-source.log
             candidate-0061-c0059-source-stat.txt
             candidate-0061-batch-a-apply.json
@@ -373,6 +399,12 @@ jobs:
             candidate-0061-batch-a-source-stat.txt
             candidate-0061-batch-a-config.log
             candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
             candidate-0061-batch-a-build.log
             candidate-0061-batch-a-Image.sha256
             candidate-0061-batch-a-abi.json
