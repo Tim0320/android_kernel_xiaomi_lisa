@@ -31,7 +31,7 @@
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
     "phase_3_batch_a_5_4_290_to_5_4_292": "PASS",
-    "phase_4_batch_b_5_4_293_to_5_4_296": "BUILD_GATE_TRIGGERED",
+    "phase_4_batch_b_5_4_293_to_5_4_296": "MAKEFILE_ADAPTER_PUSHED_RERUN_PENDING",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
     "phase_7_touch_jank_hotpath_correction": "NOT_STARTED",
@@ -89,20 +89,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "83dbe9c06de24f593d776bc9f151c53be1a9a811",
-  "last_checked_run": 37331513181,
-  "blocker": "BATCH_B_FIRST_STRICT_RUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch B run triggered by commit 83dbe9c. Batch A run 37331513181 is fully PASS: stock ABI, C0059 source recreation, Stable Batch A apply, reviewed config, same-run control build, C0059 ABI compatibility, target build and ABI gate all succeeded; exact ABI delta was changed=0 removed=0 added=2 with lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135. Batch B now applies official 5.4.292->5.4.296 semantics on top of the passed Batch A base. The first Batch B pass is intentionally strict: unreviewed non-clean semantic overlaps stop at the first path, and any non-zero changed/added ABI delta is reported for stable-provenance review while symbol removals fail immediately. Repair only the first real blocker; do not add touch/performance changes during Batch B.",
+  "last_checked_commit": "657bba28318c5de1aef5480eda7cbf88a8a46337",
+  "last_checked_run": 37337064578,
+  "blocker": "BATCH_B_RERUN_PENDING_AFTER_MAKEFILE_ADAPT",
+  "next_action": "Inspect the new Candidate0061 Batch B run triggered by 657bba2. Prior run 37337064578 passed stock ABI, C0059 recreation, Batch A base, ABI compatibility and Batch A control build, then failed at the first strict Batch B semantic conflict: top-level Makefile. This is now classified STABLE_ONLY/ADAPT and repaired by preserving the downstream Qualcomm/Xiaomi Makefile while changing only SUBLEVEL 292 -> 296. Continue strict first-conflict discovery; if the next failure is another semantic overlap, classify and adapt only that path. If apply passes, continue compile/modpost and exact ABI provenance review.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch B run for 83dbe9c or later",
-    "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
-    "C0061_BATCH_A_APPLY=PASS",
-    "C0061_C0059_ABI_COMPAT_GATE=PASS",
+    "New Candidate0061 Batch B run for 657bba2 or later",
     "C0061_BATCH_B_CONTROL_COMPILE_MODPOST=PASS",
-    "C0061_BATCH_B_APPLY=PASS or exact first unreviewed semantic-conflict path",
-    "C0061_BATCH_B_COMPILE_MODPOST=PASS if semantic apply passes",
-    "Batch B ABI delta report with removed symbols = 0",
-    "Any changed/added Batch B ABI symbol traced to official 5.4.292->5.4.296 stable provenance before acceptance"
+    "Makefile semantic adapter advances only SUBLEVEL 292 -> 296",
+    "C0061_BATCH_B_APPLY=PASS or next exact unreviewed semantic-conflict path",
+    "C0061_BATCH_B_COMPILE_MODPOST=PASS if apply passes",
+    "Batch B ABI report with removed symbols = 0",
+    "Any changed/added ABI symbols traced to official 5.4.292->5.4.296 stable provenance"
   ],
   "forbidden": [
     "global frequency pin",
@@ -214,7 +212,10 @@
     "Batch A exact ABI delta PASS: changed=0 removed=0 added=2; lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135",
     "Strict Batch B 5.4.292->5.4.296 apply helper added at 7c7cdc0",
     "Reusable frozen Candidate0059 uplift source recreation helper added at d013b77",
-    "Candidate0061 Batch B build/ABI workflow triggered at 83dbe9c; first pass rejects unreviewed semantic conflicts and unreviewed ABI deltas"
+    "Candidate0061 Batch B build/ABI workflow triggered at 83dbe9c; first pass rejects unreviewed semantic conflicts and unreviewed ABI deltas",
+    "Run 37337064578 first Batch B blocker identified: top-level Makefile three-way conflict after all prerequisite/control gates passed",
+    "Batch B Makefile conflict classified STABLE_ONLY/ADAPT: preserve downstream Qualcomm/Xiaomi kbuild content and change only SUBLEVEL 292->296",
+    "Batch B Makefile semantic adapter pushed at 657bba2"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -223,6 +224,9 @@
     "https://www.kernel.org/doc/html/v5.4/admin-guide/pm/cpufreq.html",
     "https://kernel.org/doc/html/latest/scheduler/sched-util-clamp.html",
     "https://www.kernel.org/doc/html/v4.20/trace/ftrace.html",
-    "https://kernel.org/pub/linux/kernel/v5.x/incr/"
+    "https://kernel.org/pub/linux/kernel/v5.x/incr/",
+    "https://docs.kernel.org/5.19/admin-guide/README.html",
+    "https://kernel.org/doc/html/v5.19/process/applying-patches.html",
+    "https://git.codelinaro.org/clo/la/kernel/msm-5.4/-/blob/kernel.lnx.5.4.r1-rel/Makefile"
   ]
 }
