@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "C0050_HELPER_RERUN_PENDING",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "ABI_COMPAT_RERUN_PENDING",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,21 +89,20 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "1dc1cec60c8b512e3589abaed8799e374c1b3a2d",
-  "last_checked_run": 37304119572,
-  "blocker": "BATCH_A_C0050_IMPORT_SIDE_EFFECT_FIXED_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A run triggered by 1dc1cec. Run 37304119572 failed before stable apply because importing candidate_0050_build.py executed the full historical Candidate0050 builder and stopped on missing candidate-0018.ikconfig. The legacy proc_create ABI mutation has now been extracted into side-effect-free reconstruction/scripts/candidate_0050_proc_abi_patch.py at 2dc36be, and the Batch A workflow at 1dc1cec calls proc50.apply(root, kernel) instead of importing candidate_0050_build.py. Verify source recreation first, then stable apply/config/build. If ABI is reached, check that camera removals collapse and CRC drift materially falls from 9698.",
+  "last_checked_commit": "2c47e8c48492255531f0d1caff6859a3c80f7cd7",
+  "last_checked_run": 37306854501,
+  "blocker": "BATCH_A_TWO_BASELINE_EXPORTS_RESTORED_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A run triggered by 02eca7d or later. Run 37306854501 passed source recreation, stable apply, config, Image/modules/dtbs and modpost; ABI collapsed from 9698/80/3 to 5 changed CRCs, 2 removed symbols and 3 added symbols. The 5 changed CRCs are xhci_dbg_trace, xhci_ext_cap_init, xhci_gen_setup, xhci_resume, xhci_suspend and are reviewed STABLE_ONLY because official Batch A modifies drivers/usb/host/xhci*. The 3 additions are flow_rule_match_ports_range, page_get_link_raw and tasklet_setup and are reviewed STABLE_ONLY in net/core/flow_offload.c, fs/namei.c and kernel/softirq.c. The only invalid losses were Candidate0059 baseline exports lisa_mtdoops_checkpoint and qcom_scm_get_download_mode; side-effect-free compatibility source now restores both at d2e3060, and workflow 02eca7d requires removed symbols=0 while allowing only the exact reviewed stable changed/added sets. If rerun passes ABI, advance immediately to Batch B.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A run for 1dc1cec or later",
-    "Candidate0050 proc ABI helper executes without candidate-0018.ikconfig dependency",
+    "New Candidate0061 Batch A run for 02eca7d or later",
+    "C0061_C0059_ABI_COMPAT_GATE=PASS",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
-    "Candidate0046 stock IKHEADERS genksyms routing present",
-    "Candidate0050 proc_create/proc_create_proc_ops split present",
-    "CONFIG_USE_COMMON_CAMERA=y active during prepare/build",
     "C0061_BATCH_A_APPLY=PASS",
     "Image/modules/dtbs compile + modpost PASS",
-    "Camera removed-symbol set reduced by approximately 75 or eliminated",
-    "CRC drift materially reduced from 9698 before stable provenance review"
+    "removed_symbol_count=0",
+    "changed CRC set contains no symbols outside reviewed xHCI stable allowlist",
+    "added symbol set contains no symbols outside reviewed stable additions",
+    "C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS"
   ],
   "forbidden": [
     "global frequency pin",
@@ -183,7 +182,15 @@
     "Post-repair workflow validation confirmed exactly one compile step, one ABI step, one report step, one upload step, and no malformed CFI or stray artifact-shell content",
     "Run 37304119572 first blocker identified: importing candidate_0050_build.py executed the full historical Candidate0050 build and failed on missing candidate-0018.ikconfig before proc ABI replay",
     "Candidate0050 legacy proc_create ABI replay extracted into side-effect-free helper candidate_0050_proc_abi_patch.py at 2dc36be",
-    "Batch A workflow switched to proc50.apply(root, kernel) at 1dc1cec so proc ABI can be replayed without executing the historical Candidate0050 builder"
+    "Batch A workflow switched to proc50.apply(root, kernel) at 1dc1cec so proc ABI can be replayed without executing the historical Candidate0050 builder",
+    "Run 37306854501 passed source recreation, stable apply, config, Image/modules/dtbs and modpost; ABI reduced to 5 changed CRCs, 2 removed symbols and 3 added symbols",
+    "All ~75 camera removals disappeared after restoring Candidate0059 common-camera build scope",
+    "Global CRC drift collapsed from 9698 to 5 after restoring Candidate0046 stock-IKHEADERS genksyms routing",
+    "Remaining changed CRCs are xHCI-only and traced to official Stable Batch A xHCI source changes",
+    "Remaining stable additions are flow_rule_match_ports_range, page_get_link_raw and tasklet_setup in official Batch A changed files",
+    "Candidate0059 baseline exports lisa_mtdoops_checkpoint and qcom_scm_get_download_mode restored by side-effect-free compatibility patch d2e3060",
+    "Batch A ABI gate at 02eca7d now rejects any removed symbol or unexpected changed/added symbol while permitting only reviewed stable-provenance deltas",
+    "Canonical plan updated at 2c47e8c to codify reviewed stable ABI delta policy"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
