@@ -1,0 +1,132 @@
+#!/usr/bin/env python3
+"""Restore two Candidate0059 ABI/runtime compatibility exports.
+
+This is intentionally side-effect-free: callers pass the package root and
+kernel source root.  It preserves the frozen Candidate0059 ABI while leaving
+official Stable Batch A source changes intact.
+"""
+from pathlib import Path
+
+
+def _patch_mtdoops(kernel: Path) -> None:
+    p = kernel / "drivers/mtd/mtdoops.c"
+    s = p.read_text()
+    if "EXPORT_SYMBOL_GPL(lisa_mtdoops_checkpoint);" in s:
+        return
+
+    anchor = "static void mtdoops_notify_add(struct mtd_info *mtd)\n"
+    if s.count(anchor) != 1:
+        raise RuntimeError(f"mtdoops checkpoint insertion anchor count={s.count(anchor)}")
+
+    helper = r'''void lisa_mtdoops_checkpoint(const char *tag)
+{
+	struct mtdoops_context *cxt = &oops_cxt;
+	size_t len = 0;
+
+	if (!cxt->mtd || !cxt->oops_buf)
+		return;
+
+	/*
+	 * Candidate0059 compatibility checkpoint: serialize against the normal
+	 * deferred writer, snapshot the current printk ring, and persist it using
+	 * the regular non-panic MTD path before returning.
+	 */
+	flush_work(&cxt->work_write);
+	pr_emerg("LISA_C0059_COMPAT_CHECKPOINT tag=%s\n", tag);
+	kmsg_dump_rewind(&cxt->dump);
+	if (kmsg_dump_get_buffer(&cxt->dump, true,
+				 cxt->oops_buf + MTDOOPS_HEADER_SIZE,
+				 record_size - MTDOOPS_HEADER_SIZE, &len) && len)
+		mtdoops_write(cxt, 0);
+}
+EXPORT_SYMBOL_GPL(lisa_mtdoops_checkpoint);
+
+'''
+    p.write_text(s.replace(anchor, helper + anchor, 1))
+
+
+def _patch_qcom_download_mode(kernel: Path) -> None:
+    hp = kernel / "include/linux/qcom_scm.h"
+    h = hp.read_text()
+    if "qcom_scm_get_download_mode" not in h:
+        old = """extern void qcom_scm_set_download_mode(enum qcom_download_mode mode,
+				       phys_addr_t tcsr_boot_misc);
+"""
+        new = old + """extern int qcom_scm_get_download_mode(unsigned int *mode,
+				      phys_addr_t tcsr_boot_misc);
+"""
+        if h.count(old) != 1:
+            raise RuntimeError(f"qcom_scm public header anchor count={h.count(old)}")
+        h = h.replace(old, new, 1)
+
+        old_stub = """static inline void qcom_scm_set_download_mode(enum qcom_download_mode mode,
+		phys_addr_t tcsr_boot_misc) {}
+"""
+        new_stub = old_stub + """static inline int qcom_scm_get_download_mode(unsigned int *mode,
+		phys_addr_t tcsr_boot_misc) { return -ENODEV; }
+"""
+        if old_stub in h:
+            h = h.replace(old_stub, new_stub, 1)
+        hp.write_text(h)
+
+    cp = kernel / "drivers/firmware/qcom_scm.c"
+    c = cp.read_text()
+    if "EXPORT_SYMBOL(qcom_scm_get_download_mode);" in c:
+        return
+
+    anchor = """EXPORT_SYMBOL(qcom_scm_set_download_mode);
+
+"""
+    if c.count(anchor) != 1:
+        raise RuntimeError(f"qcom_scm getter insertion anchor count={c.count(anchor)}")
+
+    getter = r'''int qcom_scm_get_download_mode(unsigned int *mode,
+			       phys_addr_t tcsr_boot_misc)
+{
+	struct device *dev = __scm ? __scm->dev : NULL;
+	phys_addr_t addr;
+
+	if (!mode)
+		return -EINVAL;
+
+	addr = tcsr_boot_misc;
+	if (!addr && __scm)
+		addr = __scm->dload_mode_addr;
+	if (!addr)
+		return -EINVAL;
+
+	return __qcom_scm_io_readl(dev, addr, mode);
+}
+EXPORT_SYMBOL(qcom_scm_get_download_mode);
+
+'''
+    cp.write_text(c.replace(anchor, anchor + getter, 1))
+
+
+def apply(root: Path, kernel: Path) -> None:
+    _patch_mtdoops(kernel)
+    _patch_qcom_download_mode(kernel)
+
+    m = (kernel / "drivers/mtd/mtdoops.c").read_text()
+    qh = (kernel / "include/linux/qcom_scm.h").read_text()
+    qc = (kernel / "drivers/firmware/qcom_scm.c").read_text()
+    gates = [
+        ("mtd checkpoint export", "EXPORT_SYMBOL_GPL(lisa_mtdoops_checkpoint);", m),
+        ("mtd checkpoint persistence", "mtdoops_write(cxt, 0);", m),
+        ("download-mode prototype", "qcom_scm_get_download_mode(unsigned int *mode", qh),
+        ("download-mode implementation", "__qcom_scm_io_readl(dev, addr, mode)", qc),
+        ("download-mode export", "EXPORT_SYMBOL(qcom_scm_get_download_mode);", qc),
+    ]
+    for label, needle, body in gates:
+        if needle not in body:
+            raise RuntimeError(f"Candidate0059 ABI compatibility gate missing {label}: {needle}")
+
+    (root / "candidate-0061-c0059-abi-compat.txt").write_text(
+        "classification=MIXED_CONFLICT\n"
+        "baseline=Candidate0059 r43da7c5 Module.symvers\n"
+        "restored_exports=lisa_mtdoops_checkpoint,qcom_scm_get_download_mode\n"
+        "mtd_semantics=synchronous printk-ring persistence through normal mtdoops write path\n"
+        "download_mode_semantics=read TCSR/dload-mode address through __qcom_scm_io_readl\n"
+        "stable_policy=do not revert official Batch A xHCI/fs/softirq/flow-offload ABI changes\n"
+        "C0061_C0059_ABI_COMPAT_GATE=PASS\n"
+    )
