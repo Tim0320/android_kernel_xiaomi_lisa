@@ -1,0 +1,117 @@
+{
+  "track": "candidate0061-linux-5.4.302-uplift",
+  "prepared_on": "2026-10-05",
+  "lisa": {
+    "repository": "Tim0320/android_kernel_xiaomi_lisa",
+    "source_ref": "6e568aabc77a06fa787baec1d9e60e4b559874a3",
+    "source_version": "5.4.289",
+    "static_verified_parent_package": "43da7c5d3ea7ccc8864a46edf80ba7ce2f22f1b7"
+  },
+  "target": {
+    "version": "5.4.302",
+    "stable_release_steps": [
+      "5.4.290",
+      "5.4.291",
+      "5.4.292",
+      "5.4.293",
+      "5.4.294",
+      "5.4.295",
+      "5.4.296",
+      "5.4.297",
+      "5.4.298",
+      "5.4.299",
+      "5.4.300",
+      "5.4.301",
+      "5.4.302"
+    ]
+  },
+  "donor": {
+    "repository": "MiYume0721/android_kernel_xiaomi_sm8350_miyume",
+    "ref": "6f0290557329655f29c9b1bc52eec33e36f859ba",
+    "version": "5.4.302",
+    "use": "vendor conflict/adaptation reference only"
+  },
+  "batches": [
+    {
+      "name": "A",
+      "from": "5.4.289",
+      "to": "5.4.292"
+    },
+    {
+      "name": "B",
+      "from": "5.4.292",
+      "to": "5.4.296"
+    },
+    {
+      "name": "C",
+      "from": "5.4.296",
+      "to": "5.4.299"
+    },
+    {
+      "name": "D",
+      "from": "5.4.299",
+      "to": "5.4.302"
+    }
+  ],
+  "high_risk_prefixes": [
+    "arch/arm64/",
+    "include/linux/",
+    "include/uapi/",
+    "kernel/sched/",
+    "kernel/time/",
+    "kernel/bpf/",
+    "net/",
+    "mm/",
+    "fs/",
+    "security/",
+    "drivers/cpufreq/",
+    "drivers/thermal/",
+    "drivers/scsi/ufs/",
+    "drivers/firmware/qcom/",
+    "drivers/soc/qcom/",
+    "drivers/interconnect/qcom/",
+    "drivers/gpu/",
+    "techpack/display/",
+    "scripts/",
+    "Kbuild",
+    "Makefile"
+  ],
+  "inherited_gates": [
+    "msm_drm_736_import_abi",
+    "module_layout_crc",
+    "camera_hwid_flash_ownership",
+    "wifi_module_ownership",
+    "battery_provider_crc",
+    "ufs_provider_crc",
+    "cfi_clang",
+    "modversions",
+    "fixed_region_boot_layout",
+    "avb_metadata_footer",
+    "candidate0059_performance_linkage",
+    "candidate0059_bpf_stage_a_linkage"
+  ],
+  "android17_separate_track": {
+    "candidate": "0060",
+    "items": [
+      "BPF5.10 broader backport",
+      "close_range(436)+CLOSE_RANGE_CLOEXEC",
+      "CAP_PERFMON=38",
+      "CAP_BPF=39",
+      "CAP_CHECKPOINT_RESTORE=40",
+      "Developer Options release-property repair"
+    ],
+    "note": "do not count these as official 5.4.302 stable uplift"
+  },
+  "forbidden": [
+    "SUBLEVEL-only version bump",
+    "whole-file MiYume replacements for Qualcomm/Xiaomi code",
+    "SELinux permissive/androidboot.selinux bypass",
+    "KernelSU/ReSukiSU/SuSFS",
+    "global frequency lock",
+    "thermal bypass",
+    "disable CFI",
+    "disable MODVERSIONS",
+    "relax ABI gates",
+    "SM8350 DTS/device-driver replacement"
+  ]
+}
