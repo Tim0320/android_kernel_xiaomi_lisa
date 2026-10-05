@@ -86,8 +86,16 @@ def adapt(root:Path,path:str,target_ref:str,target_blob):
         old="\telse {\n\t\tstruct task_struct *p;\n\n\t\trcu_read_lock();\n\t\tfor_each_process(p)\n\t\t\tdump_task(p, oc);\n\t\trcu_read_unlock();\n\t}"
         new="\telse {\n\t\tstruct task_struct *p;\n\t\tint i = 0;\n\n\t\trcu_read_lock();\n\t\tfor_each_process(p) {\n\t\t\tif ((++i & 1023) == 0)\n\t\t\t\ttouch_softlockup_watchdog();\n\t\t\tdump_task(p, oc);\n\t\t}\n\t\trcu_read_unlock();\n\t}"
         s=once(s,old,new,"oom dump")
-        s=once(s,"static void mark_oom_victim(struct task_struct *tsk)\n{\n\tstruct mm_struct *mm = tsk->mm;",
-          "static void mark_oom_victim(struct task_struct *tsk)\n{\n\tconst struct cred *cred;\n\tstruct mm_struct *mm = tsk->mm;","oom cred")
+        upstream_anchor="static void mark_oom_victim(struct task_struct *tsk)\n{\n\tstruct mm_struct *mm = tsk->mm;"
+        lisa_anchor="static void mark_oom_victim(struct task_struct *tsk)\n{\n\tWARN_ON(oom_killer_disabled);"
+        if upstream_anchor in s:
+            s=once(s,upstream_anchor,
+              "static void mark_oom_victim(struct task_struct *tsk)\n{\n\tconst struct cred *cred;\n\tstruct mm_struct *mm = tsk->mm;","oom cred upstream")
+        elif lisa_anchor in s:
+            s=once(s,lisa_anchor,
+              "static void mark_oom_victim(struct task_struct *tsk)\n{\n\tconst struct cred *cred;\n\n\tWARN_ON(oom_killer_disabled);","oom cred lisa")
+        else:
+            raise RuntimeError("oom cred: no supported mark_oom_victim layout")
         s=once(s,"\ttrace_mark_victim(tsk->pid);\n",
           "\tcred = get_task_cred(tsk);\n\ttrace_mark_victim(tsk, cred->uid.val);\n\tput_cred(cred);\n","oom trace")
 
