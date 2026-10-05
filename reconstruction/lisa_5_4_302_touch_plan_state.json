@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_4_DIRECT_5_4_302_UPLIFT",
+  "current_phase": "PHASE_5_DIRECT_302_SEMANTIC_CONFLICT_CLOSURE",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -53,8 +53,8 @@
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
-    "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_SCAN_ATTEMPT_3_QUEUED",
-    "phase_5_direct_302_semantic_conflict_closure": "PENDING_DIRECT_SCAN",
+    "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
+    "phase_5_direct_302_semantic_conflict_closure": "IN_PROGRESS_WRITE_PERMISSION_BLOCKED",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,17 +106,16 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "eeaa9746f3af55406122cdee23a6f0d95dcf0463",
+  "last_checked_commit": "ef309942cfafdb6d004241d2191026e182101555",
   "last_checked_run": 37363542334,
-  "blocker": "NONE_DIRECT_302_ATTEMPT_3_QUEUED",
-  "next_action": "Inspect Direct-302 run 37363542334 attempt 3 / job 111956394218. Attempt 2 was cancelled before Set up job and therefore was not a scanner/kernel failure. Attempt 3 was explicitly rerun through GitHub Actions. Once the runner starts, verify provenance/oracle fetch, frozen Candidate0059 recreation, ABI compatibility, and C0061_DIRECT_302_SCAN=PASS. If steps execute and fail, repair the first real workflow/scanner blocker. If the scan completes with semantic_review_count > 0, use the complete Direct-302 inventory for batch semantic closure and do not restore the retired per-Batch build loop.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_REVIEW_REUSE_PATCH",
+  "next_action": "Retry the prepared minimal update to candidate_0061_direct_302_scan.py so it reuses only fully covered historical A/B semantic decisions instead of counting them as unresolved. Fully reusable now: mmc-controller.yaml, clk-alpha-pll.c, pinctrl-msm.c, socinfo.c, kernel/cpu.c, gen_kheaders.sh, kernel/softirq.c, kernel/time/hrtimer.c, mm/oom_kill.c. Also encode the newly re-verified Segment B adapters for drivers/platform/Kconfig, drivers/platform/Makefile, include/linux/pid.h, kernel/time/posix-timers.c, and fs/ext4/dir.c. Do not mark cputype.h, hid-ids.h, dwc3/gadget.c or f_fs.c closed yet because later D/C segments affect those paths. After the write succeeds, rerun Direct-302 scan/review; expected unresolved semantic paths reduce from raw 33 to 19 before reviewing the remaining C/D-sensitive set. Do not build until unresolved semantic count reaches zero.",
   "next_expected_evidence": [
-    "Direct-302 attempt 3 leaves queue and begins Set up job",
-    "Fetch Direct-302 provenance and semantic oracles PASS",
-    "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
-    "C0061_DIRECT_302_C0059_ABI_COMPAT=PASS",
-    "C0061_DIRECT_302_SCAN=PASS",
-    "Complete semantic_review inventory with A/B/C/D provenance and MiYume/AOSP endpoint relations"
+    "Direct-302 scan remains PASS with changed_file_count=1760",
+    "Historical fully-covered A/B decisions are reported as REUSED_REVIEWED_DECISION rather than unresolved",
+    "Segment B platform/Kconfig, platform/Makefile, pid.h, posix-timers.c and ext4/dir.c decisions are encoded with Lisa-preserving adapters",
+    "Unresolved semantic review count drops from 33 to 19",
+    "Remaining unresolved C/D-sensitive paths are reviewed before any integrated build"
   ],
   "forbidden": [
     "global frequency pin",
@@ -267,7 +266,16 @@
     "GitHub accepted Direct-302 workflow; run 37363542334 / job 111943425458 queued",
     "Run 37363542334 attempt 2 / job 111948549521 rechecked on 2026-10-06: still queued before setup; no actual workflow, scanner, or kernel step has executed, so no code repair is justified yet.",
     "Run 37363542334 attempt 2 / job 111948549521 ended cancelled before any workflow step; classified as runner/orchestration cancellation, not kernel/scanner failure",
-    "Direct-302 job rerun explicitly through GitHub Actions; run 37363542334 attempt 3 / job 111956394218 queued"
+    "Direct-302 job rerun explicitly through GitHub Actions; run 37363542334 attempt 3 / job 111956394218 queued",
+    "Run 37363542334 attempt 3 completed Direct-302 full scan: changed_file_count=1760, DIRECT=1489, AUTO_3WAY=238, SEMANTIC_REVIEW=33; scan itself PASS and closure gate intentionally blocked on 33",
+    "Direct-302 attempt 3 verified stable v5.4.289/292/296/299/302, AOSP android11-5.4.302_r00, MiYume main 5.4.302 and CLO kernel.lnx.5.4.r1-rel fetches PASS",
+    "Direct-302 attempt 3 verified C0059_INHERITED_SOURCE_STACK_RECREATED=PASS and C0061_DIRECT_302_C0059_ABI_COMPAT=PASS",
+    "Identified scanner gap: nine fully covered historical A/B semantic decisions are still counted as unresolved despite retained reviewed evidence",
+    "Re-verified Segment B platform Kconfig/Makefile stable delta: add Surface Kconfig/source while preserving Lisa drivers/platform/msm entries",
+    "Re-verified Segment B pid.h stable delta: add pidfd_prepare prototype and pid_has_task helper while preserving downstream header content",
+    "Re-verified Segment B posix-timers stable delta: add cond_resched in timer-ID allocation loop",
+    "Re-verified Segment B ext4/dir.c adaptation: retain Lisa fake-dir/ext4_dir_rec_len semantics, use next_offset bounds checks, and add stable rejection of dot entry as final data-block entry",
+    "Prepared scanner review-reuse patch, but GitHub update_file was blocked by safety checks; no repository content was changed"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
