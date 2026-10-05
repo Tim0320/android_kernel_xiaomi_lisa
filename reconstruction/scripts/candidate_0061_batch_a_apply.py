@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
-import argparse,json,re,subprocess,tempfile
+import argparse,json,subprocess,tempfile
 from candidate_0061_batch_a_manual import MANUAL, adapt
 
 BASE="upstream-v5.4.289"
@@ -37,39 +37,12 @@ def merge3(ours,base,theirs):
             raise RuntimeError("three-way merge conflict")
         return p.stdout
 
-def prepare_candidate0059_control_seed(root):
-    path=root/"reconstruction/stock_ikconfig"
-    text=path.read_text()
-
-    def set_symbol(name,value):
-        nonlocal text
-        pat=re.compile(rf"^(?:CONFIG_{re.escape(name)}=.*|# CONFIG_{re.escape(name)} is not set)$",re.M)
-        line=f"CONFIG_{name}={value}" if value is not None else f"# CONFIG_{name} is not set"
-        if pat.search(text):
-            text=pat.sub(line,text,count=1)
-        else:
-            if not text.endswith("\n"):
-                text+="\n"
-            text+=line+"\n"
-
-    set_symbol("LOCALVERSION",'"-qgki-lisa-c0059-r43da7c5-by-Tim0320"')
-    set_symbol("LOCALVERSION_AUTO",None)
-    set_symbol("COMPAT_VDSO",None)
-    set_symbol("ARM64_USE_LSE_ATOMICS",None)
-    set_symbol("RELR",None)
-    set_symbol("PERF_HELPER","y")
-    for name in ("MILLET_CGROUP","MILLET_SIG","MILLET_BINDER","MILLET_PKG","MILLET_BINDER_GKI","MILLET_CORE","MILLET_HS"):
-        set_symbol(name,"y")
-    path.write_text(text)
-    return {"expected_post_olddefconfig_sha256":"664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397"}
-
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--source",type=Path,required=True)
     ap.add_argument("--report",type=Path,default=Path("candidate-0061-batch-a-apply.json"))
     a=ap.parse_args()
     root=a.source.resolve()
-    control_seed=prepare_candidate0059_control_seed(root)
     paths=git(root,"diff","--name-only","--no-renames",BASE,TARGET).stdout.decode().splitlines()
     stats={"DIRECT":0,"AUTO_3WAY":0,"ALREADY_PRESENT":0,"ADAPT":0,"NOT_APPLICABLE":0}
     rows=[]
@@ -99,7 +72,7 @@ def main():
         raise RuntimeError("git diff --check failed\n"+p.stdout.decode()+p.stderr.decode())
     result={"candidate":"0061","batch":"A","from":"5.4.289","to":"5.4.292",
       "classification":"STABLE_ONLY","counts":stats,"files":rows,
-      "candidate0059_reference_untouched":True,"build_oracle_control_seed":control_seed}
+      "candidate0059_reference_untouched":True}
     a.report.write_text(json.dumps(result,indent=2)+"\n")
     print("C0061_BATCH_A_APPLY=PASS")
     print(json.dumps(stats,sort_keys=True))
