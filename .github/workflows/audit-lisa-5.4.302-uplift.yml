@@ -12,7 +12,7 @@ on:
       - reconstruction/c0061_linux_5_4_302_uplift_manifest.json
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   audit:
@@ -25,7 +25,7 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 1
           lfs: false
-          persist-credentials: false
+          persist-credentials: true
 
       - name: Checkout exact Lisa 5.4.289 source
         uses: actions/checkout@v4
@@ -80,6 +80,31 @@ jobs:
           python3 reconstruction/scripts/candidate_0061_batch_a_review.py \
             --kernel kernel \
             --out candidate-0061-batch-a-review.json
+
+      - name: Persist Batch A review evidence in repository
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p reconstruction/generated
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          src = Path("candidate-0061-batch-a-review.json")
+          data = json.loads(src.read_text())
+          data["workflow_source_sha"] = os.environ["SOURCE_SHA"]
+          data["workflow_run_id"] = int(os.environ["RUN_ID"])
+          out = Path("reconstruction/generated/c0061_batch_a_review_latest.json")
+          out.write_text(json.dumps(data, indent=2) + "\n")
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add reconstruction/generated/c0061_batch_a_review_latest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "data: persist Candidate0061 Batch A review [skip ci]"
+            git push origin HEAD:main
+          fi
 
       - name: Generate official cumulative patch and direct apply diagnostic
         run: |
