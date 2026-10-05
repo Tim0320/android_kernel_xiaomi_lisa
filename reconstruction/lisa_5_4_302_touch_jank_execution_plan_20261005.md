@@ -192,11 +192,15 @@ Method:
 5. compile Image/modules.
 6. modpost.
 7. Module.symvers/CRC gates.
+8. ABI review policy: Candidate0059 exports must not disappear. CRC changes/additions are allowed only when their exact symbols are reviewed and traced to official Stable Batch A source changes; do not revert legitimate stable changes merely to force CRC identity.
+9. Current reviewed Batch A stable ABI deltas: xhci_dbg_trace, xhci_ext_cap_init, xhci_gen_setup, xhci_resume, xhci_suspend; additions flow_rule_match_ports_range, page_get_link_raw, tasklet_setup.
 
 No touch/performance modifications unless a conflict requires them.
 
 Exit:
-- Batch A compile/static/ABI PASS.
+- Batch A compile/static/ABI PASS;
+- removed Candidate0059 symbols = 0;
+- any changed/added ABI symbol is explicitly stable-provenance reviewed.
 
 ### Phase 4 - Stable uplift Batch B
 Status: NOT STARTED
