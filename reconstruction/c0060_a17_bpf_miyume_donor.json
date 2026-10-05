@@ -95,5 +95,17 @@
       "fs/file.c"
     ],
     "conclusion": "uplift to 5.4.302 before extracting/applying MiYume A17/BPF deltas"
+  },
+  "fit_audit": {
+    "workflow_run": 37260999186,
+    "planned_core_surface_files": 27,
+    "changed_by_official_5_4_289_to_5_4_302": 2,
+    "modified_by_miyume_vs_official_5_4_302": 27,
+    "changed_by_both_stable_and_miyume": 2,
+    "three_way_files": [
+      "net/core/filter.c",
+      "fs/file.c"
+    ],
+    "decision": "apply Candidate0060 after Candidate0061 Linux 5.4.302 uplift"
   }
 }
