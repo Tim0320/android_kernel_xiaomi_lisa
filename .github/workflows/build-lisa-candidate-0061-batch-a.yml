@@ -77,12 +77,12 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
         run: |
           set -euo pipefail
-          python3 - <<'PY'
+          python3 - <<'PY' 2>&1 | tee candidate-0061-c0059-source.log
           from pathlib import Path
           import candidate_0059_perf_port as perf
           import candidate_0058_bpf_port as bpf
-          root = Path("package")
-          kernel = Path("kernel")
+          root = Path("package").resolve()
+          kernel = Path("kernel").resolve()
           perf.apply_sources(root, kernel)
           bpf.apply(root, kernel)
           print("C0059_SOURCE_FEATURES_RECREATED=PASS")
@@ -259,6 +259,10 @@ jobs:
               echo
               echo "build-log-tail:"
               tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
             elif test -s candidate-0061-batch-a-apply.log; then
               echo
               echo "apply-log-tail:"
@@ -275,6 +279,7 @@ jobs:
           retention-days: 14
           if-no-files-found: warn
           path: |
+            candidate-0061-c0059-source.log
             candidate-0061-c0059-source-stat.txt
             candidate-0061-batch-a-apply.json
             candidate-0061-batch-a-apply.log
