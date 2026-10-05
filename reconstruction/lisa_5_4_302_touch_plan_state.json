@@ -106,16 +106,16 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "ef309942cfafdb6d004241d2191026e182101555",
+  "last_checked_commit": "b361572f4cb38ee8efedec79e94a3590a8e55b31",
   "last_checked_run": 37363542334,
-  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_REVIEW_REUSE_PATCH",
-  "next_action": "Retry the prepared minimal update to candidate_0061_direct_302_scan.py so it reuses only fully covered historical A/B semantic decisions instead of counting them as unresolved. Fully reusable now: mmc-controller.yaml, clk-alpha-pll.c, pinctrl-msm.c, socinfo.c, kernel/cpu.c, gen_kheaders.sh, kernel/softirq.c, kernel/time/hrtimer.c, mm/oom_kill.c. Also encode the newly re-verified Segment B adapters for drivers/platform/Kconfig, drivers/platform/Makefile, include/linux/pid.h, kernel/time/posix-timers.c, and fs/ext4/dir.c. Do not mark cputype.h, hid-ids.h, dwc3/gadget.c or f_fs.c closed yet because later D/C segments affect those paths. After the write succeeds, rerun Direct-302 scan/review; expected unresolved semantic paths reduce from raw 33 to 19 before reviewing the remaining C/D-sensitive set. Do not build until unresolved semantic count reaches zero.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_REVIEW_AND_WORKFLOW_WIRING",
+  "next_action": "Retry GitHub writes for Direct-302 reviewed decisions and workflow review-gate wiring. Keep top-level Makefile unresolved until its A/B/C/D stable semantics are encoded, because the conflict is not SUBLEVEL-only: A adds Clang/LLD KBUILD_USERLDFLAGS --ld-path handling; B adds default-const-init-unsafe suppression and -fno-builtin-wcslen; C moves CLANG_FLAGS from KBUILD_CFLAGS/KBUILD_AFLAGS to KBUILD_CPPFLAGS; D only updates SUBLEVEL 299->302. Preserve Lisa/Clang11 build contract and use MiYume/AOSP as endpoint oracle. Do not build until unresolved semantic count reaches zero and a real Direct-302 apply stage materializes the source.",
   "next_expected_evidence": [
     "Direct-302 scan remains PASS with changed_file_count=1760",
-    "Historical fully-covered A/B decisions are reported as REUSED_REVIEWED_DECISION rather than unresolved",
-    "Segment B platform/Kconfig, platform/Makefile, pid.h, posix-timers.c and ext4/dir.c decisions are encoded with Lisa-preserving adapters",
-    "Unresolved semantic review count drops from 33 to 19",
-    "Remaining unresolved C/D-sensitive paths are reviewed before any integrated build"
+    "Review gate reports reviewed/unresolved counts instead of gating on raw semantic_review_count",
+    "Seven newly re-verified C/D decisions are encoded without importing SM8350-only state",
+    "Makefile receives a reviewed Lisa-preserving A/B/C/D adapter, not a SUBLEVEL-only change",
+    "No integrated build starts until semantic closure is zero and Direct-302 source apply is real"
   ],
   "forbidden": [
     "global frequency pin",
@@ -275,7 +275,10 @@
     "Re-verified Segment B pid.h stable delta: add pidfd_prepare prototype and pid_has_task helper while preserving downstream header content",
     "Re-verified Segment B posix-timers stable delta: add cond_resched in timer-ID allocation loop",
     "Re-verified Segment B ext4/dir.c adaptation: retain Lisa fake-dir/ext4_dir_rec_len semantics, use next_offset bounds checks, and add stable rejection of dot entry as final data-block entry",
-    "Prepared scanner review-reuse patch, but GitHub update_file was blocked by safety checks; no repository content was changed"
+    "Prepared scanner review-reuse patch, but GitHub update_file was blocked by safety checks; no repository content was changed",
+    "2026-10-06 automation reread latest main b361572 and Direct-302 run 37363542334 attempt 3/job 111956394218; scanner evidence unchanged at 1760 files, DIRECT=1489, AUTO_3WAY=238, SEMANTIC_REVIEW=33.",
+    "Re-reviewed remaining Direct-302 stable paths against gregkh/linux v5.4.289/292/296/299/302 and MiYume 5.4.302. Confirmed usbnet EVENT_LINK_CARRIER_ON=14 with Lisa Android KABI preservation, slub invalid-pointer guard, zsmalloc zeroed zspage allocation, cputype A76AE+V3AE, HID A/B/D identity additions, and net sock owner/PROTO_INUSE/cond_resched/trace semantics.",
+    "Important Makefile correction: A/B/C contain real build-system semantics in addition to release SUBLEVEL; a SUBLEVEL-only adapter is insufficient. MiYume confirms A/B final-state additions, while its newer downstream Clang plumbing cannot be wholesale copied to Lisa."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
