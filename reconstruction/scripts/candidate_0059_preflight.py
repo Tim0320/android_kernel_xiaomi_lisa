@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Candidate0059 two-stage readiness/acceptance gate.
 
-PREBUILD blocks the first full CI59 build until source/config wiring and the
-Developer Options debug-property provenance/fix are resolved.
-POSTDEVICE reuses PREBUILD and then validates collected real-device evidence.
+PREBUILD permits one full Android16 performance build only when the restored
+performance source/config chain is ready and Developer Options provenance is
+represented truthfully.
+
+The Android14 1/1/0/0 debug-property state is still unresolved outside the
+candidate kernel. A controlled same-kernel Android16 comparison may therefore
+permit the performance build without pretending that Android14 provenance has
+been repaired. POSTDEVICE still requires the resulting Candidate0059 runtime
+properties and Developer Options behavior to match the healthy user baseline.
 
 This script is read-only. It never flashes a phone or weakens SELinux.
 """
@@ -20,15 +26,25 @@ REQUIRED_CONFIG = (
     "CONFIG_MIHW=y",
     "CONFIG_MIGT=y",
     "CONFIG_PACKAGE_RUNTIME_INFO=y",
+)
+STOCK_ORACLE_CONFIG = (
     "CONFIG_OEM_KERNEL=y",
 )
 REQUIRED_SYMBOLS = {
     "drivers/mihw/migt.c": "migt_init",
     "kernel/sched/migt_sched.c": "migt_sched_init",
+    "kernel/sched/migt_render.c": "migt_render_state_init",
     "kernel/sched/glk.c": "game_load_init",
     "kernel/sched/pkg_core.c": "pkg_init",
 }
-REQUIRED_SCHED_OBJECTS = ("pkg_core.o", "pkg_interface.o", "migt_sched.o", "glk.o")
+REQUIRED_SCHED_OBJECTS = (
+    "pkg_state.o",
+    "pkg_bridge.o",
+    "pkg_core.o",
+    "migt_sched.o",
+    "migt_render.o",
+    "glk.o",
+)
 EXPECTED_STOCK_PROPS = {
     "ro.debuggable": "0",
     "ro.force.debuggable": "0",
@@ -112,11 +128,75 @@ def scan_unsafe_alias(source_root: Path) -> list[str]:
     return sorted(set(hits))
 
 
-def prebuild(args: argparse.Namespace, failures: list[str]) -> None:
+def validate_debug_evidence(evidence: dict, failures: list[str]) -> str:
+    evidence_text = json.dumps(evidence, sort_keys=True).lower()
+    for token in FORBIDDEN_DEBUG_FIX_TOKENS:
+        if token in evidence_text:
+            add_failure(
+                failures,
+                "UNSAFE_DEVELOPER_OPTIONS_FIX",
+                f"forbidden approach found: {token}",
+            )
+
+    common_fields = ("override_source", "fix_location", "source_evidence", "affected_files")
+    common_missing = [key for key in common_fields if not evidence.get(key)]
+    if common_missing:
+        add_failure(
+            failures,
+            "DEBUG_EVIDENCE_INCOMPLETE",
+            "missing fields: " + ", ".join(common_missing),
+        )
+        return "invalid"
+
+    strict_resolved = all(
+        evidence.get(key) is True
+        for key in (
+            "resolved",
+            "first_override_path_proven",
+            "ro_secure_zero_source_resolved",
+        )
+    )
+    if strict_resolved:
+        return "resolved"
+
+    scoped_android16 = (
+        evidence.get("build_scope") == "android16-performance"
+        and evidence.get("allow_performance_build") is True
+        and evidence.get("kernel_causality_excluded") is True
+        and evidence.get("same_kernel_controlled_comparison") is True
+        and evidence.get("android16_runtime_matches_stock") is True
+        and evidence.get("candidate_boot_ramdisk_stock_equivalent") is True
+        and evidence.get("external_override_unresolved") is True
+        and evidence.get("postdevice_required") is True
+        and evidence.get("resolved") is False
+        and evidence.get("first_override_path_proven") is False
+        and evidence.get("ro_secure_zero_source_resolved") is False
+    )
+    if scoped_android16:
+        return "android16-performance-scoped"
+
+    add_failure(
+        failures,
+        "DEBUG_OVERRIDE_SOURCE_UNRESOLVED",
+        "neither fully resolved nor safely scoped to the controlled Android16 performance build",
+    )
+    return "invalid"
+
+
+def prebuild(args: argparse.Namespace, failures: list[str]) -> str:
     cfg = read_text(args.config)
     missing_cfg = [item for item in REQUIRED_CONFIG if item not in cfg]
     if missing_cfg:
         add_failure(failures, "PERF_CONFIG_NOT_RESTORED", ", ".join(missing_cfg))
+
+    stock_ikconfig = read_text(args.source_root / "reconstruction/stock_ikconfig")
+    missing_oracle = [item for item in STOCK_ORACLE_CONFIG if item not in stock_ikconfig]
+    if missing_oracle:
+        add_failure(
+            failures,
+            "STOCK_CONFIG_ORACLE_MISSING",
+            ", ".join(missing_oracle),
+        )
 
     for rel, symbol in REQUIRED_SYMBOLS.items():
         body = read_text(args.source_root / rel)
@@ -146,45 +226,7 @@ def prebuild(args: argparse.Namespace, failures: list[str]) -> None:
             )
 
     evidence = load_json(args.debug_evidence)
-    required_evidence = (
-        "resolved",
-        "first_override_path_proven",
-        "ro_secure_zero_source_resolved",
-        "override_source",
-        "fix_location",
-        "source_evidence",
-        "affected_files",
-    )
-    missing = [key for key in required_evidence if not evidence.get(key)]
-    if missing:
-        add_failure(
-            failures,
-            "DEBUG_OVERRIDE_SOURCE_UNRESOLVED",
-            "missing/false fields: " + ", ".join(missing),
-        )
-    else:
-        if evidence.get("resolved") is not True:
-            add_failure(failures, "DEBUG_OVERRIDE_SOURCE_UNRESOLVED", "resolved != true")
-        if evidence.get("first_override_path_proven") is not True:
-            add_failure(
-                failures,
-                "DEBUG_OVERRIDE_PATH_UNPROVEN",
-                "first_override_path_proven != true",
-            )
-        if evidence.get("ro_secure_zero_source_resolved") is not True:
-            add_failure(
-                failures,
-                "RO_SECURE_ZERO_SOURCE_UNRESOLVED",
-                "ro_secure_zero_source_resolved != true",
-            )
-        evidence_text = json.dumps(evidence, sort_keys=True).lower()
-        for token in FORBIDDEN_DEBUG_FIX_TOKENS:
-            if token in evidence_text:
-                add_failure(
-                    failures,
-                    "UNSAFE_DEVELOPER_OPTIONS_FIX",
-                    f"forbidden approach found: {token}",
-                )
+    debug_mode = validate_debug_evidence(evidence, failures)
 
     if args.iorap_strategy not in ALLOWED_IORAP_STRATEGIES:
         add_failure(
@@ -200,6 +242,8 @@ def prebuild(args: argparse.Namespace, failures: list[str]) -> None:
             "UNSAFE_MIGT_METIS_ALIAS",
             ", ".join(alias_hits),
         )
+
+    return debug_mode
 
 
 def postdevice(args: argparse.Namespace, failures: list[str]) -> None:
@@ -225,7 +269,9 @@ def postdevice(args: argparse.Namespace, failures: list[str]) -> None:
         )
     else:
         low = log_text.lower()
-        if "logpersistd_logging_prop" in low and ("avc: denied" in low or "access denied" in low):
+        if "logpersistd_logging_prop" in low and (
+            "avc: denied" in low or "access denied" in low
+        ):
             add_failure(
                 failures,
                 "LOGPERSISTD_DENIAL_PRESENT",
@@ -254,8 +300,9 @@ def main() -> int:
     args = ap.parse_args()
 
     failures: list[str] = []
+    debug_mode = "invalid"
     try:
-        prebuild(args, failures)
+        debug_mode = prebuild(args, failures)
         if args.phase == "postdevice":
             postdevice(args, failures)
     except (json.JSONDecodeError, ValueError) as exc:
@@ -263,13 +310,19 @@ def main() -> int:
 
     if failures:
         print(f"CANDIDATE0059_{args.phase.upper()}=FAIL")
+        print("DEBUG_PROVENANCE_MODE=" + debug_mode)
         for item in failures:
             print(item)
         return 1
 
     print(f"CANDIDATE0059_{args.phase.upper()}=PASS")
+    print("DEBUG_PROVENANCE_MODE=" + debug_mode)
+    print("OEM_KERNEL_RUNTIME_REQUIREMENT=false")
+    print("OEM_KERNEL_STOCK_ORACLE_RECORDED=true")
     if args.phase == "prebuild":
-        print("Source/config/provenance gate passed; this only permits starting one CI59 build.")
+        print("PERFORMANCE_BUILD_ALLOWED=true")
+        print("ANDROID14_DEBUG_ROOT_CAUSE_RESOLVED=" + str(debug_mode == "resolved").lower())
+        print("POSTDEVICE_REQUIRED=true")
     else:
         print("Runtime property and Developer Options evidence gate passed.")
     return 0
