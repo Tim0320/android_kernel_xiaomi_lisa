@@ -196,6 +196,8 @@ Method:
 9. Current reviewed Batch A stable ABI deltas: xhci_dbg_trace, xhci_ext_cap_init, xhci_gen_setup, xhci_resume, xhci_suspend; additions flow_rule_match_ports_range, page_get_link_raw, tasklet_setup.
 10. CI evidence/oracle policy: do not depend on short-lived cross-workflow artifact download URLs as the only source of Candidate0059 config/Module.symvers or exact stock IKHEADERS. Preserve a durable oracle or regenerate stock IKHEADERS from the pinned stock boot, and validate hashes before build.
 11. If using the reviewed Batch A control run 37306854501, its exact control files are .config SHA256 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397 and Module.symvers SHA256 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff. Relative to that control, the repaired build must add only lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135 with zero changed/removed symbols.
+12. Keep stable source application side-effect-free. Candidate0059 config-oracle reconstruction is a separate MIXED_CONFLICT build-gate adaptation and must not be hidden inside the STABLE_ONLY 5.4.289->5.4.292 semantic apply script.
+13. The reviewed Candidate0059 control config delta currently consists of the C0059 LOCALVERSION, LOCALVERSION_AUTO=n, COMPAT_VDSO=n, ARM64_USE_LSE_ATOMICS=n, RELR=n, PERF_HELPER=y, and MILLET_CGROUP/SIG/BINDER/PKG/BINDER_GKI/CORE/HS=y; the exact post-olddefconfig SHA256 remains the acceptance oracle.
 
 No touch/performance modifications unless a conflict requires them.
 
@@ -416,14 +418,18 @@ At the end of every execution:
 ## Current next action
 
 NEXT_ACTION:
-Candidate0061 Batch A semantic review is PASS with zero unresolved paths
-(run 37272240317). Execute the isolated Batch A source/build gate introduced
-at c211f275: recreate frozen Candidate0059 performance+BPF source features,
-apply official 5.4.289 -> 5.4.292 stable semantics, then run olddefconfig,
-Image/modules/dtbs, modpost and Module.symvers/CRC audit.
+Inspect the Candidate0061 Batch A run triggered by workflow repair commit 4b946ef
+or later. The prior failure was caused by workflow structural corruption introduced
+while restoring the Candidate0059 config oracle: the CONFIG_CFI_CLANG grep was
+truncated and duplicate build/ABI/report content leaked under the artifact path
+block. Stable apply side effects from 03b7025 were removed at c37d41c.
 
-If source application exposes a new Candidate0059-vs-stable conflict, classify
-it as MIXED_CONFLICT and resolve stable semantics first. If compile or ABI fails,
-repair the first real blocker before progressing to Batch B.
+The repaired workflow is rebuilt from the first valid Batch A body, contains
+exactly one control/compat/target/ABI/report/upload sequence, reconstructs stock
+IKHEADERS from the pinned stock boot, replays the reviewed Candidate0059 config
+delta as MIXED_CONFLICT build-oracle compatibility only, and retains the exact
+config/Module.symvers hashes.
 
+If config/control/compat/target/ABI all pass, mark Batch A PASS and immediately
+start Batch B 5.4.292 -> 5.4.296. If it fails, repair only the first real blocker.
 Do not start Candidate0060/BPF5.10 integration yet.
