@@ -137,8 +137,7 @@ jobs:
           if not (kernel / "kernel/power/lisa_power_compat.c").exists():
               power.apply(root, kernel)
 
-          # Recreate the exact Candidate0059 QGKI ABI baseline inherited from
-          # Candidate0046/0050 before layering later ownership/performance work.
+          # Restore the QGKI ABI contract inherited by Candidate0059.
           c46.ROOT = root
           c46.KERNEL = kernel
           c46.OUT = kernel / "out"
@@ -229,13 +228,9 @@ jobs:
           grep -q '^CONFIG_PACKAGE_RUNTIME_INFO=y$' kernel/out/.config
           grep -q '^CONFIG_MODVERSIONS=y$' kernel/out/.config
           grep -q '^CONFIG_CFI_CLANG=y
-
-      - name: Compile Image modules and dtbs
         id: build
         env:
           PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
-          CONFIG_USE_COMMON_CAMERA: y
         run: |
           set -euo pipefail
           make -C kernel -j"$(nproc)" O="$PWD/kernel/out" \
