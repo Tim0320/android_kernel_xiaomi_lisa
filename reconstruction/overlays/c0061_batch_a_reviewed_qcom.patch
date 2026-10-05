@@ -1,0 +1,76 @@
+diff --git a/drivers/clk/qcom/clk-rpmh.c b/drivers/clk/qcom/clk-rpmh.c
+--- a/drivers/clk/qcom/clk-rpmh.c
++++ b/drivers/clk/qcom/clk-rpmh.c
+@@ -300,7 +300,7 @@ static unsigned long clk_rpmh_bcm_recalc_rate(struct clk_hw *hw,
+ {
+ 	struct clk_rpmh *c = to_clk_rpmh(hw);
+ 
+-	return c->aggr_state * c->unit;
++	return (unsigned long)c->aggr_state * c->unit;
+ }
+ 
+ static const struct clk_ops clk_rpmh_bcm_ops = {
+diff --git a/drivers/clk/qcom/clk-alpha-pll.c b/drivers/clk/qcom/clk-alpha-pll.c
+--- a/drivers/clk/qcom/clk-alpha-pll.c
++++ b/drivers/clk/qcom/clk-alpha-pll.c
+@@ -337,7 +337,8 @@ void clk_alpha_pll_configure(struct clk_alpha_pll *pll, struct regmap *regmap,
+ 	if (config->main_output_mask || config->aux_output_mask ||
+ 		config->aux2_output_mask || config->early_output_mask ||
+ 		config->pre_div_val || config->vco_val ||
+-		config->alpha_en_mask) {
++		config->alpha_en_mask || config->alpha_mode_mask) {
+ 		val = config->main_output_mask;
+ 		val |= config->aux_output_mask;
+ 		val |= config->aux2_output_mask;
+@@ -346,6 +347,7 @@ void clk_alpha_pll_configure(struct clk_alpha_pll *pll, struct regmap *regmap,
+ 		val |= config->pre_div_val;
+ 		val |= config->vco_val;
+ 		val |= config->alpha_en_mask;
++		val |= config->alpha_mode_mask;
+ 
+ 		mask = config->main_output_mask;
+ 		mask |= config->aux_output_mask;
+@@ -355,6 +357,7 @@ void clk_alpha_pll_configure(struct clk_alpha_pll *pll, struct regmap *regmap,
+ 		mask |= config->pre_div_mask;
+ 		mask |= config->vco_mask;
+ 		mask |= config->alpha_en_mask;
++		mask |= config->alpha_mode_mask;
+ 
+ 		regmap_update_bits(regmap, PLL_USER_CTL(pll), mask, val);
+ 	}
+diff --git a/drivers/soc/qcom/socinfo.c b/drivers/soc/qcom/socinfo.c
+--- a/drivers/soc/qcom/socinfo.c
++++ b/drivers/soc/qcom/socinfo.c
+@@ -236,6 +236,7 @@ static struct socinfo {
+ 	__le32  npartnamemap_offset;
+ 	__le32  nnum_partname_mapping;
+ } *socinfo;
++static size_t socinfo_item_size;
+ 
+ /* sysfs attributes */
+ #define ATTR_DEFINE(param)	\
+@@ -352,10 +353,13 @@ static uint32_t socinfo_get_foundry_id(void)
+ /* Version 10 */
+ uint32_t socinfo_get_serial_number(void)
+ {
+-	return socinfo ?
+-		(socinfo_format >= SOCINFO_VERSION(0, 10) ?
+-			le32_to_cpu(socinfo->serial_num) : 0)
+-		: 0;
++	if (!socinfo || socinfo_format < SOCINFO_VERSION(0, 10))
++		return 0;
++	if (offsetof(struct socinfo, serial_num) + sizeof(socinfo->serial_num) >
++	    socinfo_item_size)
++		return 0;
++
++	return le32_to_cpu(socinfo->serial_num);
+ }
+ EXPORT_SYMBOL(socinfo_get_serial_number);
+@@ -1207,6 +1211,7 @@ static int qcom_socinfo_probe(struct platform_device *pdev)
+ 	}
+ 
+ 	socinfo_format = le32_to_cpu(info->fmt);
++	socinfo_item_size = item_size;
+ 	socinfo = info;
+ 
+ 	qs = devm_kzalloc(&pdev->dev, sizeof(*qs), GFP_KERNEL);
