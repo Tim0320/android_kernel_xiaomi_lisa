@@ -1,6 +1,6 @@
 {
-  "plan_version": "1.0",
-  "updated_at": "2026-10-05",
+  "plan_version": "1.1",
+  "updated_at": "2026-10-06",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -23,22 +23,39 @@
     "changed_files": 1760,
     "lisa_overlap_files": 271,
     "sensitive_overlap_files": 140,
-    "miyume_overlap_files": 237
+    "miyume_overlap_files": 237,
+    "execution_mode": "DIRECT_5_4_289_TO_5_4_302_SINGLE_INTEGRATED_BUILD",
+    "provenance_segments": {
+      "A_5_4_289_to_5_4_292": "REVIEWED_HISTORICAL_BUILD_PASS",
+      "B_5_4_292_to_5_4_296": "PARTIALLY_REVIEWED_REUSE_ADAPTERS_NO_SEPARATE_BUILD",
+      "C_5_4_296_to_5_4_299": "PENDING_DIRECT_302_SCAN_NO_SEPARATE_BUILD",
+      "D_5_4_299_to_5_4_302": "PENDING_DIRECT_302_SCAN_NO_SEPARATE_BUILD"
+    },
+    "oracle_hierarchy": [
+      "linux-stable v5.4.289->v5.4.302 canonical provenance",
+      "MiYume SM8350/Xiaomi 5.4.302 common downstream final-state oracle",
+      "AOSP android11-5.4.302_r00 Android/GKI endpoint oracle",
+      "CLO/CodeLinaro msm-5.4 fallback only when unresolved",
+      "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
+    ]
   },
-  "current_phase": "PHASE_4_STABLE_BATCH_B",
+  "current_phase": "PHASE_4_DIRECT_5_4_302_UPLIFT",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "PASS",
-    "phase_4_batch_b_5_4_293_to_5_4_296": "PINCTRL_IRQ_VALID_MASK_ADAPTER_PUSHED_RUN_QUEUED",
-    "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
-    "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "PROVENANCE_REFERENCE_PASS_NO_LONGER_SEPARATE_REQUIRED_GATE",
+    "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
+    "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
+    "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_7_touch_jank_hotpath_correction": "NOT_STARTED",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
-    "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061"
+    "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
+    "phase_4_direct_5_4_289_to_5_4_302": "ACTIVE_PLAN_MIGRATED_WORKFLOW_NOT_YET_CREATED",
+    "phase_5_direct_302_semantic_conflict_closure": "PENDING_DIRECT_SCAN",
+    "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -89,18 +106,22 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "5581b85c477ffd53994f09e348ec2640588cb0cb",
+  "last_checked_commit": "cef525d0d2268cc80a5cbc073e550a5e0aa93389",
   "last_checked_run": 37360064366,
-  "blocker": "NONE_RUN_37360064366_QUEUED",
-  "next_action": "Inspect Candidate0061 Batch B run 37360064366 triggered by 5581b85. Prior run 37355989447 passed all prerequisite/oracle/control gates and the HID adapter, then failed first at drivers/pinctrl/qcom/pinctrl-msm.c. That conflict is now STABLE_ONLY/ADAPT: preserve Lisa downstream direct-connect/wake/SM7325-Yupik flow and add only the official 5.4.292->5.4.296 msm_gpio_irq_init_valid_mask callback plus girq->init_valid_mask hook, matching MiYume 5.4.302 final-state semantics. If strict apply fails again, repair only the next reviewed semantic conflict. If apply passes, continue target compile/modpost and ABI review with removed symbols=0.",
+  "blocker": "DIRECT_302_WORKFLOW_NOT_YET_CREATED",
+  "next_action": "Create the Direct-302 Candidate0061 workflow and helper(s). Retire Batch B/C/D as separate compile gates. Reconstruct frozen Candidate0059 r43da7c5, compute the full official linux-stable v5.4.289->v5.4.302 delta, scan all non-clean overlaps before the target build, reuse reviewed Segment A/B semantic adapters when valid, use MiYume 5.4.302 as the first common Xiaomi/Qualcomm final-state oracle, AOSP android11-5.4.302_r00 for Android/GKI endpoint semantics, CLO only as fallback, exclude SM8350/Lahaina/Venus-only semantics and MiYume custom features, preserve Lisa SM7325/Yupik/KMI semantics, then perform one integrated 5.4.302 compile/modpost/ABI gate. Do not create Batch C or Batch D build workflows. Run 37360064366 is legacy Segment B evidence only.",
   "next_expected_evidence": [
-    "Run 37360064366 reaches C0061_BATCH_B_ORACLE_SCAN=PASS",
-    "QCOM pinctrl IRQ valid-mask adapter applies while preserving Lisa vendor direct-connect/wake flow",
-    "C0061_BATCH_B_CONTROL_COMPILE_MODPOST=PASS",
-    "C0061_BATCH_B_APPLY=PASS or exact next semantic-conflict path",
-    "C0061_BATCH_B_COMPILE_MODPOST=PASS if apply passes",
-    "Batch B ABI removed symbols = 0",
-    "Any changed/added ABI symbols traced to official 5.4.292->5.4.296 stable provenance"
+    "Direct-302 workflow exists and no Batch C/D build workflow is required",
+    "Full official v5.4.289->v5.4.302 stable delta is fetched and provenance-labelled A/B/C/D",
+    "All non-clean overlaps are pre-scanned before target build",
+    "Reviewed Segment A/B adapters are reused only where valid at the 5.4.302 endpoint",
+    "MiYume 5.4.302 common downstream semantics are used while SM8350/Lahaina/Venus-only content is excluded",
+    "AOSP android11-5.4.302_r00 resolves Android/GKI-specific endpoint semantics",
+    "No unreviewed direct-302 semantic conflict remains",
+    "Final source reports 5.4.302",
+    "Integrated Image/modules/dtbs + modpost PASS",
+    "Candidate0059 ABI removed symbols = 0",
+    "Every changed/added ABI symbol has stable or reviewed MIXED_CONFLICT provenance"
   ],
   "forbidden": [
     "global frequency pin",
@@ -240,7 +261,11 @@
     "Official 5.4.292->5.4.296 pinctrl-msm delta isolated to msm_gpio_irq_init_valid_mask plus gpio_irq_chip init_valid_mask hook",
     "MiYume 5.4.302 confirms the same valid-mask semantics integrated with downstream direct-connect/wake handling",
     "Batch B pinctrl-msm.c STABLE_ONLY adapter pushed to main at 5581b85",
-    "New Batch B run 37360064366 queued from 5581b85"
+    "New Batch B run 37360064366 queued from 5581b85",
+    "Strategy revised on 2026-10-06: Candidate0061 will uplift directly from Lisa 5.4.289 to 5.4.302 with one integrated target build; A/B/C/D remain provenance segments only",
+    "Canonical plan 1.1 committed at cef525d; legacy per-Batch compile loop retired",
+    "Legacy Batch B run 37360064366 retained only as Segment B semantic evidence; it must not trigger creation of Batch C/D build loops",
+    "Direct-302 rule frozen: linux-stable provenance -> MiYume 5.4.302 common downstream final-state -> AOSP 5.4.302 GKI endpoint -> CLO fallback -> Lisa SM7325/Yupik KMI/device gate"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
