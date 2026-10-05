@@ -25,13 +25,13 @@
     "sensitive_overlap_files": 140,
     "miyume_overlap_files": 237
   },
-  "current_phase": "PHASE_3_STABLE_BATCH_A",
+  "current_phase": "PHASE_4_STABLE_BATCH_B",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "WORKFLOW_REBUILT_CONFIG_ORACLE_RERUN_PENDING",
-    "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "PASS",
+    "phase_4_batch_b_5_4_293_to_5_4_296": "BUILD_GATE_TRIGGERED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
     "phase_7_touch_jank_hotpath_correction": "NOT_STARTED",
@@ -89,22 +89,20 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "a75925a066a04f565d46a6237f824d2a4b9a8c4b",
-  "last_checked_run": 37326660954,
-  "blocker": "BATCH_A_CLEAN_WORKFLOW_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A run triggered by 4b946ef or later. Fresh evidence from run 37326660954 (source 03b7025) shows stock ABI PASS, C0059 source PASS, stable apply PASS, reviewed config PASS, control build PASS and ABI-compat source apply PASS; its target build was cancelled only because a newer push hit cancel-in-progress, so the reviewed config delta itself is validated. The user-reported post-356ba83 failure was traced to workflow structural corruption, not the config delta: CONFIG_CFI_CLANG grep truncation plus duplicate build/ABI/report content under the artifact path block. c37d41c restores STABLE_ONLY apply to side-effect-free behavior and 4b946ef rebuilds a clean 430-line workflow with one control/compat/target/ABI/report/upload sequence. Continue the clean rerun through target compile and exact ABI delta; if PASS, mark Batch A PASS and start Batch B immediately.",
+  "last_checked_commit": "83dbe9c06de24f593d776bc9f151c53be1a9a811",
+  "last_checked_run": 37331513181,
+  "blocker": "BATCH_B_FIRST_STRICT_RUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch B run triggered by commit 83dbe9c. Batch A run 37331513181 is fully PASS: stock ABI, C0059 source recreation, Stable Batch A apply, reviewed config, same-run control build, C0059 ABI compatibility, target build and ABI gate all succeeded; exact ABI delta was changed=0 removed=0 added=2 with lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135. Batch B now applies official 5.4.292->5.4.296 semantics on top of the passed Batch A base. The first Batch B pass is intentionally strict: unreviewed non-clean semantic overlaps stop at the first path, and any non-zero changed/added ABI delta is reported for stable-provenance review while symbol removals fail immediately. Repair only the first real blocker; do not add touch/performance changes during Batch B.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A run for 4b946ef or later",
-    "LISA_STOCK_IKHEADERS_EXTRACT=PASS",
+    "New Candidate0061 Batch B run for 83dbe9c or later",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
     "C0061_BATCH_A_APPLY=PASS",
-    "C0061_BATCH_A_CONTROL_CONFIG_SHA256=664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
-    "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
-    "C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS",
     "C0061_C0059_ABI_COMPAT_GATE=PASS",
-    "C0061_BATCH_A_COMPILE_MODPOST=PASS",
-    "ABI delta changed=0 removed=0 added=2 with lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135",
-    "C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS"
+    "C0061_BATCH_B_CONTROL_COMPILE_MODPOST=PASS",
+    "C0061_BATCH_B_APPLY=PASS or exact first unreviewed semantic-conflict path",
+    "C0061_BATCH_B_COMPILE_MODPOST=PASS if semantic apply passes",
+    "Batch B ABI delta report with removed symbols = 0",
+    "Any changed/added Batch B ABI symbol traced to official 5.4.292->5.4.296 stable provenance before acceptance"
   ],
   "forbidden": [
     "global frequency pin",
@@ -211,7 +209,12 @@
     "4b946ef read-back validation: 430 lines; exactly one control/compat/target/ABI/report/upload step; one exact CFI gate; no stale cross-run artifact IDs; no post-upload garbage; exact reviewed config hash retained",
     "Canonical plan updated at 62cdd2e to keep STABLE_ONLY source application separate from MIXED_CONFLICT config-oracle reconstruction",
     "Run 37326660954 (03b7025) reached stock ABI PASS, C0059 source PASS, stable apply PASS, reviewed config PASS, control build PASS and compat PASS before target build was cancelled by cancel-in-progress from a newer push",
-    "Run 37326660954 therefore validates the reviewed Candidate0059 config delta and same-run control build path; cancellation was CI orchestration, not a kernel/config failure"
+    "Run 37326660954 therefore validates the reviewed Candidate0059 config delta and same-run control build path; cancellation was CI orchestration, not a kernel/config failure",
+    "Candidate0061 Batch A clean run 37331513181 fully PASS at 4b946ef",
+    "Batch A exact ABI delta PASS: changed=0 removed=0 added=2; lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135",
+    "Strict Batch B 5.4.292->5.4.296 apply helper added at 7c7cdc0",
+    "Reusable frozen Candidate0059 uplift source recreation helper added at d013b77",
+    "Candidate0061 Batch B build/ABI workflow triggered at 83dbe9c; first pass rejects unreviewed semantic conflicts and unreviewed ABI deltas"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
