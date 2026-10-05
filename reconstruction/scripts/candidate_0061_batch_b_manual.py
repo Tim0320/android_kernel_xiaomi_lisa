@@ -6,6 +6,7 @@ MANUAL={
     "Makefile":"ADAPT",
     "arch/arm64/include/asm/cputype.h":"ADAPT",
     "drivers/hid/hid-ids.h":"ADAPT",
+    "drivers/pinctrl/qcom/pinctrl-msm.c":"ADAPT",
 }
 
 def once(s,old,new,label):
@@ -50,6 +51,39 @@ def adapt(root:Path,path:str,target_ref:str,target_blob):
             "#define USB_VENDOR_ID_SIGNOTEC\\t\\t\\t0x2133\\n#define USB_DEVICE_ID_SIGNOTEC_VIEWSONIC_PD1011\\t0x0018\\n",
             "#define USB_VENDOR_ID_SIGNOTEC\\t\\t\\t0x2133\\n#define USB_DEVICE_ID_SIGNOTEC_VIEWSONIC_PD1011\\t0x0018\\n\\n#define USB_VENDOR_ID_SMARTLINKTECHNOLOGY              0x4c4a\\n#define USB_DEVICE_ID_SMARTLINKTECHNOLOGY_4155         0x4155\\n",
             "Batch B SmartlinkTechnology HID IDs")
+    elif path=="drivers/pinctrl/qcom/pinctrl-msm.c":
+        # Stable 5.4.292->5.4.296 adds an IRQ-valid mask which excludes GPIO
+        # groups whose intr_detection_width is neither 1 nor 2. Lisa carries
+        # extra downstream direct-connect/wake handling, so preserve that flow
+        # and insert only the stable valid-mask callback + gpio_irq_chip hook.
+        irq_valid_mask = """static void msm_gpio_irq_init_valid_mask(struct gpio_chip *gc,
+                                         unsigned long *valid_mask,
+                                         unsigned int ngpios)
+{
+        struct msm_pinctrl *pctrl = gpiochip_get_data(gc);
+        const struct msm_pingroup *g;
+        int i;
+
+        bitmap_fill(valid_mask, ngpios);
+
+        for (i = 0; i < ngpios; i++) {
+                g = &pctrl->soc->groups[i];
+
+                if (g->intr_detection_width != 1 &&
+                    g->intr_detection_width != 2)
+                        clear_bit(i, valid_mask);
+        }
+}
+
+"""
+        s=once(s,
+            "static void msm_dirconn_cfg_reg(struct irq_data *d, u32 offset)\n",
+            irq_valid_mask + "static void msm_dirconn_cfg_reg(struct irq_data *d, u32 offset)\n",
+            "Batch B pinctrl IRQ valid-mask callback")
+        s=once(s,
+            "\tgirq->parents[0] = pctrl->irq;\n",
+            "\tgirq->parents[0] = pctrl->irq;\n\tgirq->init_valid_mask = msm_gpio_irq_init_valid_mask;\n",
+            "Batch B pinctrl IRQ valid-mask hook")
     else:
         raise RuntimeError("unreviewed Batch B semantic conflict: "+path)
     p.write_text(s)
