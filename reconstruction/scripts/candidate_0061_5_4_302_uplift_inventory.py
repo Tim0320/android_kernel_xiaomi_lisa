@@ -33,6 +33,36 @@ SENSITIVE = (
     "Makefile",
 )
 
+C0060_CORE_SURFACE = (
+    "kernel/bpf/Makefile",
+    "kernel/bpf/ringbuf.c",
+    "kernel/bpf/btf.c",
+    "kernel/bpf/bpf_iter.c",
+    "kernel/bpf/map_iter.c",
+    "kernel/bpf/task_iter.c",
+    "kernel/bpf/prog_iter.c",
+    "kernel/bpf/trampoline.c",
+    "kernel/bpf/bpf_struct_ops.c",
+    "kernel/bpf/bpf_lsm.c",
+    "kernel/bpf/bpf_local_storage.c",
+    "kernel/bpf/bpf_inode_storage.c",
+    "kernel/bpf/syscall.c",
+    "kernel/bpf/verifier.c",
+    "kernel/bpf/helpers.c",
+    "include/linux/bpf.h",
+    "include/linux/bpf_types.h",
+    "include/uapi/linux/bpf.h",
+    "net/core/filter.c",
+    "arch/arm64/include/asm/unistd32.h",
+    "fs/file.c",
+    "include/linux/fdtable.h",
+    "include/uapi/asm-generic/unistd.h",
+    "include/uapi/linux/close_range.h",
+    "kernel/sys.c",
+    "security/selinux/include/classmap.h",
+    "include/uapi/linux/capability.h",
+)
+
 
 def sh(repo: Path, *args: str) -> str:
     p = subprocess.run(
@@ -86,6 +116,12 @@ def main() -> int:
     donor_delta = files(args.donor, UP_302, "HEAD")
     donor_overlap = overlap & donor_delta
 
+    c0060_surface = set(C0060_CORE_SURFACE)
+    c0060_stable_overlap = c0060_surface & stable
+    c0060_lisa_vendor_overlap = c0060_surface & lisa_vendor
+    c0060_donor_delta = c0060_surface & donor_delta
+    c0060_three_way_overlap = c0060_surface & stable & donor_delta
+
     sensitive_stable = {p for p in stable if is_sensitive(p)}
     sensitive_overlap = {p for p in overlap if is_sensitive(p)}
     sensitive_donor_overlap = {p for p in donor_overlap if is_sensitive(p)}
@@ -102,6 +138,15 @@ def main() -> int:
         "sensitive_overlap_files": len(sensitive_overlap),
         "donor_modified_overlap_files": len(donor_overlap),
         "sensitive_donor_modified_overlap_files": len(sensitive_donor_overlap),
+        "candidate0060_core_surface_files": len(c0060_surface),
+        "candidate0060_surface_changed_by_stable_289_to_302": len(c0060_stable_overlap),
+        "candidate0060_surface_already_vendor_diverged_on_lisa289": len(c0060_lisa_vendor_overlap),
+        "candidate0060_surface_modified_by_miyume_vs_official302": len(c0060_donor_delta),
+        "candidate0060_surface_changed_by_both_stable_and_miyume": len(c0060_three_way_overlap),
+        "candidate0060_stable_overlap_files": sorted(c0060_stable_overlap),
+        "candidate0060_lisa_vendor_overlap_files": sorted(c0060_lisa_vendor_overlap),
+        "candidate0060_miyume_delta_files": sorted(c0060_donor_delta),
+        "candidate0060_three_way_overlap_files": sorted(c0060_three_way_overlap),
         "stable_files": sorted(stable),
         "lisa_vendor_files": sorted(lisa_vendor),
         "overlap_files": sorted(overlap),
@@ -127,8 +172,19 @@ def main() -> int:
         f"- Stable/Lisa overlap files: {len(overlap)}",
         f"- Sensitive overlap files: {len(sensitive_overlap)}",
         f"- Overlap files also modified by MiYume vs upstream 5.4.302: {len(donor_overlap)}",
+        f"- Candidate0060 planned core files: {len(c0060_surface)}",
+        f"- Candidate0060 files changed by official 5.4.289->5.4.302: {len(c0060_stable_overlap)}",
+        f"- Candidate0060 files already vendor-diverged in Lisa 5.4.289: {len(c0060_lisa_vendor_overlap)}",
+        f"- Candidate0060 files modified by MiYume relative to official 5.4.302: {len(c0060_donor_delta)}",
+        f"- Candidate0060 files changed by BOTH stable uplift and MiYume: {len(c0060_three_way_overlap)}",
         "",
-        "## Sensitive conflict-risk files",
+        "## Candidate0060 files affected by stable uplift",
+        "",
+    ]
+    lines += [f"- {p}" for p in sorted(c0060_stable_overlap)] or ["- none"]
+    lines += ["", "## Candidate0060 MiYume delta on a 5.4.302 base", ""]
+    lines += [f"- {p}" for p in sorted(c0060_donor_delta)] or ["- none"]
+    lines += ["", "## Sensitive conflict-risk files",
         "",
     ]
     lines += [f"- {p}" for p in sorted(sensitive_overlap)] or ["- none"]
@@ -145,6 +201,9 @@ def main() -> int:
     print(f"stable_x_lisa_overlap_files={len(overlap)}")
     print(f"sensitive_overlap_files={len(sensitive_overlap)}")
     print(f"donor_modified_overlap_files={len(donor_overlap)}")
+    print(f"candidate0060_surface_changed_by_stable={len(c0060_stable_overlap)}")
+    print(f"candidate0060_surface_modified_by_miyume={len(c0060_donor_delta)}")
+    print(f"candidate0060_surface_three_way_overlap={len(c0060_three_way_overlap)}")
     return 0
 
 
