@@ -92,7 +92,7 @@
   "last_checked_commit": "39340004d9fb362bda14aa8bf0980f5592ba5d62",
   "last_checked_run": 37337064578,
   "blocker": "BATCH_B_ORACLE_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch B run triggered by dd09ac7 or later. No newer completed issue-sink evidence was available at this check, so 37337064578 remains the last completed run inspected. The new workflow pre-scans all Batch B semantic conflicts using AOSP android11-5.4.292_r00->android11-5.4.296_r00 and best-effort CLO kernel.lnx.5.4.r1-rel before strict apply. Use that evidence to classify the conflict set, then repair reviewed semantics only. Preserve Candidate0059 KMI/ABI and require removed symbols = 0.",
+  "next_action": "Continue Candidate0061 Batch B with the simplified oracle hierarchy. Linux stable remains canonical patch provenance. Treat MiYume0721/android_kernel_xiaomi_sm8350_miyume main (5.4.302) as the preferred SM8350/Xiaomi downstream final-state oracle for Qualcomm/Xiaomi paths. Use AOSP android11-5.4.x_r00 when the conflict is GKI/Android-common specific. Consult Qualcomm CLO only when MiYume disagrees with stable/AOSP, lacks the path, or exact Qualcomm provenance is needed. Never wholesale-copy MiYume because it includes extra ReSukiSU/SuSFS/BPF5.10/F2FS/A17 changes and targets venus/mars/star/haydn rather than Lisa. Preserve Candidate0059 KMI/ABI and require removed symbols=0.",
   "next_expected_evidence": [
     "New Candidate0061 Batch B run for dd09ac7 or later",
     "C0061_BATCH_B_ORACLE_SCAN=PASS",
@@ -220,7 +220,11 @@
     "Developer feedback incorporated: stock/original GKI bootability suggests source identity is less important than Android GKI/KMI compatibility for Lisa",
     "AOSP android11-5.4.302_r00 confirmed as an Android 5.4.302 semantic endpoint; Linux stable remains canonical patch provenance",
     "Batch B Android/GKI + CLO semantic oracle scanner added at be75895",
-    "Batch B workflow updated at dd09ac7 to fetch android11-5.4.292_r00/android11-5.4.296_r00 and best-effort CLO kernel.lnx.5.4.r1-rel, then pre-scan all semantic conflicts"
+    "Batch B workflow updated at dd09ac7 to fetch android11-5.4.292_r00/android11-5.4.296_r00 and best-effort CLO kernel.lnx.5.4.r1-rel, then pre-scan all semantic conflicts",
+    "MiYume main verified at Linux 5.4.302 and documented as Xiaomi SM8350 kernel supporting venus/mars/star/haydn",
+    "MiYume is not a pure CLO/Xiaomi mirror: README documents ReSukiSU, SuSFS, BPF 5.10 backport, F2FS optimization and Android17 support",
+    "Key downstream comparison found qcom_q6v5_mss.c byte-identical between MiYume main and frozen Lisa 5.4.289, while pinctrl-msm, ufs-sysfs, qcom_smd, smem and rpmh-rsc differ as expected from uplift/vendor evolution",
+    "Oracle hierarchy simplified: linux-stable provenance -> MiYume SM8350/Xiaomi 5.4.302 final-state oracle -> AOSP ACK for Android/GKI-specific conflicts -> CLO only for unresolved Qualcomm provenance/semantic disagreements -> Lisa KMI/ABI gate"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -235,6 +239,7 @@
     "https://git.codelinaro.org/clo/la/kernel/msm-5.4/-/blob/kernel.lnx.5.4.r1-rel/Makefile",
     "https://android.googlesource.com/kernel/common/+/refs/tags/android11-5.4.296_r00",
     "https://android.googlesource.com/kernel/common/+/refs/tags/android11-5.4.302_r00",
-    "https://source.android.com/docs/core/architecture/kernel/abi-monitor"
+    "https://source.android.com/docs/core/architecture/kernel/abi-monitor",
+    "https://github.com/MiYume0721/android_kernel_xiaomi_sm8350_miyume"
   ]
 }
