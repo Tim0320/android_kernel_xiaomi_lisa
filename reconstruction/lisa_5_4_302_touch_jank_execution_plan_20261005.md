@@ -194,6 +194,8 @@ Method:
 7. Module.symvers/CRC gates.
 8. ABI review policy: Candidate0059 exports must not disappear. CRC changes/additions are allowed only when their exact symbols are reviewed and traced to official Stable Batch A source changes; do not revert legitimate stable changes merely to force CRC identity.
 9. Current reviewed Batch A stable ABI deltas: xhci_dbg_trace, xhci_ext_cap_init, xhci_gen_setup, xhci_resume, xhci_suspend; additions flow_rule_match_ports_range, page_get_link_raw, tasklet_setup.
+10. CI evidence/oracle policy: do not depend on short-lived cross-workflow artifact download URLs as the only source of Candidate0059 config/Module.symvers or exact stock IKHEADERS. Preserve a durable oracle or regenerate stock IKHEADERS from the pinned stock boot, and validate hashes before build.
+11. If using the reviewed Batch A control run 37306854501, its exact control files are .config SHA256 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397 and Module.symvers SHA256 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff. Relative to that control, the repaired build must add only lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135 with zero changed/removed symbols.
 
 No touch/performance modifications unless a conflict requires them.
 
