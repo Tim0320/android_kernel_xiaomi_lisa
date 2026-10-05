@@ -31,7 +31,7 @@
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
     "phase_3_batch_a_5_4_290_to_5_4_292": "PASS",
-    "phase_4_batch_b_5_4_293_to_5_4_296": "HID_IDS_ADAPTER_PUSHED_RUN_IN_PROGRESS",
+    "phase_4_batch_b_5_4_293_to_5_4_296": "PINCTRL_IRQ_VALID_MASK_ADAPTER_PUSHED_RUN_QUEUED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
     "phase_7_touch_jank_hotpath_correction": "NOT_STARTED",
@@ -89,13 +89,13 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "f60d7a9a8aea6870094a08ef6375a4fe7571af36",
-  "last_checked_run": 37355989447,
-  "blocker": "NONE_RUN_37355989447_IN_PROGRESS",
-  "next_action": "Inspect Candidate0061 Batch B run 37355989447 triggered by f60d7a9. Prior run 37351484868 passed stock ABI, C0059 recreation, Batch A base, ABI compatibility, MiYume/AOSP/CLO oracle scan and Batch A control build, then failed at drivers/hid/hid-ids.h after the Cortex-A76AE adapter succeeded. The HID conflict is now classified STABLE_ONLY/ADAPT: preserve Lisa vendor HID definitions and add only official v5.4.292->v5.4.296 identities for ADATA XPG (125f:7505/7506), Chicony HP 5MP (04f2:b824/b82c) and SmartlinkTechnology (4c4a:4155). Matching hid-quirks.c behavior remains on the normal stable three-way path. If the rerun fails, repair only the next reviewed semantic conflict; expected next candidates include pinctrl-msm.c, drivers/platform Kconfig/Makefile, USB core/DWC3, ext4, pid.h or posix-timers. If apply passes, continue target compile/modpost and ABI review with removed symbols=0.",
+  "last_checked_commit": "5581b85c477ffd53994f09e348ec2640588cb0cb",
+  "last_checked_run": 37360064366,
+  "blocker": "NONE_RUN_37360064366_QUEUED",
+  "next_action": "Inspect Candidate0061 Batch B run 37360064366 triggered by 5581b85. Prior run 37355989447 passed all prerequisite/oracle/control gates and the HID adapter, then failed first at drivers/pinctrl/qcom/pinctrl-msm.c. That conflict is now STABLE_ONLY/ADAPT: preserve Lisa downstream direct-connect/wake/SM7325-Yupik flow and add only the official 5.4.292->5.4.296 msm_gpio_irq_init_valid_mask callback plus girq->init_valid_mask hook, matching MiYume 5.4.302 final-state semantics. If strict apply fails again, repair only the next reviewed semantic conflict. If apply passes, continue target compile/modpost and ABI review with removed symbols=0.",
   "next_expected_evidence": [
-    "Run 37355989447 passes C0061_BATCH_B_ORACLE_SCAN=PASS",
-    "HID identity adapter applies while preserving Lisa vendor HID table",
+    "Run 37360064366 reaches C0061_BATCH_B_ORACLE_SCAN=PASS",
+    "QCOM pinctrl IRQ valid-mask adapter applies while preserving Lisa vendor direct-connect/wake flow",
     "C0061_BATCH_B_CONTROL_COMPILE_MODPOST=PASS",
     "C0061_BATCH_B_APPLY=PASS or exact next semantic-conflict path",
     "C0061_BATCH_B_COMPILE_MODPOST=PASS if apply passes",
@@ -235,7 +235,12 @@
     "Run 37351484868 re-read: Cortex-A76AE adapter passed; next strict Batch B semantic blocker is drivers/hid/hid-ids.h",
     "Official v5.4.292->v5.4.296 HID delta isolated to ADATA XPG 125f:7505/7506, Chicony HP 5MP 04f2:b824/b82c and SmartlinkTechnology 4c4a:4155 identity definitions with matching hid-quirks.c behavior",
     "Batch B hid-ids.h STABLE_ONLY adapter pushed to main at f60d7a9",
-    "New Batch B run 37355989447 started from f60d7a9"
+    "New Batch B run 37355989447 started from f60d7a9",
+    "Run 37355989447 re-read: HID adapter passed; next strict Batch B semantic blocker is drivers/pinctrl/qcom/pinctrl-msm.c",
+    "Official 5.4.292->5.4.296 pinctrl-msm delta isolated to msm_gpio_irq_init_valid_mask plus gpio_irq_chip init_valid_mask hook",
+    "MiYume 5.4.302 confirms the same valid-mask semantics integrated with downstream direct-connect/wake handling",
+    "Batch B pinctrl-msm.c STABLE_ONLY adapter pushed to main at 5581b85",
+    "New Batch B run 37360064366 queued from 5581b85"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
