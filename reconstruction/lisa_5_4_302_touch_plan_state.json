@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "WORKFLOW_REPAIRED_RERUN_PENDING",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "C0050_HELPER_RERUN_PENDING",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,12 +89,13 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "4a7cf2c7e005a0a8743cd131ce1fc5658909470f",
-  "last_checked_run": 37293805351,
-  "blocker": "BATCH_A_WORKFLOW_STRUCTURE_FIXED_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A run triggered by 4a7cf2c. Commit 098f2da correctly introduced Candidate0046 stock-IKHEADERS genksyms routing, Candidate0050 proc_create ABI split, STOCK_ABI_ROOT, and CONFIG_USE_COMMON_CAMERA=y, but malformed the workflow YAML by leaving an unterminated CONFIG_CFI_CLANG grep and duplicating ABI/report/upload sections. Commit 4a7cf2c rebuilt the workflow structure and retained those intended ABI-baseline changes. Verify source recreation and config first; if build reaches ABI, confirm the ~75 camera removals disappear and CRC drift collapses from 9698 before classifying remaining symbols by official 5.4.289->5.4.292 stable provenance.",
+  "last_checked_commit": "1dc1cec60c8b512e3589abaed8799e374c1b3a2d",
+  "last_checked_run": 37304119572,
+  "blocker": "BATCH_A_C0050_IMPORT_SIDE_EFFECT_FIXED_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A run triggered by 1dc1cec. Run 37304119572 failed before stable apply because importing candidate_0050_build.py executed the full historical Candidate0050 builder and stopped on missing candidate-0018.ikconfig. The legacy proc_create ABI mutation has now been extracted into side-effect-free reconstruction/scripts/candidate_0050_proc_abi_patch.py at 2dc36be, and the Batch A workflow at 1dc1cec calls proc50.apply(root, kernel) instead of importing candidate_0050_build.py. Verify source recreation first, then stable apply/config/build. If ABI is reached, check that camera removals collapse and CRC drift materially falls from 9698.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A run for 4a7cf2c or later",
+    "New Candidate0061 Batch A run for 1dc1cec or later",
+    "Candidate0050 proc ABI helper executes without candidate-0018.ikconfig dependency",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
     "Candidate0046 stock IKHEADERS genksyms routing present",
     "Candidate0050 proc_create/proc_create_proc_ops split present",
@@ -179,7 +180,10 @@
     "Batch A prepare/build now export STOCK_ABI_ROOT and CONFIG_USE_COMMON_CAMERA=y to match Candidate0059 inherited build contract",
     "Commit 098f2da was found to have malformed the Batch A workflow YAML with an unterminated CONFIG_CFI_CLANG grep, duplicated ABI/report/upload sections, and stray shell under artifact paths",
     "Batch A workflow structure repaired at 4a7cf2c while preserving Candidate0046 genksyms, Candidate0050 proc ABI, STOCK_ABI_ROOT, and CONFIG_USE_COMMON_CAMERA=y changes",
-    "Post-repair workflow validation confirmed exactly one compile step, one ABI step, one report step, one upload step, and no malformed CFI or stray artifact-shell content"
+    "Post-repair workflow validation confirmed exactly one compile step, one ABI step, one report step, one upload step, and no malformed CFI or stray artifact-shell content",
+    "Run 37304119572 first blocker identified: importing candidate_0050_build.py executed the full historical Candidate0050 build and failed on missing candidate-0018.ikconfig before proc ABI replay",
+    "Candidate0050 legacy proc_create ABI replay extracted into side-effect-free helper candidate_0050_proc_abi_patch.py at 2dc36be",
+    "Batch A workflow switched to proc50.apply(root, kernel) at 1dc1cec so proc ABI can be replayed without executing the historical Candidate0050 builder"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
