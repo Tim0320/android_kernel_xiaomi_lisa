@@ -89,14 +89,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "b3c5d7e986c33af54662ce0c408651d18c7f73d1",
-  "last_checked_run": 37282747022,
-  "blocker": "BATCH_A_C0059_BPF_PATH_FIX_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A build rerun triggered by b3c5d7e. The prior run 37282747022 failed before stable application because candidate_0058_bpf_port.apply() received a relative package path while git apply ran with cwd=kernel. The workflow now resolves package/kernel to absolute paths. If the C0059 source recreation passes, continue to the first stable-application mixed conflict or compiler/modpost blocker; do not skip ahead.",
+  "last_checked_commit": "357e4d79d50e67305c213d58e10a142a145f8843",
+  "last_checked_run": 37283454772,
+  "blocker": "BATCH_A_OOM_ADAPTER_FIX_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A rerun triggered by 357e4d7. Run 37283454772 confirmed C0059_SOURCE_FEATURES_RECREATED=PASS and then failed in mm/oom_kill.c because the semantic adapter assumed upstream mark_oom_victim layout. The adapter now supports Lisa's split __mark_oom_victim layout while preserving the 5.4.292 credential-aware OOM trace semantics. If source application passes, continue immediately to olddefconfig/compile/modpost; otherwise fix the next first real adapter or mixed-conflict blocker.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A build run for b3c5d7e or later",
+    "New Candidate0061 Batch A run for 357e4d7 or later",
     "C0059_SOURCE_FEATURES_RECREATED=PASS",
-    "Candidate0061 Batch A source apply PASS or first MIXED_CONFLICT",
+    "C0061_BATCH_A_APPLY=PASS",
     "olddefconfig/prepare result",
     "Image/modules/dtbs compile + modpost result",
     "Module.symvers CRC delta versus Candidate0059 r43da7c5",
@@ -155,7 +155,11 @@
     "Batch A build gate uses stock-generation Clang 11.0.2 and audits Module.symvers against Candidate0059 artifact 11322443300",
     "Run 37282747022 first blocker identified: relative BPF patch path was resolved from kernel cwd and caused ENOENT",
     "Candidate0061 Batch A workflow now resolves package and kernel paths to absolute paths before recreating Candidate0059 BPF Stage-A",
-    "C0059 source recreation log added to persistent Batch A evidence"
+    "C0059 source recreation log added to persistent Batch A evidence",
+    "Run 37283454772 passed Candidate0059 source recreation and failed at the Lisa-specific OOM semantic adapter",
+    "OOM adapter updated to support Lisa split __mark_oom_victim layout while preserving credential-aware trace_mark_victim semantics",
+    "Batch A evidence reporter now prioritizes apply failures over already-passing C0059 source logs",
+    "Batch A concurrency changed to cancel stale in-progress retries when a newer fix is pushed"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
