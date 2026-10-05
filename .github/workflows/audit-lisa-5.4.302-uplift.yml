@@ -13,6 +13,7 @@ on:
 
 permissions:
   contents: write
+  issues: write
 
 jobs:
   audit:
@@ -103,7 +104,7 @@ jobs:
           git add reconstruction/generated/c0061_batch_a_review_latest.json
           if ! git diff --cached --quiet; then
             git commit -m "data: persist Candidate0061 Batch A review [skip ci]"
-            git push origin HEAD:main
+            git push origin HEAD:main || echo 'EVIDENCE_REPO_PUSH=FAILED_NONFATAL'
           fi
 
       - name: Generate official cumulative patch and direct apply diagnostic
@@ -138,7 +139,43 @@ jobs:
           echo '### Batch A semantic review' >> "$GITHUB_STEP_SUMMARY"
           python3 -c "import json; p=json.load(open('candidate-0061-batch-a-review.json')); print('counts:', p['counts']); print('semantic_review_files:', len(p['semantic_review'])); [print('-', x) for x in p['semantic_review']]" >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Report Candidate0061 audit evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A audit"
+            echo
+            echo "- source_sha: $SOURCE_SHA"
+            echo "- run_id: $RUN_ID"
+            echo "- job_status: $JOB_STATUS"
+            if test -s candidate-0061-batch-a-review.json; then
+              python3 - <<'PY'
+          import json
+          p=json.load(open("candidate-0061-batch-a-review.json"))
+          print("- review_counts:", p.get("counts", {}))
+          print("- semantic_review_count:", len(p.get("semantic_review", [])))
+          for x in p.get("semantic_review", []):
+              print("  -", x)
+          PY
+            else
+              echo "- batch_a_review: MISSING"
+            fi
+            if test -s candidate-0061-apply-check.txt; then
+              echo
+              echo "apply-check:"
+              tail -n 20 candidate-0061-apply-check.txt
+            fi
+          } > candidate-0061-issue-evidence.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-issue-evidence.md
+
       - name: Upload Candidate0061 uplift audit
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: lisa-c0061-linux-5.4.302-uplift-audit
