@@ -216,13 +216,19 @@ Same gates as Phase 3.
 
 Special attention:
 - pinctrl/QCOM/UFS-reset relevant changes.
-- Qualcomm CLO/CodeLinaro msm-5.4 is a downstream semantic reference for Qualcomm-specific
-  structure and backports, not the canonical Linux 5.4.y version source. Official
-  linux-stable v5.4.x tags/incremental patches remain the stable provenance source.
+- Official linux-stable v5.4.x tags/incremental patches remain the canonical stable provenance.
+- AOSP/ACK android11-5.4.x_r00 is the Android/GKI semantic oracle. For each Batch B/C/D
+  conflict, compare the corresponding Android Common Kernel endpoint before inventing an
+  Android-specific adaptation. android11-5.4.302_r00 is the final Android 5.4.302 oracle.
+- Qualcomm CLO/CodeLinaro msm-5.4 is a downstream semantic oracle for Qualcomm-specific
+  BSP structure/backports, not the canonical Linux version source and not a whole-tree donor.
+- Lisa/Xiaomi source and the frozen Candidate0059 build contract remain the device/KMI oracle.
+- The acceptance hierarchy is: linux-stable provenance -> AOSP/ACK Android semantics ->
+  CLO Qualcomm semantics -> Lisa device adaptation -> compile/modpost -> KMI/ABI gate.
 - The upstream kernel documents scripts/patch-kernel as an automation helper for normal
-  stable patch application, and kernel.org publishes incremental 5.4.y patches. For Lisa,
-  automation may apply clean hunks quickly, but downstream Qualcomm/Xiaomi conflicts still
-  require semantic adapters plus compile/ABI gates; do not whole-tree replace from CLO.
+  stable patch application, and kernel.org publishes incremental 5.4.y patches. Batch B/C/D
+  should therefore auto-apply clean hunks and pre-scan all non-clean overlaps in one run;
+  only reviewed semantic adapters are committed.
 
 ### Phase 5 - Stable uplift Batch C
 Status: NOT STARTED
@@ -425,28 +431,24 @@ At the end of every execution:
 ## Current next action
 
 NEXT_ACTION:
-Inspect the Candidate0061 Batch B run triggered by commit 83dbe9c or later.
+Inspect the Candidate0061 Batch B rerun triggered by dd09ac7 or later.
 
-Batch A is now fully closed by run 37331513181:
-- stock ABI PASS;
-- Candidate0059 inherited source recreation PASS;
-- Stable Batch A semantic apply PASS;
-- reviewed config PASS;
-- same-run control compile/modpost PASS;
-- Candidate0059 ABI compatibility PASS;
-- target compile/modpost PASS;
-- exact ABI gate PASS;
-- changed CRCs = 0;
-- removed symbols = 0;
-- added symbols = exactly lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135.
+Run 37337064578 passed the stock ABI oracle, frozen Candidate0059 recreation,
+passed Batch A base, Candidate0059 ABI compatibility and control build. Its first
+Batch B blocker was the top-level Makefile. 657bba2 now preserves the downstream
+Qualcomm/Xiaomi Makefile and applies only the reviewed STABLE_ONLY SUBLEVEL 292->296
+semantic change.
 
-Batch B is 5.4.292 -> 5.4.296 and remains STABLE_ONLY. The first run is
-deliberately strict: any downstream overlap that cannot three-way merge must stop
-at the first path for semantic classification, and any non-zero changed/added ABI
-delta must be reviewed against official Stable Batch B provenance before it can be
-accepted. Removed Candidate0059 symbols are not allowed.
+To accelerate the remaining uplift without weakening provenance, Batch B now
+prefetches:
+- official linux-stable v5.4.292/v5.4.296 as the canonical patch source;
+- AOSP android11-5.4.292_r00/android11-5.4.296_r00 as the Android/GKI semantic oracle;
+- Qualcomm CLO kernel.lnx.5.4.r1-rel as a best-effort Qualcomm downstream oracle.
 
-If Batch B apply/build/ABI all pass, mark Batch B PASS and immediately start
-Batch C 5.4.296 -> 5.4.299. If it fails, repair only the first real blocker.
-Do not introduce package-runtime/WALT, MIGT FREQ_QOS, touch boost, Goodix or other
-touch/performance changes until the complete 5.4.302 Stable base is established.
+The new oracle scan reports every non-clean Batch B overlap in one CI run with its
+AOSP/CLO relation before the strict apply gate. Use that report to classify the
+conflict set efficiently, but do not replace whole files merely because an oracle
+matches. Preserve the frozen Candidate0059 KMI/build contract. If apply/build passes,
+require zero removed ABI symbols and stable-provenance review for every changed/added
+symbol. If Batch B passes, immediately start Batch C 5.4.296->5.4.299 with the same
+oracle hierarchy.
