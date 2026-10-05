@@ -1,0 +1,110 @@
+name: Audit Lisa Linux 5.4.302 uplift
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/audit-lisa-5.4.302-uplift.yml
+      - reconstruction/scripts/candidate_0061_5_4_302_uplift_inventory.py
+      - reconstruction/c0061_linux_5_4_302_uplift_plan_20261005.md
+      - reconstruction/c0061_linux_5_4_302_uplift_manifest.json
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout audit package
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact Lisa 5.4.289 source
+        uses: actions/checkout@v4
+        with:
+          repository: Tim0320/android_kernel_xiaomi_lisa
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout pinned MiYume 5.4.302 reference
+        uses: actions/checkout@v4
+        with:
+          repository: MiYume0721/android_kernel_xiaomi_sm8350_miyume
+          ref: 6f0290557329655f29c9b1bc52eec33e36f859ba
+          path: donor
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Fetch official Linux stable endpoints
+        run: |
+          set -euo pipefail
+          stable=https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+          git -C kernel fetch --no-tags --depth=1 "$stable" \
+            refs/tags/v5.4.289:refs/tags/upstream-v5.4.289 \
+            refs/tags/v5.4.302:refs/tags/upstream-v5.4.302
+          git -C donor fetch --no-tags --depth=1 "$stable" \
+            refs/tags/v5.4.302:refs/tags/upstream-v5.4.302
+          git -C kernel show upstream-v5.4.289:Makefile | sed -n '1,8p' > upstream-5.4.289-version.txt
+          git -C kernel show upstream-v5.4.302:Makefile | sed -n '1,8p' > upstream-5.4.302-version.txt
+
+      - name: Build no-change conflict inventory
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/candidate_0061_5_4_302_uplift_inventory.py \
+            --kernel kernel \
+            --donor donor \
+            --out-json candidate-0061-uplift-inventory.json \
+            --out-md candidate-0061-uplift-inventory.md
+
+      - name: Generate official cumulative patch and direct apply diagnostic
+        run: |
+          set -euo pipefail
+          git -C kernel diff --binary upstream-v5.4.289 upstream-v5.4.302 > linux-5.4.289-to-5.4.302.patch
+          {
+            echo "source=official linux-stable v5.4.289..v5.4.302"
+            echo "lisa_source=6e568aabc77a06fa787baec1d9e60e4b559874a3"
+            echo "donor=MiYume0721/android_kernel_xiaomi_sm8350_miyume@6f0290557329655f29c9b1bc52eec33e36f859ba"
+            echo "patch_bytes=$(wc -c < linux-5.4.289-to-5.4.302.patch)"
+          } > candidate-0061-apply-check.txt
+          set +e
+          git -C kernel apply --check ../linux-5.4.289-to-5.4.302.patch >> candidate-0061-apply-check.txt 2>&1
+          rc=$?
+          set -e
+          echo "direct_git_apply_check_exit=$rc" >> candidate-0061-apply-check.txt
+          if [ "$rc" -eq 0 ]; then
+            echo "DIRECT_APPLY_CHECK=PASS" >> candidate-0061-apply-check.txt
+          else
+            echo "DIRECT_APPLY_CHECK=CONFLICTS_EXPECTED_SEE_INVENTORY" >> candidate-0061-apply-check.txt
+          fi
+
+      - name: Record audit summary
+        run: |
+          set -euo pipefail
+          cat candidate-0061-uplift-inventory.md >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo '### Direct patch diagnostic' >> "$GITHUB_STEP_SUMMARY"
+          tail -n 40 candidate-0061-apply-check.txt >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Candidate0061 uplift audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-linux-5.4.302-uplift-audit
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            candidate-0061-uplift-inventory.json
+            candidate-0061-uplift-inventory.md
+            candidate-0061-apply-check.txt
+            upstream-5.4.289-version.txt
+            upstream-5.4.302-version.txt
