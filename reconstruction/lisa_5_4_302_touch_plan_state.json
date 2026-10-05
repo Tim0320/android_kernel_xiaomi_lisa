@@ -31,7 +31,7 @@
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
     "phase_3_batch_a_5_4_290_to_5_4_292": "PASS",
-    "phase_4_batch_b_5_4_293_to_5_4_296": "MIYUME_ORACLE_BUILD_RUNNING",
+    "phase_4_batch_b_5_4_293_to_5_4_296": "CORTEX_A76AE_ADAPTER_PUSHED_RERUN_QUEUED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
     "phase_7_touch_jank_hotpath_correction": "NOT_STARTED",
@@ -89,15 +89,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "969057186d7a5515975ca392ed2229e12028116a",
-  "last_checked_run": 37346217806,
-  "blocker": "NONE_RUN_37346217806_IN_PROGRESS",
-  "next_action": "Inspect Candidate0061 Batch B run 37346217806, job 111885321885. The malformed Batch B workflow was repaired at 9690571: one oracle/install/control/apply/build/ABI/report/upload chain only. The run is now accepted and in progress. First inspect the MiYume/AOSP/CLO oracle scan; use MiYume 5.4.302 as the preferred Xiaomi/Qualcomm final-state oracle, exclude SM8350/Lahaina-only semantics from Lisa SM7325/Yupik, and keep linux-stable as canonical patch provenance. If strict apply fails, repair only the first reviewed semantic conflict. If apply/build passes, audit ABI with removed=0 and provenance-review any changed/added symbols.",
+  "last_checked_commit": "d87bf5ff04d5c1fe2837836f1f105afc7f688403",
+  "last_checked_run": 37351484868,
+  "blocker": "BATCH_B_RERUN_37351484868_PENDING_AFTER_CPUTYPE_ADAPT",
+  "next_action": "Inspect Candidate0061 Batch B run 37351484868 triggered by d87bf5f. Prior run 37346217806 passed stock ABI, C0059 recreation, Batch A base, Candidate0059 ABI compatibility, MiYume/AOSP/CLO oracle scan and Batch A control build, then failed at arch/arm64/include/asm/cputype.h. That conflict is now classified STABLE_ONLY/ADAPT: preserve Lisa's newer vendor CPU-ID superset and add only Cortex-A76AE part 0xD0E plus MIDR_CORTEX_A76AE, matching official stable/AOSP 5.4.293+ and MiYume 5.4.302. Continue strict first-conflict discovery. If apply passes, proceed to target compile/modpost and ABI review with removed symbols=0.",
   "next_expected_evidence": [
-    "Run 37346217806 reaches C0061_BATCH_B_ORACLE_SCAN=PASS",
-    "Oracle report lists complete Batch B semantic_review paths with MiYume/AOSP/CLO relations",
+    "Run 37351484868 starts and reaches C0061_BATCH_B_ORACLE_SCAN=PASS",
+    "Cortex-A76AE adapter applies without replacing Lisa vendor CPU-ID superset",
     "C0061_BATCH_B_CONTROL_COMPILE_MODPOST=PASS",
-    "C0061_BATCH_B_APPLY=PASS or exact next reviewed semantic-conflict path",
+    "C0061_BATCH_B_APPLY=PASS or exact next semantic-conflict path",
     "C0061_BATCH_B_COMPILE_MODPOST=PASS if apply passes",
     "Batch B ABI removed symbols = 0",
     "Any changed/added ABI symbols traced to official 5.4.292->5.4.296 stable provenance"
@@ -227,7 +227,11 @@
     "Malformed Batch B workflow confirmed on main: oracle grep swallowed dependency-install step and duplicate workflow tail remained",
     "Batch B oracle upgraded at c5878af to prioritize MiYume SM8350/Xiaomi 5.4.302 final-state semantics while retaining AOSP GKI and CLO fallback evidence",
     "Batch B workflow repaired structurally at 9690571: duplicate tail removed and exactly one oracle/install/control/apply/build/ABI/report/upload chain remains",
-    "GitHub accepted repaired workflow; Candidate0061 Batch B run 37346217806 job 111885321885 started successfully"
+    "GitHub accepted repaired workflow; Candidate0061 Batch B run 37346217806 job 111885321885 started successfully",
+    "Run 37346217806 fully re-read: oracle/control gates PASS, first strict Batch B semantic blocker arch/arm64/include/asm/cputype.h",
+    "Cortex-A76AE stable semantics verified against AOSP android11-5.4.293+ and MiYume 5.4.302 while preserving Lisa's newer vendor CPU IDs",
+    "Batch B cputype.h STABLE_ONLY adapter pushed to main at d87bf5f",
+    "New Batch B run 37351484868 queued from d87bf5f"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
