@@ -6,6 +6,7 @@ UPSTREAM_BASE = "upstream-v5.4.292"
 UPSTREAM_TARGET = "upstream-v5.4.296"
 AOSP_BASE = "aosp-android11-5.4.292"
 AOSP_TARGET = "aosp-android11-5.4.296"
+MIYUME_TARGET = "miyume-sm8350-5.4.302"
 CLO_TARGET = "clo-msm-5.4-r1-rel"
 
 def git(root, *args, check=True):
@@ -56,6 +57,15 @@ def classify_aosp(ub, ut, ab, at):
         return "AOSP_UNCHANGED_ACROSS_BATCH"
     return "AOSP_ANDROID_DIVERGED"
 
+def classify_miyume(ours, ut, mt):
+    if mt is None:
+        return "MIYUME_PATH_ABSENT"
+    if mt == ut:
+        return "MIYUME_EQUALS_UPSTREAM_296"
+    if mt == ours:
+        return "MIYUME_EQUALS_LISA_CURRENT"
+    return "MIYUME_VENDOR_EVOLVED"
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--source", type=Path, required=True)
@@ -63,8 +73,9 @@ def main():
     args = ap.parse_args()
     root = args.source.resolve()
 
-    if not ref_exists(root, AOSP_BASE) or not ref_exists(root, AOSP_TARGET):
-        raise RuntimeError("AOSP android11-5.4 oracle refs are missing")
+    for required in (AOSP_BASE, AOSP_TARGET, MIYUME_TARGET):
+        if not ref_exists(root, required):
+            raise RuntimeError(required + " oracle ref is missing")
 
     clo_available = ref_exists(root, CLO_TARGET)
     paths = git(root, "diff", "--name-only", "--no-renames", UPSTREAM_BASE, UPSTREAM_TARGET).stdout.decode().splitlines()
@@ -88,12 +99,17 @@ def main():
 
         ab = blob(root, AOSP_BASE, path)
         at = blob(root, AOSP_TARGET, path)
+        mt = blob(root, MIYUME_TARGET, path)
         clo = blob(root, CLO_TARGET, path) if clo_available else None
 
         row = {
             "path": path,
             "class": cls,
             "vendor_diverged_from_upstream_base": ours != ub,
+            "miyume_oracle": classify_miyume(ours, ut, mt),
+            "miyume_path_exists": mt is not None,
+            "miyume_equals_upstream_target": mt == ut,
+            "miyume_equals_lisa_worktree": mt == ours,
             "aosp_oracle": classify_aosp(ub, ut, ab, at),
             "aosp_base_exists": ab is not None,
             "aosp_target_exists": at is not None,
@@ -116,8 +132,9 @@ def main():
         "from": "5.4.292",
         "to": "5.4.296",
         "provenance_source": "official linux-stable",
+        "preferred_downstream_oracle": "MiYume SM8350/Xiaomi main @ 5.4.302",
         "android_semantic_oracle": "android11-5.4.292_r00 -> android11-5.4.296_r00",
-        "qualcomm_semantic_oracle": "CLO kernel.lnx.5.4.r1-rel (best-effort snapshot)",
+        "qualcomm_fallback_oracle": "CLO kernel.lnx.5.4.r1-rel (best-effort)",
         "clo_oracle_available": clo_available,
         "counts": counts,
         "semantic_review_count": len(semantic),
@@ -132,9 +149,9 @@ def main():
         print(
             "SEMANTIC_REVIEW",
             row["path"],
+            "miyume=" + row["miyume_oracle"],
             "aosp=" + row["aosp_oracle"],
             "clo_exists=" + str(row["clo_path_exists"]),
-            "clo_eq_lisa=" + str(row["clo_equals_lisa_worktree"]),
         )
 
 if __name__ == "__main__":
