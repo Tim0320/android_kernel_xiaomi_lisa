@@ -92,15 +92,18 @@
   ],
   "android17_separate_track": {
     "candidate": "0060",
+    "role": "compatibility-overlay",
+    "execution_base": "completed Candidate0061 Linux 5.4.302 source",
+    "integrated_target": "Candidate0062",
     "items": [
       "BPF5.10 broader backport",
       "close_range(436)+CLOSE_RANGE_CLOEXEC",
       "CAP_PERFMON=38",
       "CAP_BPF=39",
       "CAP_CHECKPOINT_RESTORE=40",
-      "Developer Options release-property repair"
+      "Developer Options release-property repair as a separate runtime/property gate"
     ],
-    "note": "do not count these as official 5.4.302 stable uplift"
+    "note": "Do not count these as official 5.4.302 stable uplift. Apply them only after Candidate0061 is proven."
   },
   "forbidden": [
     "SUBLEVEL-only version bump",
@@ -113,5 +116,11 @@
     "disable MODVERSIONS",
     "relax ABI gates",
     "SM8350 DTS/device-driver replacement"
+  ],
+  "integration_order": [
+    "Candidate0059 5.4.289 verified reference",
+    "Candidate0061 pure 5.4.302 stable uplift",
+    "Candidate0060 BPF/Android17 compatibility overlay",
+    "Candidate0062 integrated build and device validation"
   ]
 }
