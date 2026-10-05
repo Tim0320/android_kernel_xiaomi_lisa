@@ -9,6 +9,11 @@ from pathlib import Path
 
 UP_289 = "upstream-v5.4.289"
 UP_302 = "upstream-v5.4.302"
+BATCH_A_STEPS = (
+    ("5.4.289", "5.4.290", "upstream-v5.4.289", "upstream-v5.4.290"),
+    ("5.4.290", "5.4.291", "upstream-v5.4.290", "upstream-v5.4.291"),
+    ("5.4.291", "5.4.292", "upstream-v5.4.291", "upstream-v5.4.292"),
+)
 SENSITIVE = (
     "arch/arm64/",
     "include/linux/",
@@ -126,6 +131,25 @@ def main() -> int:
     sensitive_overlap = {p for p in overlap if is_sensitive(p)}
     sensitive_donor_overlap = {p for p in donor_overlap if is_sensitive(p)}
 
+    batch_a_steps = []
+    for from_ver, to_ver, from_ref, to_ref in BATCH_A_STEPS:
+        step_stable = files(args.kernel, from_ref, to_ref)
+        step_overlap = step_stable & lisa_vendor
+        step_sensitive = {p for p in step_overlap if is_sensitive(p)}
+        step_donor_overlap = step_overlap & donor_delta
+        batch_a_steps.append({
+            "from": from_ver,
+            "to": to_ver,
+            "changed_files": len(step_stable),
+            "lisa_vendor_overlap_files": len(step_overlap),
+            "sensitive_overlap_files": len(step_sensitive),
+            "donor_modified_overlap_files": len(step_donor_overlap),
+            "changed_file_list": sorted(step_stable),
+            "lisa_vendor_overlap_list": sorted(step_overlap),
+            "sensitive_overlap_list": sorted(step_sensitive),
+            "donor_modified_overlap_list": sorted(step_donor_overlap),
+        })
+
     result = {
         "candidate": "0061",
         "purpose": "Linux 5.4.289 -> 5.4.302 no-build conflict inventory",
@@ -147,6 +171,7 @@ def main() -> int:
         "candidate0060_lisa_vendor_overlap_files": sorted(c0060_lisa_vendor_overlap),
         "candidate0060_miyume_delta_files": sorted(c0060_donor_delta),
         "candidate0060_three_way_overlap_files": sorted(c0060_three_way_overlap),
+        "batch_a_steps": batch_a_steps,
         "stable_files": sorted(stable),
         "lisa_vendor_files": sorted(lisa_vendor),
         "overlap_files": sorted(overlap),
@@ -182,6 +207,19 @@ def main() -> int:
         "",
     ]
     lines += [f"- {p}" for p in sorted(c0060_stable_overlap)] or ["- none"]
+    lines += ["", "## Batch A incremental provenance", ""]
+    for step in batch_a_steps:
+        lines += [
+            f"### {step['from']} -> {step['to']}",
+            "",
+            f"- Official changed files: {step['changed_files']}",
+            f"- Lisa vendor-overlap files: {step['lisa_vendor_overlap_files']}",
+            f"- Sensitive overlap files: {step['sensitive_overlap_files']}",
+            f"- Overlap also modified by MiYume: {step['donor_modified_overlap_files']}",
+            "",
+            "Sensitive overlap paths:",
+        ]
+        lines += [f"- {p}" for p in step["sensitive_overlap_list"]] or ["- none"]
     lines += ["", "## Candidate0060 MiYume delta on a 5.4.302 base", ""]
     lines += [f"- {p}" for p in sorted(c0060_donor_delta)] or ["- none"]
     lines += ["", "## Sensitive conflict-risk files",
@@ -204,6 +242,11 @@ def main() -> int:
     print(f"candidate0060_surface_changed_by_stable={len(c0060_stable_overlap)}")
     print(f"candidate0060_surface_modified_by_miyume={len(c0060_donor_delta)}")
     print(f"candidate0060_surface_three_way_overlap={len(c0060_three_way_overlap)}")
+    for step in batch_a_steps:
+        print(
+            f"batch_a_{step['from']}_to_{step['to']}:changed={step['changed_files']},"
+            f"overlap={step['lisa_vendor_overlap_files']},sensitive={step['sensitive_overlap_files']}"
+        )
     return 0
 
 
