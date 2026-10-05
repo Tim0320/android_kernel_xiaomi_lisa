@@ -27,7 +27,7 @@ permissions:
 
 concurrency:
   group: lisa-c0061-batch-a
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   batch-a:
@@ -259,14 +259,14 @@ jobs:
               echo
               echo "build-log-tail:"
               tail -n 30 candidate-0061-batch-a-build.log
-            elif test -s candidate-0061-c0059-source.log; then
-              echo
-              echo "c0059-source-log-tail:"
-              tail -n 30 candidate-0061-c0059-source.log
             elif test -s candidate-0061-batch-a-apply.log; then
               echo
               echo "apply-log-tail:"
               tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
             fi
           } > candidate-0061-batch-a-issue.md
           gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
