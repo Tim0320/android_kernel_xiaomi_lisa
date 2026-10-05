@@ -10,7 +10,7 @@ on:
       - reconstruction/scripts/candidate_0061_batch_a_manual.py
       - reconstruction/scripts/candidate_0061_batch_a_review.py
       - reconstruction/scripts/candidate_0046_build.py
-      - reconstruction/scripts/candidate_0050_build.py
+      - reconstruction/scripts/candidate_0050_proc_abi_patch.py
       - reconstruction/scripts/candidate_0059_factory.py
       - reconstruction/scripts/candidate_0059_bpf_port.py
       - reconstruction/scripts/candidate_0059_perf_port.py
@@ -116,7 +116,7 @@ jobs:
           from pathlib import Path
           from types import SimpleNamespace
           import candidate_0046_build as c46
-          import candidate_0050_build as c50
+          import candidate_0050_proc_abi_patch as proc50
           import candidate_0056_power_patch as power
           import candidate_0059_ownership_patch as ownership
           import candidate_0059_perf_port as perf
@@ -143,10 +143,7 @@ jobs:
           c46.OUT = kernel / "out"
           c46.patch_qgki_module_abi()
 
-          c50.ROOT = root
-          c50.KERNEL = kernel
-          c50.OUT = kernel / "out"
-          c50.patch_legacy_proc_create_abi()
+          proc50.apply(root, kernel)
 
           ownership.retained = lambda _root: SimpleNamespace(apply=lambda _r, _k: None)
           ownership.apply(root, kernel)
