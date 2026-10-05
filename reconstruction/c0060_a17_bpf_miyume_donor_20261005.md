@@ -82,18 +82,29 @@ Candidate0059 explicitly does NOT claim full Linux 5.10 BPF parity.
 
 Therefore Candidate0060 must begin with an exact source/API gap report instead of blindly copying kernel/bpf.
 
-## Candidate0060 port order
+## Candidate0060 revised port order
 
-1. Freeze Candidate0059 as the known static-verified parent.
-2. Produce exact file/API diff between Lisa 5.4.289 and the pinned MiYume 5.4.302 donor.
-3. Split generic BPF changes from unrelated 5.4.302 stable changes.
-4. Backport only the BPF dependencies actually required by Android 17 / HyperOS 4 userspace.
-5. Audit the non-BPF Android 17 ABI requirements:
+Candidate0060 is now a compatibility-overlay specification, not the version-uplift base.
+
+1. Freeze Candidate0059 as the known 5.4.289 static/device comparison parent.
+2. Complete Candidate0061 first: semantically uplift the Lisa vendor tree from official Linux 5.4.289 to official Linux 5.4.302 while preserving Candidate0059 gates.
+3. Use that Lisa 5.4.302 result as the source base for Candidate0060 BPF/A17 compatibility work.
+4. Compare MiYume 5.4.302 against official Linux v5.4.302 and extract only donor-specific BPF/Android17 deltas. This avoids conflating the 5.4.289->5.4.302 stable delta with BPF5.10 feature work.
+5. Backport only the BPF dependencies actually required by Android 17 / HyperOS 4 userspace.
+6. Audit the non-BPF Android 17 ABI requirements:
    - close_range + CLOSE_RANGE_CLOEXEC
-   - CAP_CHECKPOINT_RESTORE / CAP_LAST_CAP=40
-6. Preserve Lisa QGKI ABI, CFI, MODVERSIONS and existing module ownership.
-7. Compile and require real linked-symbol/object gates.
-8. Device-test bpfloader/netd and capture the first unsupported map/helper/prog/link operation.
+   - CAP_PERFMON=38 / CAP_BPF=39 / CAP_CHECKPOINT_RESTORE=40 and matching SELinux capability2 semantics
+7. Preserve Lisa QGKI ABI, CFI, MODVERSIONS and existing module ownership.
+8. Compile and require real linked-symbol/object gates.
+9. Device-test bpfloader/netd and capture the first unsupported map/helper/prog/link operation.
+
+Why the order changed:
+- MiYume is itself based on 5.4.302.
+- Official 5.4.289->5.4.302 does not add the desired Linux5.10 BPF surface; the core BPF files checked (Makefile, btf.c, syscall.c, verifier.c, helpers.c, uapi bpf.h) are byte-identical between official 5.4.289 and 5.4.302.
+- Some shared dependencies do change during the stable uplift, e.g. net/core/filter.c and fs/file.c. Applying A17/BPF work before the uplift would create avoidable three-way conflict/retest work.
+- Therefore the clean extraction boundary is official-v5.4.302 -> MiYume-v5.4.302, applied onto Lisa-v5.4.302.
+
+Developer Options remains a separate runtime/property provenance track. Its repair must not be represented as part of the 5.4.302 stable uplift or BPF backport.
 
 ## Hard exclusions
 
