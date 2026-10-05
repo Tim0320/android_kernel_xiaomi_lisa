@@ -89,15 +89,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "62cdd2e12e5e971096302ceff4eeab3a3d804dd4",
-  "last_checked_run": 37323757115,
-  "blocker": "BATCH_A_WORKFLOW_STRUCTURE_REPAIRED_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A run triggered by 4b946ef or later. After the user reported the post-356ba83 failure, fresh repository inspection found that 356ba83 had structurally corrupted the workflow itself: the CONFIG_CFI_CLANG grep was truncated and duplicate build/ABI/report content had leaked beneath the artifact upload path block. Because that malformed structure prevented reliable issue-sink evidence, 37323757115 remains the latest run with complete job/log evidence. Commit c37d41c restored candidate_0061_batch_a_apply.py to side-effect-free STABLE_ONLY behavior, removing the 03b7025 config-oracle mutation. Commit 4b946ef rebuilt the workflow from the first valid body, trimmed all post-upload garbage, retained one control/compat/target/ABI/report/upload sequence, and replays the reviewed Candidate0059 config delta only in the MIXED_CONFLICT build-oracle gate. Read back confirms one clean CFI gate, no stale artifact IDs, no post-upload garbage, and exact config hash gate retained. If config/control/compat/target/ABI pass, mark Batch A PASS and immediately start Batch B.",
+  "last_checked_commit": "a75925a066a04f565d46a6237f824d2a4b9a8c4b",
+  "last_checked_run": 37326660954,
+  "blocker": "BATCH_A_CLEAN_WORKFLOW_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A run triggered by 4b946ef or later. Fresh evidence from run 37326660954 (source 03b7025) shows stock ABI PASS, C0059 source PASS, stable apply PASS, reviewed config PASS, control build PASS and ABI-compat source apply PASS; its target build was cancelled only because a newer push hit cancel-in-progress, so the reviewed config delta itself is validated. The user-reported post-356ba83 failure was traced to workflow structural corruption, not the config delta: CONFIG_CFI_CLANG grep truncation plus duplicate build/ABI/report content under the artifact path block. c37d41c restores STABLE_ONLY apply to side-effect-free behavior and 4b946ef rebuilds a clean 430-line workflow with one control/compat/target/ABI/report/upload sequence. Continue the clean rerun through target compile and exact ABI delta; if PASS, mark Batch A PASS and start Batch B immediately.",
   "next_expected_evidence": [
     "New Candidate0061 Batch A run for 4b946ef or later",
     "LISA_STOCK_IKHEADERS_EXTRACT=PASS",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
-    "C0061_BATCH_A_APPLY=PASS with stable apply not mutating reconstruction/stock_ikconfig",
+    "C0061_BATCH_A_APPLY=PASS",
     "C0061_BATCH_A_CONTROL_CONFIG_SHA256=664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
     "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
     "C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS",
@@ -209,7 +209,9 @@
     "Unintended 03b7025 Candidate0059 config-oracle mutation removed from the STABLE_ONLY Batch A apply script at c37d41c",
     "Batch A workflow rebuilt at 4b946ef from the first valid body and trimmed to the intended upload-path end",
     "4b946ef read-back validation: 430 lines; exactly one control/compat/target/ABI/report/upload step; one exact CFI gate; no stale cross-run artifact IDs; no post-upload garbage; exact reviewed config hash retained",
-    "Canonical plan updated at 62cdd2e to keep STABLE_ONLY source application separate from MIXED_CONFLICT config-oracle reconstruction"
+    "Canonical plan updated at 62cdd2e to keep STABLE_ONLY source application separate from MIXED_CONFLICT config-oracle reconstruction",
+    "Run 37326660954 (03b7025) reached stock ABI PASS, C0059 source PASS, stable apply PASS, reviewed config PASS, control build PASS and compat PASS before target build was cancelled by cancel-in-progress from a newer push",
+    "Run 37326660954 therefore validates the reviewed Candidate0059 config delta and same-run control build path; cancellation was CI orchestration, not a kernel/config failure"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
