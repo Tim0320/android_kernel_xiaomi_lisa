@@ -9,7 +9,13 @@ on:
       - reconstruction/scripts/candidate_0061_batch_a_apply.py
       - reconstruction/scripts/candidate_0061_batch_a_manual.py
       - reconstruction/scripts/candidate_0061_batch_a_review.py
+      - reconstruction/scripts/candidate_0059_factory.py
+      - reconstruction/scripts/candidate_0059_bpf_port.py
       - reconstruction/scripts/candidate_0059_perf_port.py
+      - reconstruction/scripts/candidate_0057_ownership_patch.py
+      - reconstruction/scripts/candidate_0056_power_patch.py
+      - reconstruction/scripts/candidate_0055_ufs_patch.py
+      - reconstruction/scripts/candidate_0054_fault_patch.py
       - reconstruction/scripts/candidate_0059_state_layer.py
       - reconstruction/scripts/candidate_0059_stage2_hooks.py
       - reconstruction/scripts/candidate_0059_stage3_accounting.py
@@ -71,21 +77,50 @@ jobs:
               package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part03 \
             > package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz
 
-      - name: Recreate frozen Candidate0059 source features
+      - name: Download frozen Candidate0059 ABI/config and stock ABI headers
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p c0059-baseline stock-abi
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/11322443300/zip" \
+            -o c0059-baseline.zip
+          unzip -q c0059-baseline.zip -d c0059-baseline
+          test -s c0059-baseline/candidate-0059.config
+          find c0059-baseline -name Module.symvers -type f -print
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/10637733529/zip" \
+            -o stock-abi.zip
+          unzip -q stock-abi.zip -d stock-abi
+          test -s stock-abi/stock-kheaders/include/linux/power_debug.h
+
+      - name: Recreate frozen Candidate0059 inherited source stack
         id: c0059
         env:
           PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
         run: |
           set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp c0059-baseline/candidate-0059.config kernel/out/.config
+          python3 package/reconstruction/scripts/candidate_0059_factory.py
           python3 - <<'PY' 2>&1 | tee candidate-0061-c0059-source.log
           from pathlib import Path
+          import candidate_0059_ownership_patch as inherited
           import candidate_0059_perf_port as perf
-          import candidate_0058_bpf_port as bpf
+          import candidate_0059_bpf_port as bpf
           root = Path("package").resolve()
           kernel = Path("kernel").resolve()
+          inherited.apply(root, kernel)
           perf.apply_sources(root, kernel)
           bpf.apply(root, kernel)
-          print("C0059_SOURCE_FEATURES_RECREATED=PASS")
+          print("C0059_INHERITED_SOURCE_STACK_RECREATED=PASS")
           PY
           git -C kernel diff --check
           git -C kernel diff --stat | tee candidate-0061-c0059-source-stat.txt
@@ -131,22 +166,6 @@ jobs:
             tar -xzf "$ARCHIVE" -C "$DEST"
           fi
           "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
-
-      - name: Download frozen Candidate0059 ABI/config baseline
-        if: ${{ steps.apply.outcome == 'success' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p c0059-baseline
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/11322443300/zip" \
-            -o c0059-baseline.zip
-          unzip -q c0059-baseline.zip -d c0059-baseline
-          test -s c0059-baseline/candidate-0059.config
-          find c0059-baseline -name Module.symvers -type f -print
 
       - name: Prepare Batch A stock-derived config
         id: config
