@@ -227,3 +227,14 @@ Source-review artifact11295723768 is not a boot. Independent verification had
 not completed at that read. Re-read CI before reporting status. This milestone
 confirms the new preservation stage ran; it is not permission to flash an
 unverified image or proof of device stability.
+
+
+## 2026-10-05 version-uplift history clarification
+
+The initial MiYume repository import commit `c8c95eb8c3ac10ed1f5b6624e4bdaa8c881612a4` already reports:
+
+`VERSION=5, PATCHLEVEL=4, SUBLEVEL=302`.
+
+The current pinned donor `6f0290557329655f29c9b1bc52eec33e36f859ba` also reports 5.4.302.
+
+Therefore this repository does **not** provide a clean, replayable 5.4.289 -> 5.4.302 stable-upgrade history. It remains valuable as a final-state Xiaomi/Qualcomm 5.4.302 comparison tree, especially for vendor conflict resolution, but official linux-stable v5.4.289..v5.4.302 must remain Candidate0061's upgrade source of truth.
