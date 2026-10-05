@@ -89,10 +89,10 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "dd09ac79c816c26250ca9d0777498b0de8752c87",
+  "last_checked_commit": "39340004d9fb362bda14aa8bf0980f5592ba5d62",
   "last_checked_run": 37337064578,
   "blocker": "BATCH_B_ORACLE_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch B rerun triggered by dd09ac7. Run 37337064578 failed first at top-level Makefile after all prerequisite/control gates passed; 657bba2 adapted only SUBLEVEL 292->296 while preserving downstream kbuild semantics. The Batch B workflow now prefetches android11-5.4.292_r00 and android11-5.4.296_r00 as an Android/GKI semantic oracle, and best-effort Qualcomm CLO kernel.lnx.5.4.r1-rel as a downstream structure oracle. candidate_0061_batch_b_oracle.py pre-scans all 5.4.292->5.4.296 paths and records every non-clean semantic overlap before the strict apply gate. Linux stable remains canonical provenance; AOSP/CLO are evidence oracles only. Use the oracle report to classify conflicts in batches, but repair only reviewed semantics and preserve Lisa KMI/ABI. If Batch B applies/builds, review exact ABI delta and require removed=0 before acceptance.",
+  "next_action": "Inspect the Candidate0061 Batch B run triggered by dd09ac7 or later. No newer completed issue-sink evidence was available at this check, so 37337064578 remains the last completed run inspected. The new workflow pre-scans all Batch B semantic conflicts using AOSP android11-5.4.292_r00->android11-5.4.296_r00 and best-effort CLO kernel.lnx.5.4.r1-rel before strict apply. Use that evidence to classify the conflict set, then repair reviewed semantics only. Preserve Candidate0059 KMI/ABI and require removed symbols = 0.",
   "next_expected_evidence": [
     "New Candidate0061 Batch B run for dd09ac7 or later",
     "C0061_BATCH_B_ORACLE_SCAN=PASS",
