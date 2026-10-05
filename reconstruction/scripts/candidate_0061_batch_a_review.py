@@ -25,11 +25,8 @@ def mergeable(ours,base,theirs):
         p=subprocess.run(["git","merge-file","-p",str(d/"o"),str(d/"b"),str(d/"t")],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         return p.returncode==0
 
-def main():
-    ap=argparse.ArgumentParser()
-    ap.add_argument("--kernel",type=Path,required=True)
-    ap.add_argument("--out",type=Path,default=Path("candidate-0061-batch-a-review.json"))
-    a=ap.parse_args(); root=a.kernel
+def review(root):
+    root=Path(root)
     paths=run(root,"diff","--name-only","--no-renames",BASE,TARGET).stdout.decode().splitlines()
     rows=[]
     for path in paths:
@@ -45,6 +42,14 @@ def main():
         result["counts"][r["class"]]=result["counts"].get(r["class"],0)+1
         if r["class"]=="SEMANTIC_REVIEW": result["semantic_review"].append(r["path"])
     result["files"]=rows
+    return result
+
+def main():
+    ap=argparse.ArgumentParser()
+    ap.add_argument("--kernel",type=Path,required=True)
+    ap.add_argument("--out",type=Path,default=Path("candidate-0061-batch-a-review.json"))
+    a=ap.parse_args()
+    result=review(a.kernel)
     a.out.write_text(json.dumps(result,indent=2)+"\n")
     print("C0061_BATCH_A_REVIEW=PASS")
     print("semantic_review="+str(len(result["semantic_review"])))
