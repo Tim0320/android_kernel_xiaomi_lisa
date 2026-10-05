@@ -122,5 +122,22 @@
     "Candidate0061 pure 5.4.302 stable uplift",
     "Candidate0060 BPF/Android17 compatibility overlay",
     "Candidate0062 integrated build and device validation"
+  ],
+  "device_runtime_baseline": {
+    "system": "HyperOS 3.0.9",
+    "android": "16",
+    "policy": "Use this baseline for subsequent device tests unless a deliberate deep flash/base change is recorded."
+  },
+  "touch_stabilization": {
+    "integrated_during_uplift": true,
+    "evidence_reference": "reconstruction/c0059_userb_touch_regression_20261005.md",
+    "separate_gate_required": true,
+    "acceptance": "No touch regression versus HyperOS 3.0.9 A16 control while retaining Candidate0059 jank improvement."
+  },
+  "gates": [
+    "stable_uplift_gate",
+    "touch_latency_gate",
+    "performance_retention_gate",
+    "device_baseline_gate"
   ]
 }
