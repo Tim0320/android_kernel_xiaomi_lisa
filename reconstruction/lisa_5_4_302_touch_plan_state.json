@@ -31,7 +31,7 @@
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
     "phase_3_batch_a_5_4_290_to_5_4_292": "PASS",
-    "phase_4_batch_b_5_4_293_to_5_4_296": "MAKEFILE_ADAPTER_PUSHED_RERUN_PENDING",
+    "phase_4_batch_b_5_4_293_to_5_4_296": "AOSP_GKI_CLO_ORACLE_RERUN_TRIGGERED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
     "phase_7_touch_jank_hotpath_correction": "NOT_STARTED",
@@ -89,18 +89,19 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "657bba28318c5de1aef5480eda7cbf88a8a46337",
+  "last_checked_commit": "dd09ac79c816c26250ca9d0777498b0de8752c87",
   "last_checked_run": 37337064578,
-  "blocker": "BATCH_B_RERUN_PENDING_AFTER_MAKEFILE_ADAPT",
-  "next_action": "Inspect the new Candidate0061 Batch B run triggered by 657bba2. Prior run 37337064578 passed stock ABI, C0059 recreation, Batch A base, ABI compatibility and Batch A control build, then failed at the first strict Batch B semantic conflict: top-level Makefile. This is now classified STABLE_ONLY/ADAPT and repaired by preserving the downstream Qualcomm/Xiaomi Makefile while changing only SUBLEVEL 292 -> 296. Continue strict first-conflict discovery; if the next failure is another semantic overlap, classify and adapt only that path. If apply passes, continue compile/modpost and exact ABI provenance review.",
+  "blocker": "BATCH_B_ORACLE_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch B rerun triggered by dd09ac7. Run 37337064578 failed first at top-level Makefile after all prerequisite/control gates passed; 657bba2 adapted only SUBLEVEL 292->296 while preserving downstream kbuild semantics. The Batch B workflow now prefetches android11-5.4.292_r00 and android11-5.4.296_r00 as an Android/GKI semantic oracle, and best-effort Qualcomm CLO kernel.lnx.5.4.r1-rel as a downstream structure oracle. candidate_0061_batch_b_oracle.py pre-scans all 5.4.292->5.4.296 paths and records every non-clean semantic overlap before the strict apply gate. Linux stable remains canonical provenance; AOSP/CLO are evidence oracles only. Use the oracle report to classify conflicts in batches, but repair only reviewed semantics and preserve Lisa KMI/ABI. If Batch B applies/builds, review exact ABI delta and require removed=0 before acceptance.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch B run for 657bba2 or later",
-    "C0061_BATCH_B_CONTROL_COMPILE_MODPOST=PASS",
-    "Makefile semantic adapter advances only SUBLEVEL 292 -> 296",
-    "C0061_BATCH_B_APPLY=PASS or next exact unreviewed semantic-conflict path",
-    "C0061_BATCH_B_COMPILE_MODPOST=PASS if apply passes",
-    "Batch B ABI report with removed symbols = 0",
-    "Any changed/added ABI symbols traced to official 5.4.292->5.4.296 stable provenance"
+    "New Candidate0061 Batch B run for dd09ac7 or later",
+    "C0061_BATCH_B_ORACLE_SCAN=PASS",
+    "AOSP oracle refs android11-5.4.292_r00 and android11-5.4.296_r00 fetched",
+    "Best-effort CLO kernel.lnx.5.4.r1-rel fetch status recorded",
+    "Complete Batch B semantic_review path list with AOSP/CLO classifications",
+    "C0061_BATCH_B_APPLY=PASS after reviewed adapters",
+    "C0061_BATCH_B_COMPILE_MODPOST=PASS",
+    "Batch B ABI removed symbols = 0; changed/added symbols stable-provenance reviewed"
   ],
   "forbidden": [
     "global frequency pin",
@@ -215,7 +216,11 @@
     "Candidate0061 Batch B build/ABI workflow triggered at 83dbe9c; first pass rejects unreviewed semantic conflicts and unreviewed ABI deltas",
     "Run 37337064578 first Batch B blocker identified: top-level Makefile three-way conflict after all prerequisite/control gates passed",
     "Batch B Makefile conflict classified STABLE_ONLY/ADAPT: preserve downstream Qualcomm/Xiaomi kbuild content and change only SUBLEVEL 292->296",
-    "Batch B Makefile semantic adapter pushed at 657bba2"
+    "Batch B Makefile semantic adapter pushed at 657bba2",
+    "Developer feedback incorporated: stock/original GKI bootability suggests source identity is less important than Android GKI/KMI compatibility for Lisa",
+    "AOSP android11-5.4.302_r00 confirmed as an Android 5.4.302 semantic endpoint; Linux stable remains canonical patch provenance",
+    "Batch B Android/GKI + CLO semantic oracle scanner added at be75895",
+    "Batch B workflow updated at dd09ac7 to fetch android11-5.4.292_r00/android11-5.4.296_r00 and best-effort CLO kernel.lnx.5.4.r1-rel, then pre-scan all semantic conflicts"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -227,6 +232,9 @@
     "https://kernel.org/pub/linux/kernel/v5.x/incr/",
     "https://docs.kernel.org/5.19/admin-guide/README.html",
     "https://kernel.org/doc/html/v5.19/process/applying-patches.html",
-    "https://git.codelinaro.org/clo/la/kernel/msm-5.4/-/blob/kernel.lnx.5.4.r1-rel/Makefile"
+    "https://git.codelinaro.org/clo/la/kernel/msm-5.4/-/blob/kernel.lnx.5.4.r1-rel/Makefile",
+    "https://android.googlesource.com/kernel/common/+/refs/tags/android11-5.4.296_r00",
+    "https://android.googlesource.com/kernel/common/+/refs/tags/android11-5.4.302_r00",
+    "https://source.android.com/docs/core/architecture/kernel/abi-monitor"
   ]
 }
