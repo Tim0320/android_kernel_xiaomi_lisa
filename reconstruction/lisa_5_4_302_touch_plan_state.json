@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "ARTIFACT_INDEPENDENT_RERUN_PENDING",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "REVIEWED_CONFIG_DELTA_RERUN_PENDING",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,13 +89,12 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "f1888be8b9d32f4b119f4e06cae382d9e380ef0b",
-  "last_checked_run": 37310712363,
-  "blocker": "BATCH_A_ARTIFACT_DEPENDENCY_REMOVED_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A run triggered by f1888be or later. Run 37310712363 attempt 1/2 failed before source recreation because the workflow hardcoded cross-run artifacts 11322443300/10637733529 and received HTTP 410. Commit 6d79620 added a pinned-stock-boot IKHEADERS extractor; commit f1888be removed all short-lived artifact dependencies. The workflow now materializes the exact stock boot through Git LFS, validates SHA256 e6f8c978..., reconstructs stock IKHEADERS in-run, rebuilds the reviewed Batch A control and requires config SHA256 664d12d...f589397 plus Module.symvers SHA256 846e9cee...14b7ff, then applies only the Candidate0059 two-export compatibility delta and rebuilds. The exact final gate requires zero changed/removed symbols relative to the same-run control and exactly lisa_mtdoops_checkpoint=0x002a7d5d plus qcom_scm_get_download_mode=0xd9dc8135. If all gates pass, mark Batch A PASS and immediately begin Batch B 5.4.292->5.4.296.",
+  "last_checked_commit": "356ba83d5e2a86fe12bf0875b7250a9d387ae7c5",
+  "last_checked_run": 37323757115,
+  "blocker": "BATCH_A_REVIEWED_CONFIG_DELTA_RESTORED_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A run triggered by 356ba83 or later. Run 37323757115 proved the artifact-independent stock ABI path is working: stock IKHEADERS recreation PASS, Candidate0059 inherited source recreation PASS, and Stable Batch A apply PASS. The first blocker was the reviewed-control config hash: stock_ikconfig + generic flags produced 4a60f46f2cc7afa497fd4c051e5c9290cf4769c4fe43a461a0713d97fcdac1f3 instead of reviewed 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397. Direct artifact comparison against run 37306854501 showed the complete config delta: C0059 LOCALVERSION, LOCALVERSION_AUTO=n, COMPAT_VDSO=n, ARM64_USE_LSE_ATOMICS=n, RELR=n, PERF_HELPER=y, and MILLET_CGROUP/SIG/BINDER/PKG/BINDER_GKI/CORE/HS=y. Commit 356ba83 now replays exactly those settings before olddefconfig and keeps the reviewed config hash gate unchanged. If config passes, continue through control build, exact Module.symvers hash, two-export ABI compatibility delta, target rebuild and exact delta gate; if Batch A passes, begin Batch B immediately.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A run for f1888be or later",
-    "STOCK_BOOT_SHA256=e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1",
+    "New Candidate0061 Batch A run for 356ba83 or later",
     "LISA_STOCK_IKHEADERS_EXTRACT=PASS",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
     "C0061_BATCH_A_APPLY=PASS",
@@ -200,7 +199,12 @@
     "Batch A workflow rebuilt at f1888be with no references to artifacts 11322443300 or 10637733529",
     "f1888be reconstructs stock IKHEADERS from the pinned LFS stock boot and rebuilds the reviewed Batch A control in the same run",
     "f1888be requires the reviewed control config and Module.symvers hashes from run 37306854501 before applying the Candidate0059 ABI compatibility delta",
-    "f1888be final ABI gate compares target vs same-run control and permits exactly two restored Candidate0059 exports with their reviewed CRCs"
+    "f1888be final ABI gate compares target vs same-run control and permits exactly two restored Candidate0059 exports with their reviewed CRCs",
+    "Run 37323757115 passed artifact-independent stock IKHEADERS recreation, Candidate0059 inherited source recreation and Stable Batch A semantic apply",
+    "Run 37323757115 first blocker moved to config gate: produced config SHA256 4a60f46f2cc7afa497fd4c051e5c9290cf4769c4fe43a461a0713d97fcdac1f3 instead of reviewed 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+    "Reviewed run 37306854501 artifact re-downloaded and hashes revalidated: .config 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397, Module.symvers 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+    "Direct config comparison found a complete 28-line delta limited to C0059 localversion, LOCALVERSION_AUTO, COMPAT_VDSO/LSE/RELR, PERF_HELPER and seven MILLET options",
+    "Batch A workflow commit 356ba83 now replays the complete reviewed Candidate0059 config delta before olddefconfig while retaining the exact control hash gate"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
