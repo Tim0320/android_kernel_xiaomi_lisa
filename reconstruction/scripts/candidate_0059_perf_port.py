@@ -172,9 +172,15 @@ def verify(root: Path) -> None:
         raise RuntimeError("Candidate0059 unexpectedly enabled permissive CFI")
 
     system_map = (root / "kernel/out/System.map").read_text()
+    map_symbols = [line.split()[-1] for line in system_map.splitlines() if line.split()]
     for symbol in ("migt_init", "migt_sched_init", "game_load_init", "pkg_init"):
-        if not any(line.split()[-1] == symbol for line in system_map.splitlines() if line.split()):
-            raise RuntimeError("Candidate0059 linked performance symbol missing: " + symbol)
+        direct = symbol in map_symbols
+        initcall = any(
+            name.startswith("__initcall_") and ("_" + symbol) in name
+            for name in map_symbols
+        )
+        if not (direct or initcall):
+            raise RuntimeError("Candidate0059 linked performance initcall missing: " + symbol)
 
     objects = (
         "kernel/out/drivers/mihw/migt.o",
