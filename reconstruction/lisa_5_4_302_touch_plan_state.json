@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "SOURCE_STACK_RETRY",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "ABI_BASELINE_RETRY",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,18 +89,20 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "f2e490ff4ea10265f439632be91cf59a717465f5",
-  "last_checked_run": 37292046276,
-  "blocker": "BATCH_A_UFS_DOUBLE_PATCH_FIXED_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A rerun triggered by f2e490f. Run 37292046276 failed before stable apply because candidate_0059_ownership_patch cascaded through Candidate0056->Candidate0055 and tried to reapply the UFS registry bridge already present in frozen source 6e568a. The workflow now treats that UFS bridge as an inherited base invariant, skips the retained UFS reapplication, adds the missing Candidate0056 power layer if absent, then applies Candidate0057/0059 ownership, performance and BPF before Stable Batch A. If source recreation succeeds, continue to stable apply/config/build/ABI and fix the next first real blocker.",
+  "last_checked_commit": "098f2da87666bd22a0b758481caee2e77e7ef125",
+  "last_checked_run": 37293805351,
+  "blocker": "BATCH_A_QGKI_ABI_BASELINE_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A run triggered by 098f2da. Run 37293805351 passed source recreation, stable apply, config, Image/modules/dtbs and modpost but ABI failed with 9698 changed CRCs, 80 removed symbols and 3 added symbols. Audit showed the frozen source still lacked Candidate0046 stock-IKHEADERS genksyms routing and Candidate0050 proc_create split, while the Batch A make environment omitted CONFIG_USE_COMMON_CAMERA=y. The workflow now reapplies Candidate0046 patch_qgki_module_abi(), Candidate0050 patch_legacy_proc_create_abi(), exports STOCK_ABI_ROOT during prepare/build, and exports CONFIG_USE_COMMON_CAMERA=y. If the rerun passes build, first verify that the ~75 camera removals disappear and global CRC drift collapses before classifying any remaining symbols by stable provenance.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A run for f2e490f or later",
+    "New Candidate0061 Batch A run for 098f2da or later",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
+    "Candidate0046 stock IKHEADERS genksyms routing present",
+    "Candidate0050 proc_create/proc_create_proc_ops split present",
+    "CONFIG_USE_COMMON_CAMERA=y active during build",
     "C0061_BATCH_A_APPLY=PASS",
-    "olddefconfig using frozen candidate-0059.config",
     "Image/modules/dtbs compile + modpost PASS",
-    "Module.symvers removed/added symbol delta after source-stack repair",
-    "CRC delta classified against official 5.4.289->5.4.292 stable provenance"
+    "Camera removed-symbol set reduced by approximately 75 or eliminated",
+    "CRC drift materially reduced from 9698 before stable provenance review"
   ],
   "forbidden": [
     "global frequency pin",
@@ -170,7 +172,11 @@
     "Exact stock ABI headers artifact 10637733529 is now supplied to the inherited power-provider source gate",
     "Run 37292046276 first blocker identified as Candidate0055 UFS double-patch while recreating the inherited Candidate0059 source stack",
     "Frozen source 6e568a confirmed to already contain set_ufs_hba_data LUN0 bridge in ufshcd and mi-memory provider",
-    "Batch A workflow now preserves the existing UFS bridge and recreates only missing later inherited layers before performance+BPF"
+    "Batch A workflow now preserves the existing UFS bridge and recreates only missing later inherited layers before performance+BPF",
+    "Run 37293805351 passed source recreation, stable apply, config, Image/modules/dtbs and modpost but ABI remained invalid with 9698 CRC changes, 80 removed symbols and 3 added symbols",
+    "Frozen 6e568a source confirmed to lack Candidate0046 proc/genksyms ABI bridge and Candidate0050 proc_create split",
+    "Batch A workflow now restores Candidate0046 stock IKHEADERS genksyms routing and Candidate0050 legacy proc_create ABI before later Candidate0059 layers",
+    "Batch A prepare/build now export STOCK_ABI_ROOT and CONFIG_USE_COMMON_CAMERA=y to match Candidate0059 inherited build contract"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
