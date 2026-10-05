@@ -131,3 +131,26 @@ A Candidate0060 BPF stage is accepted only when:
 - module ABI gates remain clean,
 - bpfloader/netd device logs do not show the targeted missing ABI,
 - no SELinux weakening or fake success path is introduced.
+
+
+## 5.4.302 fit audit result
+
+Candidate0061 Run 37260999186 measured the planned Candidate0060 core surface against official Linux v5.4.289/v5.4.302 and the pinned MiYume donor.
+
+Result:
+- Candidate0060 planned core surface: 27 files
+- Changed by official 5.4.289 -> 5.4.302 stable uplift: 2/27
+- Modified by MiYume relative to official v5.4.302: 27/27
+- Changed by BOTH stable uplift and MiYume: 2/27
+
+The two three-way files are:
+- net/core/filter.c
+- fs/file.c
+
+Interpretation:
+- 5.4.302 does not provide the BPF5.10/A17 feature work for us.
+- Most Candidate0060 core files are stable-identical from 5.4.289 to 5.4.302.
+- However, using a completed Lisa 5.4.302 base makes MiYume-vs-official-5.4.302 a clean 27-file feature/adaptation surface instead of mixing it with 1760 official stable-changed files.
+- The two shared dependency files should be ported only after their official stable 5.4.302 state is present.
+
+Decision: Candidate0060 implementation is rebased onto Candidate0061, and Candidate0062 is the integrated build target.
