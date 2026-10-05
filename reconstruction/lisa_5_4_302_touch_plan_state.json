@@ -53,7 +53,7 @@
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
-    "phase_4_direct_5_4_289_to_5_4_302": "ACTIVE_PLAN_MIGRATED_WORKFLOW_NOT_YET_CREATED",
+    "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SEMANTIC_SCAN_QUEUED",
     "phase_5_direct_302_semantic_conflict_closure": "PENDING_DIRECT_SCAN",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
@@ -106,22 +106,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "cef525d0d2268cc80a5cbc073e550a5e0aa93389",
-  "last_checked_run": 37360064366,
-  "blocker": "DIRECT_302_WORKFLOW_NOT_YET_CREATED",
-  "next_action": "Create the Direct-302 Candidate0061 workflow and helper(s). Retire Batch B/C/D as separate compile gates. Reconstruct frozen Candidate0059 r43da7c5, compute the full official linux-stable v5.4.289->v5.4.302 delta, scan all non-clean overlaps before the target build, reuse reviewed Segment A/B semantic adapters when valid, use MiYume 5.4.302 as the first common Xiaomi/Qualcomm final-state oracle, AOSP android11-5.4.302_r00 for Android/GKI endpoint semantics, CLO only as fallback, exclude SM8350/Lahaina/Venus-only semantics and MiYume custom features, preserve Lisa SM7325/Yupik/KMI semantics, then perform one integrated 5.4.302 compile/modpost/ABI gate. Do not create Batch C or Batch D build workflows. Run 37360064366 is legacy Segment B evidence only.",
+  "last_checked_commit": "2b2a64d1adeae36f3d0866dba4cb9c804e29057e",
+  "last_checked_run": 37363542334,
+  "blocker": "NONE_DIRECT_302_SCAN_RUN_37363542334_QUEUED",
+  "next_action": "Inspect Direct-302 run 37363542334 / job 111943425458. Ignore legacy Batch B run 37360064366 as a build blocker; it is provenance evidence only and its final old-loop conflict was drivers/platform/Kconfig. The new direct workflow must complete frozen Candidate0059 reconstruction, fetch official stable 5.4.289/292/296/299/302 plus MiYume 5.4.302 and AOSP android11-5.4.302_r00, then emit the complete 5.4.289->5.4.302 semantic_review list in candidate-0061-direct-302-scan.json. Use that single inventory to batch-review final-state conflicts; do not resume per-Batch compilation or create Batch C/D workflows.",
   "next_expected_evidence": [
-    "Direct-302 workflow exists and no Batch C/D build workflow is required",
-    "Full official v5.4.289->v5.4.302 stable delta is fetched and provenance-labelled A/B/C/D",
-    "All non-clean overlaps are pre-scanned before target build",
-    "Reviewed Segment A/B adapters are reused only where valid at the 5.4.302 endpoint",
-    "MiYume 5.4.302 common downstream semantics are used while SM8350/Lahaina/Venus-only content is excluded",
-    "AOSP android11-5.4.302_r00 resolves Android/GKI-specific endpoint semantics",
-    "No unreviewed direct-302 semantic conflict remains",
-    "Final source reports 5.4.302",
-    "Integrated Image/modules/dtbs + modpost PASS",
-    "Candidate0059 ABI removed symbols = 0",
-    "Every changed/added ABI symbol has stable or reviewed MIXED_CONFLICT provenance"
+    "Run 37363542334 starts successfully with valid Direct-302 workflow",
+    "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
+    "C0061_DIRECT_302_C0059_ABI_COMPAT=PASS",
+    "C0061_DIRECT_302_SCAN=PASS",
+    "Direct scan reports full changed_file_count and semantic_review_count for 5.4.289->5.4.302",
+    "Every semantic_review entry includes A/B/C/D provenance segments and MiYume/AOSP endpoint relations",
+    "The next repair round uses the complete conflict inventory rather than one-conflict-per-build discovery"
   ],
   "forbidden": [
     "global frequency pin",
@@ -265,7 +261,11 @@
     "Strategy revised on 2026-10-06: Candidate0061 will uplift directly from Lisa 5.4.289 to 5.4.302 with one integrated target build; A/B/C/D remain provenance segments only",
     "Canonical plan 1.1 committed at cef525d; legacy per-Batch compile loop retired",
     "Legacy Batch B run 37360064366 retained only as Segment B semantic evidence; it must not trigger creation of Batch C/D build loops",
-    "Direct-302 rule frozen: linux-stable provenance -> MiYume 5.4.302 common downstream final-state -> AOSP 5.4.302 GKI endpoint -> CLO fallback -> Lisa SM7325/Yupik KMI/device gate"
+    "Direct-302 rule frozen: linux-stable provenance -> MiYume 5.4.302 common downstream final-state -> AOSP 5.4.302 GKI endpoint -> CLO fallback -> Lisa SM7325/Yupik KMI/device gate",
+    "Legacy Batch B run 37360064366 completed failure at drivers/platform/Kconfig; per plan 1.1 this is retained only as Segment B provenance evidence and is not repaired through another Batch B build",
+    "Direct 5.4.289->5.4.302 scanner added at ca39b91 with A/B/C/D provenance membership, MiYume 5.4.302 final-state comparison, AOSP android11-5.4.302 endpoint comparison and optional CLO fallback evidence",
+    "Direct-302 scan workflow added at 2b2a64d; it reconstructs Candidate0059, restores ABI compatibility contract and scans the complete non-clean 5.4.289->5.4.302 surface before any target build",
+    "GitHub accepted Direct-302 workflow; run 37363542334 / job 111943425458 queued"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
