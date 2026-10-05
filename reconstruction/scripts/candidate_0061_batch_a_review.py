@@ -22,6 +22,34 @@ MANUAL = {
         "class": "ADAPT",
         "reason": "Preserve Lisa vendor socinfo API and add SMEM item-size-aware serial_num bounds semantics equivalent to upstream offsetofend fix.",
     },
+    "kernel/cpu.c": {
+        "class": "NOT_APPLICABLE",
+        "reason": "Companion hrtimer CPUHP_AP_HRTIMERS_DYING startup callback belongs to the newer upstream hrtimer hotplug model that Lisa does not use.",
+    },
+    "kernel/gen_kheaders.sh": {
+        "class": "ADAPT",
+        "reason": "Preserve Lisa kheaders packaging flow and add the 5.4.290 AFS/NFS silly-rename exclusions to the existing tar invocation.",
+    },
+    "drivers/usb/gadget/function/f_fs.c": {
+        "class": "ADAPT",
+        "reason": "Apply 5.4.290 FunctionFS semantics by removing the unnecessary WARN_ON in functionfs_bind while preserving downstream Android gadget code.",
+    },
+    "Documentation/devicetree/bindings/mmc/mmc-controller.yaml": {
+        "class": "ADAPT",
+        "reason": "Carry the 5.4.291 documentation clarification that #address-cells denotes the SDIO function number while preserving downstream binding edits.",
+    },
+    "drivers/usb/dwc3/gadget.c": {
+        "class": "ADAPT",
+        "reason": "Port the 5.4.291 DWC3 controller halt timeout/run-stop sequencing fixes onto Lisa's downstream DWC3 implementation without replacing the vendor file.",
+    },
+    "kernel/softirq.c": {
+        "class": "ADAPT",
+        "reason": "Port the 5.4.291 tasklet initialization API support required by the stable tasklet users while preserving downstream softirq/tasklet behavior.",
+    },
+    "mm/oom_kill.c": {
+        "class": "ADAPT",
+        "reason": "Port the 5.4.291 memcg OOM soft-lockup mitigation and matching victim/trace semantics while preserving downstream OOM hooks.",
+    },
 }
 
 def run(root,*args,check=True):
