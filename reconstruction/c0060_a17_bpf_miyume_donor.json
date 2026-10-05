@@ -1,0 +1,82 @@
+{
+  "candidate": "0060-prep",
+  "purpose": "Android17/HyperOS4 BPF compatibility donor inventory",
+  "generated_on": "2026-10-05",
+  "donor": {
+    "repository": "MiYume0721/android_kernel_xiaomi_sm8350_miyume",
+    "commit": "6f0290557329655f29c9b1bc52eec33e36f859ba",
+    "kernel_version": "5.4.302",
+    "claimed_android_target": "HyperOS 4.0 / Android 17"
+  },
+  "android17_compat_commits": {
+    "close_range_cloexec": "17e442827e48a1ea8b441956b7445fa9b6019c99",
+    "cap_checkpoint_restore": "2dd14248fd409a056943b8e029ecde3301266b2d"
+  },
+  "expected_bpf_files": [
+    "kernel/bpf/ringbuf.c",
+    "kernel/bpf/btf.c",
+    "kernel/bpf/bpf_iter.c",
+    "kernel/bpf/map_iter.c",
+    "kernel/bpf/task_iter.c",
+    "kernel/bpf/prog_iter.c",
+    "kernel/bpf/trampoline.c",
+    "kernel/bpf/bpf_struct_ops.c",
+    "kernel/bpf/bpf_lsm.c",
+    "kernel/bpf/bpf_local_storage.c",
+    "kernel/bpf/bpf_inode_storage.c",
+    "kernel/bpf/syscall.c",
+    "kernel/bpf/verifier.c",
+    "kernel/bpf/helpers.c"
+  ],
+  "bpf_commands": [
+    "BPF_LINK_CREATE",
+    "BPF_LINK_UPDATE",
+    "BPF_LINK_GET_FD_BY_ID",
+    "BPF_LINK_GET_NEXT_ID",
+    "BPF_ENABLE_STATS",
+    "BPF_ITER_CREATE",
+    "BPF_LINK_DETACH",
+    "BPF_PROG_BIND_MAP"
+  ],
+  "map_types": [
+    "BPF_MAP_TYPE_STRUCT_OPS",
+    "BPF_MAP_TYPE_RINGBUF",
+    "BPF_MAP_TYPE_INODE_STORAGE"
+  ],
+  "prog_types": [
+    "BPF_PROG_TYPE_TRACING",
+    "BPF_PROG_TYPE_STRUCT_OPS",
+    "BPF_PROG_TYPE_EXT",
+    "BPF_PROG_TYPE_LSM",
+    "BPF_PROG_TYPE_SK_LOOKUP",
+    "BPF_PROG_TYPE_FUSE"
+  ],
+  "attach_types": [
+    "BPF_TRACE_FENTRY",
+    "BPF_TRACE_FEXIT",
+    "BPF_MODIFY_RETURN",
+    "BPF_LSM_MAC",
+    "BPF_TRACE_ITER",
+    "BPF_CGROUP_INET_SOCK_RELEASE",
+    "BPF_SK_LOOKUP"
+  ],
+  "lisa_parent": {
+    "commit": "43da7c5d3ea7ccc8864a46edf80ba7ce2f22f1b7",
+    "bpf_stage": "candidate0058-ringbuf-v1 inherited by Candidate0059",
+    "full_bpf510_parity": false
+  },
+  "forbidden_imports": [
+    "SELinux permissive support",
+    "androidboot.selinux bypass",
+    "KernelSU/ReSukiSU/SuSFS",
+    "F2FS tuning",
+    "SM8350 device drivers/DTS",
+    "global frequency pin",
+    "thermal bypass",
+    "blind 5.4.302 uplift"
+  ],
+  "excluded_donor_commits": [
+    "46f1063d8a6f88fe8ea627bc7554834d9a614a0f",
+    "e277edef54e55a7604bf8f3add1832dc518f6171"
+  ]
+}
