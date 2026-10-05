@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "IN_PROGRESS_WRITE_PERMISSION_BLOCKED",
+    "phase_5_direct_302_semantic_conflict_closure": "IN_PROGRESS_WRITE_PERMISSION_BLOCKED_FULL_33_DECISIONS_PREPARED",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,16 +106,16 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "b361572f4cb38ee8efedec79e94a3590a8e55b31",
+  "last_checked_commit": "86202d551ede894e6b6602d8fde7f3f758030ec1",
   "last_checked_run": 37363542334,
-  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_REVIEW_AND_WORKFLOW_WIRING",
-  "next_action": "Retry GitHub writes for Direct-302 reviewed decisions and workflow review-gate wiring. Keep top-level Makefile unresolved until its A/B/C/D stable semantics are encoded, because the conflict is not SUBLEVEL-only: A adds Clang/LLD KBUILD_USERLDFLAGS --ld-path handling; B adds default-const-init-unsafe suppression and -fno-builtin-wcslen; C moves CLANG_FLAGS from KBUILD_CFLAGS/KBUILD_AFLAGS to KBUILD_CPPFLAGS; D only updates SUBLEVEL 299->302. Preserve Lisa/Clang11 build contract and use MiYume/AOSP as endpoint oracle. Do not build until unresolved semantic count reaches zero and a real Direct-302 apply stage materializes the source.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_REVIEW_REGISTRY_AND_WORKFLOW_WIRING",
+  "next_action": "Retry the prepared GitHub writes: (1) expand candidate_0061_direct_302_reviewed.py from 14 to all 33 fully reviewed semantic paths with complete A/B/C/D segment coverage; (2) wire candidate_0061_direct_302_review_gate.py into the Direct-302 workflow and gate on unresolved_semantic_count rather than raw semantic_review_count. Expected first CI evidence after successful write is raw=33, reviewed=33, unresolved=0. Do not start the integrated build yet: first add a real Direct-302 source apply stage that materializes DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE decisions, validates git diff --check, and proves final source identity SUBLEVEL=302 with Lisa SM7325/Yupik and Candidate0059 KMI semantics preserved.",
   "next_expected_evidence": [
-    "Direct-302 scan remains PASS with changed_file_count=1760",
-    "Review gate reports reviewed/unresolved counts instead of gating on raw semantic_review_count",
-    "Seven newly re-verified C/D decisions are encoded without importing SM8350-only state",
-    "Makefile receives a reviewed Lisa-preserving A/B/C/D adapter, not a SUBLEVEL-only change",
-    "No integrated build starts until semantic closure is zero and Direct-302 source apply is real"
+    "Latest main remains traceable from 86202d5 checkpoint",
+    "Direct-302 scan remains PASS with changed_file_count=1760, DIRECT=1489, AUTO_3WAY=238, raw semantic_review_count=33",
+    "Reviewed registry expands from 14 to 33 paths with complete provenance-segment coverage",
+    "Review gate reports reviewed_semantic_count=33 and unresolved_semantic_count=0",
+    "No integrated build starts until a real Direct-302 source apply stage materializes the reviewed decisions and source identity is 5.4.302"
   ],
   "forbidden": [
     "global frequency pin",
@@ -278,7 +278,11 @@
     "Prepared scanner review-reuse patch, but GitHub update_file was blocked by safety checks; no repository content was changed",
     "2026-10-06 automation reread latest main b361572 and Direct-302 run 37363542334 attempt 3/job 111956394218; scanner evidence unchanged at 1760 files, DIRECT=1489, AUTO_3WAY=238, SEMANTIC_REVIEW=33.",
     "Re-reviewed remaining Direct-302 stable paths against gregkh/linux v5.4.289/292/296/299/302 and MiYume 5.4.302. Confirmed usbnet EVENT_LINK_CARRIER_ON=14 with Lisa Android KABI preservation, slub invalid-pointer guard, zsmalloc zeroed zspage allocation, cputype A76AE+V3AE, HID A/B/D identity additions, and net sock owner/PROTO_INUSE/cond_resched/trace semantics.",
-    "Important Makefile correction: A/B/C contain real build-system semantics in addition to release SUBLEVEL; a SUBLEVEL-only adapter is insufficient. MiYume confirms A/B final-state additions, while its newer downstream Clang plumbing cannot be wholesale copied to Lisa."
+    "Important Makefile correction: A/B/C contain real build-system semantics in addition to release SUBLEVEL; a SUBLEVEL-only adapter is insufficient. MiYume confirms A/B final-state additions, while its newer downstream Clang plumbing cannot be wholesale copied to Lisa.",
+    "2026-10-06 automation reread canonical plan/state, latest main 86202d5, and Direct-302 run 37363542334 attempt 3/job 111956394218; job remains completed failure only at the raw semantic closure gate.",
+    "Direct-302 run evidence revalidated: C0059 source recreation PASS, C0059 ABI compatibility PASS, scan PASS, changed_file_count=1760, DIRECT=1489, AUTO_3WAY=238, SEMANTIC_REVIEW=33.",
+    "All 19 paths not yet present in candidate_0061_direct_302_reviewed.py have prepared final review decisions, completing intended semantic coverage from 14/33 to 33/33: Makefile, cputype.h, regmap.c, hid-ids.h, ivtv-streams.c, sdhci-msm.c, rpmh-rsc.c, usb quirks, dwc3-qcom, dwc3 gadget, f_fs, f_ncm, xhci-plat, usbnet.h, sock.h, fair.c, slub.c, zsmalloc.c, net/core/sock.c.",
+    "Attempted to write the complete 33-path Direct-302 reviewed registry to main; GitHub update_file was blocked by OpenAI safety checks, so repository code content was not changed."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
