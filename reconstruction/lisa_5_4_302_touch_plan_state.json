@@ -31,7 +31,7 @@
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
     "phase_3_batch_a_5_4_290_to_5_4_292": "PASS",
-    "phase_4_batch_b_5_4_293_to_5_4_296": "AOSP_GKI_CLO_ORACLE_RERUN_TRIGGERED",
+    "phase_4_batch_b_5_4_293_to_5_4_296": "MIYUME_ORACLE_BUILD_RUNNING",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
     "phase_7_touch_jank_hotpath_correction": "NOT_STARTED",
@@ -89,19 +89,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "39340004d9fb362bda14aa8bf0980f5592ba5d62",
-  "last_checked_run": 37337064578,
-  "blocker": "BATCH_B_ORACLE_RERUN_PENDING",
-  "next_action": "Continue Candidate0061 Batch B with the simplified oracle hierarchy. Linux stable remains canonical patch provenance. Treat MiYume0721/android_kernel_xiaomi_sm8350_miyume main (5.4.302) as the preferred SM8350/Xiaomi downstream final-state oracle for Qualcomm/Xiaomi paths. Use AOSP android11-5.4.x_r00 when the conflict is GKI/Android-common specific. Consult Qualcomm CLO only when MiYume disagrees with stable/AOSP, lacks the path, or exact Qualcomm provenance is needed. Never wholesale-copy MiYume because it includes extra ReSukiSU/SuSFS/BPF5.10/F2FS/A17 changes and targets venus/mars/star/haydn rather than Lisa. Preserve Candidate0059 KMI/ABI and require removed symbols=0.",
+  "last_checked_commit": "969057186d7a5515975ca392ed2229e12028116a",
+  "last_checked_run": 37346217806,
+  "blocker": "NONE_RUN_37346217806_IN_PROGRESS",
+  "next_action": "Inspect Candidate0061 Batch B run 37346217806, job 111885321885. The malformed Batch B workflow was repaired at 9690571: one oracle/install/control/apply/build/ABI/report/upload chain only. The run is now accepted and in progress. First inspect the MiYume/AOSP/CLO oracle scan; use MiYume 5.4.302 as the preferred Xiaomi/Qualcomm final-state oracle, exclude SM8350/Lahaina-only semantics from Lisa SM7325/Yupik, and keep linux-stable as canonical patch provenance. If strict apply fails, repair only the first reviewed semantic conflict. If apply/build passes, audit ABI with removed=0 and provenance-review any changed/added symbols.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch B run for dd09ac7 or later",
-    "C0061_BATCH_B_ORACLE_SCAN=PASS",
-    "AOSP oracle refs android11-5.4.292_r00 and android11-5.4.296_r00 fetched",
-    "Best-effort CLO kernel.lnx.5.4.r1-rel fetch status recorded",
-    "Complete Batch B semantic_review path list with AOSP/CLO classifications",
-    "C0061_BATCH_B_APPLY=PASS after reviewed adapters",
-    "C0061_BATCH_B_COMPILE_MODPOST=PASS",
-    "Batch B ABI removed symbols = 0; changed/added symbols stable-provenance reviewed"
+    "Run 37346217806 reaches C0061_BATCH_B_ORACLE_SCAN=PASS",
+    "Oracle report lists complete Batch B semantic_review paths with MiYume/AOSP/CLO relations",
+    "C0061_BATCH_B_CONTROL_COMPILE_MODPOST=PASS",
+    "C0061_BATCH_B_APPLY=PASS or exact next reviewed semantic-conflict path",
+    "C0061_BATCH_B_COMPILE_MODPOST=PASS if apply passes",
+    "Batch B ABI removed symbols = 0",
+    "Any changed/added ABI symbols traced to official 5.4.292->5.4.296 stable provenance"
   ],
   "forbidden": [
     "global frequency pin",
@@ -224,7 +223,11 @@
     "MiYume main verified at Linux 5.4.302 and documented as Xiaomi SM8350 kernel supporting venus/mars/star/haydn",
     "MiYume is not a pure CLO/Xiaomi mirror: README documents ReSukiSU, SuSFS, BPF 5.10 backport, F2FS optimization and Android17 support",
     "Key downstream comparison found qcom_q6v5_mss.c byte-identical between MiYume main and frozen Lisa 5.4.289, while pinctrl-msm, ufs-sysfs, qcom_smd, smem and rpmh-rsc differ as expected from uplift/vendor evolution",
-    "Oracle hierarchy simplified: linux-stable provenance -> MiYume SM8350/Xiaomi 5.4.302 final-state oracle -> AOSP ACK for Android/GKI-specific conflicts -> CLO only for unresolved Qualcomm provenance/semantic disagreements -> Lisa KMI/ABI gate"
+    "Oracle hierarchy simplified: linux-stable provenance -> MiYume SM8350/Xiaomi 5.4.302 final-state oracle -> AOSP ACK for Android/GKI-specific conflicts -> CLO only for unresolved Qualcomm provenance/semantic disagreements -> Lisa KMI/ABI gate",
+    "Malformed Batch B workflow confirmed on main: oracle grep swallowed dependency-install step and duplicate workflow tail remained",
+    "Batch B oracle upgraded at c5878af to prioritize MiYume SM8350/Xiaomi 5.4.302 final-state semantics while retaining AOSP GKI and CLO fallback evidence",
+    "Batch B workflow repaired structurally at 9690571: duplicate tail removed and exactly one oracle/install/control/apply/build/ABI/report/upload chain remains",
+    "GitHub accepted repaired workflow; Candidate0061 Batch B run 37346217806 job 111885321885 started successfully"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
