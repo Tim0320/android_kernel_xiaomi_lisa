@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "ABI_BASELINE_RETRY",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "WORKFLOW_REPAIRED_RERUN_PENDING",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,16 +89,16 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "098f2da87666bd22a0b758481caee2e77e7ef125",
+  "last_checked_commit": "4a7cf2c7e005a0a8743cd131ce1fc5658909470f",
   "last_checked_run": 37293805351,
-  "blocker": "BATCH_A_QGKI_ABI_BASELINE_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A run triggered by 098f2da. Run 37293805351 passed source recreation, stable apply, config, Image/modules/dtbs and modpost but ABI failed with 9698 changed CRCs, 80 removed symbols and 3 added symbols. Audit showed the frozen source still lacked Candidate0046 stock-IKHEADERS genksyms routing and Candidate0050 proc_create split, while the Batch A make environment omitted CONFIG_USE_COMMON_CAMERA=y. The workflow now reapplies Candidate0046 patch_qgki_module_abi(), Candidate0050 patch_legacy_proc_create_abi(), exports STOCK_ABI_ROOT during prepare/build, and exports CONFIG_USE_COMMON_CAMERA=y. If the rerun passes build, first verify that the ~75 camera removals disappear and global CRC drift collapses before classifying any remaining symbols by stable provenance.",
+  "blocker": "BATCH_A_WORKFLOW_STRUCTURE_FIXED_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A run triggered by 4a7cf2c. Commit 098f2da correctly introduced Candidate0046 stock-IKHEADERS genksyms routing, Candidate0050 proc_create ABI split, STOCK_ABI_ROOT, and CONFIG_USE_COMMON_CAMERA=y, but malformed the workflow YAML by leaving an unterminated CONFIG_CFI_CLANG grep and duplicating ABI/report/upload sections. Commit 4a7cf2c rebuilt the workflow structure and retained those intended ABI-baseline changes. Verify source recreation and config first; if build reaches ABI, confirm the ~75 camera removals disappear and CRC drift collapses from 9698 before classifying remaining symbols by official 5.4.289->5.4.292 stable provenance.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A run for 098f2da or later",
+    "New Candidate0061 Batch A run for 4a7cf2c or later",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
     "Candidate0046 stock IKHEADERS genksyms routing present",
     "Candidate0050 proc_create/proc_create_proc_ops split present",
-    "CONFIG_USE_COMMON_CAMERA=y active during build",
+    "CONFIG_USE_COMMON_CAMERA=y active during prepare/build",
     "C0061_BATCH_A_APPLY=PASS",
     "Image/modules/dtbs compile + modpost PASS",
     "Camera removed-symbol set reduced by approximately 75 or eliminated",
@@ -176,7 +176,10 @@
     "Run 37293805351 passed source recreation, stable apply, config, Image/modules/dtbs and modpost but ABI remained invalid with 9698 CRC changes, 80 removed symbols and 3 added symbols",
     "Frozen 6e568a source confirmed to lack Candidate0046 proc/genksyms ABI bridge and Candidate0050 proc_create split",
     "Batch A workflow now restores Candidate0046 stock IKHEADERS genksyms routing and Candidate0050 legacy proc_create ABI before later Candidate0059 layers",
-    "Batch A prepare/build now export STOCK_ABI_ROOT and CONFIG_USE_COMMON_CAMERA=y to match Candidate0059 inherited build contract"
+    "Batch A prepare/build now export STOCK_ABI_ROOT and CONFIG_USE_COMMON_CAMERA=y to match Candidate0059 inherited build contract",
+    "Commit 098f2da was found to have malformed the Batch A workflow YAML with an unterminated CONFIG_CFI_CLANG grep, duplicated ABI/report/upload sections, and stray shell under artifact paths",
+    "Batch A workflow structure repaired at 4a7cf2c while preserving Candidate0046 genksyms, Candidate0050 proc ABI, STOCK_ABI_ROOT, and CONFIG_USE_COMMON_CAMERA=y changes",
+    "Post-repair workflow validation confirmed exactly one compile step, one ABI step, one report step, one upload step, and no malformed CFI or stray artifact-shell content"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
