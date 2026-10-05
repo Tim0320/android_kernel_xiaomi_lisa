@@ -179,7 +179,7 @@ Exit:
 - measurable control values recorded.
 
 ### Phase 3 - Stable uplift Batch A
-Status: NOT STARTED
+Status: BUILD GATE RUNNING
 
 Target:
 - 5.4.289 -> 5.4.292
@@ -410,8 +410,14 @@ At the end of every execution:
 ## Current next action
 
 NEXT_ACTION:
-Prepare and execute Candidate0061 Batch A (official 5.4.290 -> 5.4.292)
-while keeping Candidate0059 untouched and preserving the HyperOS 3.0.9 A16
-touch-control capture as the next required device-data gate.
+Candidate0061 Batch A semantic review is PASS with zero unresolved paths
+(run 37272240317). Execute the isolated Batch A source/build gate introduced
+at c211f275: recreate frozen Candidate0059 performance+BPF source features,
+apply official 5.4.289 -> 5.4.292 stable semantics, then run olddefconfig,
+Image/modules/dtbs, modpost and Module.symvers/CRC audit.
+
+If source application exposes a new Candidate0059-vs-stable conflict, classify
+it as MIXED_CONFLICT and resolve stable semantics first. If compile or ABI fails,
+repair the first real blocker before progressing to Batch B.
 
 Do not start Candidate0060/BPF5.10 integration yet.
