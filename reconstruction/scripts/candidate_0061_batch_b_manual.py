@@ -5,6 +5,7 @@ from pathlib import Path
 MANUAL={
     "Makefile":"ADAPT",
     "arch/arm64/include/asm/cputype.h":"ADAPT",
+    "drivers/hid/hid-ids.h":"ADAPT",
 }
 
 def once(s,old,new,label):
@@ -33,6 +34,22 @@ def adapt(root:Path,path:str,target_ref:str,target_blob):
             "#define MIDR_CORTEX_A77\\tMIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A77)\\n",
             "#define MIDR_CORTEX_A77\\tMIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A77)\\n#define MIDR_CORTEX_A76AE\\tMIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A76AE)\\n",
             "Batch B Cortex-A76AE MIDR")
+    elif path=="drivers/hid/hid-ids.h":
+        # Stable 5.4.293-5.4.296 adds three HID identity groups. Keep Lisa's
+        # vendor HID table and insert only the stable-provenance IDs; hid-quirks.c
+        # carries the matching quirk behavior through the normal three-way merge.
+        s=once(s,
+            "#define USB_VENDOR_ID_ACTIONSTAR\\t0x2101\\n#define USB_DEVICE_ID_ACTIONSTAR_1011\\t0x1011\\n",
+            "#define USB_VENDOR_ID_ACTIONSTAR\\t0x2101\\n#define USB_DEVICE_ID_ACTIONSTAR_1011\\t0x1011\\n\\n#define USB_VENDOR_ID_ADATA_XPG 0x125f\\n#define USB_VENDOR_ID_ADATA_XPG_WL_GAMING_MOUSE 0x7505\\n#define USB_VENDOR_ID_ADATA_XPG_WL_GAMING_MOUSE_DONGLE 0x7506\\n",
+            "Batch B ADATA XPG HID IDs")
+        s=once(s,
+            "#define USB_DEVICE_ID_CHICONY_ACER_SWITCH12\\t0x1421\\n",
+            "#define USB_DEVICE_ID_CHICONY_ACER_SWITCH12\\t0x1421\\n#define USB_DEVICE_ID_CHICONY_HP_5MP_CAMERA\\t0xb824\\n#define USB_DEVICE_ID_CHICONY_HP_5MP_CAMERA2\\t0xb82c\\n",
+            "Batch B Chicony HP 5MP HID IDs")
+        s=once(s,
+            "#define USB_VENDOR_ID_SIGNOTEC\\t\\t\\t0x2133\\n#define USB_DEVICE_ID_SIGNOTEC_VIEWSONIC_PD1011\\t0x0018\\n",
+            "#define USB_VENDOR_ID_SIGNOTEC\\t\\t\\t0x2133\\n#define USB_DEVICE_ID_SIGNOTEC_VIEWSONIC_PD1011\\t0x0018\\n\\n#define USB_VENDOR_ID_SMARTLINKTECHNOLOGY              0x4c4a\\n#define USB_DEVICE_ID_SMARTLINKTECHNOLOGY_4155         0x4155\\n",
+            "Batch B SmartlinkTechnology HID IDs")
     else:
         raise RuntimeError("unreviewed Batch B semantic conflict: "+path)
     p.write_text(s)
