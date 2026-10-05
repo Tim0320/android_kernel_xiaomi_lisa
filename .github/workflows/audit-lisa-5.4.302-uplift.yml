@@ -7,6 +7,7 @@ on:
     paths:
       - .github/workflows/audit-lisa-5.4.302-uplift.yml
       - reconstruction/scripts/candidate_0061_5_4_302_uplift_inventory.py
+      - reconstruction/scripts/candidate_0061_batch_a_review.py
       - reconstruction/c0061_linux_5_4_302_uplift_plan_20261005.md
       - reconstruction/c0061_linux_5_4_302_uplift_manifest.json
 
@@ -73,6 +74,13 @@ jobs:
             --out-json candidate-0061-uplift-inventory.json \
             --out-md candidate-0061-uplift-inventory.md
 
+      - name: Generate Batch A semantic review
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/candidate_0061_batch_a_review.py \
+            --kernel kernel \
+            --out candidate-0061-batch-a-review.json
+
       - name: Generate official cumulative patch and direct apply diagnostic
         run: |
           set -euo pipefail
@@ -101,6 +109,16 @@ jobs:
           echo >> "$GITHUB_STEP_SUMMARY"
           echo '### Direct patch diagnostic' >> "$GITHUB_STEP_SUMMARY"
           tail -n 40 candidate-0061-apply-check.txt >> "$GITHUB_STEP_SUMMARY"
+          echo >> "$GITHUB_STEP_SUMMARY"
+          echo '### Batch A semantic review' >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+import json
+p=json.load(open('candidate-0061-batch-a-review.json'))
+print('counts:', p['counts'])
+print('semantic_review_files:', len(p['semantic_review']))
+for x in p['semantic_review']:
+    print('-', x)
+PY
 
       - name: Upload Candidate0061 uplift audit
         uses: actions/upload-artifact@v4
@@ -112,6 +130,7 @@ jobs:
             candidate-0061-uplift-inventory.json
             candidate-0061-uplift-inventory.md
             candidate-0061-apply-check.txt
+            candidate-0061-batch-a-review.json
             upstream-5.4.289-version.txt
             upstream-5.4.290-version.txt
             upstream-5.4.291-version.txt
