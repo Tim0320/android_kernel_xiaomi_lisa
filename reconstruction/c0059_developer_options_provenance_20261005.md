@@ -34,3 +34,28 @@ The collector records:
 - root/resetprop/module indicators without modifying them.
 
 If the live boot hash differs from the published Candidate0058 artifact, Goal A must first explain that mutation. If it matches, the next investigation is the first-stage property/init path on User A rather than changing kernel SELinux or faking property success.
+
+
+## 2026-10-05 public-source correlation and prepared repair
+
+Public AOSP behavior now narrows the failure further:
+
+- SettingsLib AbstractLogpersistPreferenceController is available only when `ro.debuggable=1`.
+- AOSP `adb_debug.prop` sets `ro.adb.secure=0`, `ro.debuggable=1`, and `ro.force.debuggable=1`, but it does not set `ro.secure=0`.
+- Public ADB-root/resetprop scripts commonly force the complete `ro.debuggable=1 / ro.force.debuggable=1 / ro.secure=0 / ro.adb.secure=0` state.
+- A public Adb-Root-Enabler issue shows the same `logd.logpersistd` access denial followed by an AbstractLogpersistPreferenceController Settings fatal.
+
+References:
+- https://android.googlesource.com/platform/frameworks/base/+/d12e150f7a1921bae738791e37950fb8ffdeafb3/packages/SettingsLib/src/com/android/settingslib/development/AbstractLogpersistPreferenceController.java
+- https://android.googlesource.com/platform/system/core/+/master/rootdir/adb_debug.prop
+- https://github.com/anasfanani/Adb-Root-Enabler/issues/8
+
+This does not prove a specific module is present on User A, but it raises external resetprop/ADB-root property override above speculative kernel/SELinux causes.
+
+Prepared repository artifacts:
+- `reconstruction/c0060_devoptions_release_fix_20261005.md`
+- `reconstruction/tools/repair_lisa_developer_options.ps1`
+
+The repair tool is read-only by default. Apply mode only disables/backups explicit external files that contain the bad property overrides. It does not weaken SELinux, patch Settings, fake property-service success, or perform live resetprop.
+
+Candidate0059 remains frozen for device comparison; this preparation is for the next repair iteration and must be device-validated before declaring the Developer Options issue solved.
