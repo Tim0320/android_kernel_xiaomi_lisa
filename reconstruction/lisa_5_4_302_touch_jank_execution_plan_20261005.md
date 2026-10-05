@@ -216,6 +216,13 @@ Same gates as Phase 3.
 
 Special attention:
 - pinctrl/QCOM/UFS-reset relevant changes.
+- Qualcomm CLO/CodeLinaro msm-5.4 is a downstream semantic reference for Qualcomm-specific
+  structure and backports, not the canonical Linux 5.4.y version source. Official
+  linux-stable v5.4.x tags/incremental patches remain the stable provenance source.
+- The upstream kernel documents scripts/patch-kernel as an automation helper for normal
+  stable patch application, and kernel.org publishes incremental 5.4.y patches. For Lisa,
+  automation may apply clean hunks quickly, but downstream Qualcomm/Xiaomi conflicts still
+  require semantic adapters plus compile/ABI gates; do not whole-tree replace from CLO.
 
 ### Phase 5 - Stable uplift Batch C
 Status: NOT STARTED
