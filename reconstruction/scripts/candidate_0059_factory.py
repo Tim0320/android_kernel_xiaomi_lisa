@@ -20,7 +20,6 @@ SCRIPT_DIR = ROOT / "reconstruction/scripts"
 PERF_CHECKPOINT = (
     "candidate-0059-performance-source.json",
     "candidate-0059-performance-scope.txt",
-    "candidate-0059-performance-verification.json",
     "kernel/include/linux/android_kabi.h",
     "kernel/include/linux/pkg_stat.h",
     "kernel/include/linux/sched.h",
@@ -110,10 +109,10 @@ def patch_build(files: dict[str, str]) -> None:
 
     text = once(
         text,
-        "install_bpf59(base, ROOT, KERNEL)\n\n",
-        "install_bpf59(base, ROOT, KERNEL)\n"
+        "        'install_bpf59(base, ROOT, KERNEL)\\n\\n' + hook)",
+        "        'install_bpf59(base, ROOT, KERNEL)\\n'\n"
         "        'from candidate_0059_perf_port import install as install_perf59\\n'\n"
-        "        'install_perf59(base, ROOT, KERNEL)\\n\\n",
+        "        'install_perf59(base, ROOT, KERNEL)\\n\\n' + hook)",
     )
 
     text = once(
