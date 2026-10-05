@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "BUILD_GATE_RETRY",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "ABI_GATE_RETRY",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,17 +89,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "357e4d79d50e67305c213d58e10a142a145f8843",
-  "last_checked_run": 37283454772,
-  "blocker": "BATCH_A_OOM_ADAPTER_FIX_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A rerun triggered by 357e4d7. Run 37283454772 confirmed C0059_SOURCE_FEATURES_RECREATED=PASS and then failed in mm/oom_kill.c because the semantic adapter assumed upstream mark_oom_victim layout. The adapter now supports Lisa's split __mark_oom_victim layout while preserving the 5.4.292 credential-aware OOM trace semantics. If source application passes, continue immediately to olddefconfig/compile/modpost; otherwise fix the next first real adapter or mixed-conflict blocker.",
+  "last_checked_commit": "375b1e6560cfa48408653139f0093cfde713c067",
+  "last_checked_run": 37284085226,
+  "blocker": "BATCH_A_ABI_SCOPE_MISMATCH_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A rerun triggered by 375b1e6. Run 37284085226 proved stable apply/config/build/modpost PASS, but its ABI comparison was invalid because Batch A rebuilt from stock_ikconfig while the frozen Candidate0059 Module.symvers baseline came from candidate-0059.config. The workflow now restores the exact Candidate0059 config before Linux 5.4.292 olddefconfig. If compile passes, review the new removed/added symbol set first, then classify CRC changes by stable provenance rather than requiring zero CRC drift.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A run for 357e4d7 or later",
+    "New Candidate0061 Batch A run for 375b1e6 or later",
     "C0059_SOURCE_FEATURES_RECREATED=PASS",
     "C0061_BATCH_A_APPLY=PASS",
-    "olddefconfig/prepare result",
-    "Image/modules/dtbs compile + modpost result",
-    "Module.symvers CRC delta versus Candidate0059 r43da7c5",
+    "olddefconfig using frozen candidate-0059.config",
+    "Image/modules/dtbs compile + modpost PASS",
+    "Module.symvers removed/added symbols materially reduced versus run 37284085226",
+    "CRC delta classified against official 5.4.289->5.4.292 stable provenance",
     "HyperOS 3.0.9 A16 touch control capture"
   ],
   "forbidden": [
@@ -159,7 +160,11 @@
     "Run 37283454772 passed Candidate0059 source recreation and failed at the Lisa-specific OOM semantic adapter",
     "OOM adapter updated to support Lisa split __mark_oom_victim layout while preserving credential-aware trace_mark_victim semantics",
     "Batch A evidence reporter now prioritizes apply failures over already-passing C0059 source logs",
-    "Batch A concurrency changed to cancel stale in-progress retries when a newer fix is pushed"
+    "Batch A concurrency changed to cancel stale in-progress retries when a newer fix is pushed",
+    "Run 37284085226 passed stable apply, olddefconfig, Image/modules/dtbs and modpost; first real blocker moved to ABI audit",
+    "ABI evidence from run 37284085226 showed 9693 changed CRCs, 92 removed symbols and 3 added symbols",
+    "The 92 removed symbols were dominated by camera/vendor exports, proving the ABI gate compared different build scopes rather than isolating stable uplift effects",
+    "Batch A workflow now restores frozen Candidate0059 candidate-0059.config before 5.4.292 olddefconfig and uploads hidden .config evidence"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
