@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "NEXT",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "SEMANTIC_REVIEW_IN_PROGRESS",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,15 +89,13 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "e10cec340137c66779fe26d6d95e04e09698fdeb",
+  "last_checked_commit": "ba4ce0eb7802d7c48f55fa8859f4712add8172c9",
   "last_checked_run": 37267450300,
-  "blocker": "BATCH_A_AUDIT_RERUN_PENDING",
-  "next_action": "Inspect the uplift audit triggered by e10cec3. If it passes, consume candidate-0061-batch-a-review.json, classify remaining SEMANTIC_REVIEW paths as ADAPT/ALREADY_PRESENT/NOT_APPLICABLE using official stable semantics, then prepare the first Batch A source/build commit. If it fails, repair the first failing workflow/job step immediately.",
+  "blocker": "BATCH_A_REMAINING_SEMANTIC_CONFLICT_REVIEW",
+  "next_action": "Continue classifying remaining 5.4.290-5.4.292 Lisa vendor overlaps. Confirmed decisions so far: hrtimer hotplug patch is not directly applicable to Lisa's older CPUHP model; clk-rpmh needs the upstream unsigned-long cast; clk-alpha-pll already contains alpha_en_mask handling but still needs alpha_mode_mask semantic review; socinfo needs an item-size-aware serial-number bounds adaptation. After the remaining list is bounded, prepare an isolated Candidate0061 Batch A source and run compile/modpost/Module.symvers gates.",
   "next_expected_evidence": [
-    "Fresh audit run associated with e10cec3 or later",
-    "candidate-0061-batch-a-review.json with DIRECT/AUTO_3WAY/ALREADY_PRESENT/SEMANTIC_REVIEW inventory",
-    "Manual semantic classification of remaining review paths into ADAPT/ALREADY_PRESENT/NOT_APPLICABLE",
-    "Batch A source/build commit",
+    "Remaining Batch A vendor-overlap classifications",
+    "Candidate0061 Batch A source application record",
     "Batch A compile and modpost result",
     "Batch A Module.symvers and CRC result",
     "HyperOS 3.0.9 A16 touch control capture"
@@ -129,7 +127,12 @@
     "Uplift workflow now fetches official v5.4.290/v5.4.291/v5.4.292 stable endpoints",
     "Batch A semantic review script added and exposed as a reusable review() result",
     "Uplift workflow wired to execute candidate_0061_batch_a_review.py and upload its JSON artifact",
-    "Audit workflow YAML summary heredoc fixed before relying on the rerun"
+    "Audit workflow YAML summary heredoc fixed before relying on the rerun",
+    "Candidate0061 Batch A report-only review helper committed at ba4ce0e",
+    "5.4.290 hrtimer hotplug fix classified not-directly-applicable because Lisa retains CPUHP_HRTIMERS_PREPARE with hrtimers_prepare_cpu state reset",
+    "5.4.291 clk-rpmh overflow fix confirmed directly relevant to Lisa BCM recalc expression",
+    "5.4.291 clk-alpha-pll review confirmed alpha_en_mask is already present in Lisa while alpha_mode_mask remains absent from configure logic",
+    "5.4.291 socinfo serial-number fix requires Lisa-specific item_size bounds adaptation"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
