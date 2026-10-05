@@ -5,6 +5,25 @@ import argparse, json, subprocess, tempfile
 BASE="upstream-v5.4.289"
 TARGET="upstream-v5.4.292"
 
+MANUAL = {
+    "kernel/time/hrtimer.c": {
+        "class": "NOT_APPLICABLE",
+        "reason": "5.4.290 CPUHP_AP_HRTIMERS_DYING fix targets the newer upstream hotplug model; Lisa retains CPUHP_HRTIMERS_PREPARE/hrtimers_prepare_cpu semantics.",
+    },
+    "drivers/clk/qcom/clk-rpmh.c": {
+        "class": "ADAPT",
+        "reason": "Apply upstream 5.4.291 unsigned-long cast in clk_rpmh_bcm_recalc_rate without replacing the downstream Qualcomm clock driver.",
+    },
+    "drivers/clk/qcom/clk-alpha-pll.c": {
+        "class": "ADAPT",
+        "reason": "Lisa already carries alpha_en_mask handling; add alpha_mode_mask to value/mask semantics while preserving downstream configure flow.",
+    },
+    "drivers/soc/qcom/socinfo.c": {
+        "class": "ADAPT",
+        "reason": "Preserve Lisa vendor socinfo API and add SMEM item-size-aware serial_num bounds semantics equivalent to upstream offsetofend fix.",
+    },
+}
+
 def run(root,*args,check=True):
     return subprocess.run(["git","-C",str(root),*args],stdout=subprocess.PIPE,stderr=subprocess.PIPE,check=check)
 
@@ -36,7 +55,10 @@ def review(root):
         elif not vendor: cls="DIRECT"
         elif mergeable(o,b,t): cls="AUTO_3WAY"
         else: cls="SEMANTIC_REVIEW"
-        rows.append({"path":path,"class":cls,"vendor_diverged":vendor})
+        row={"path":path,"class":cls,"vendor_diverged":vendor}
+        if path in MANUAL and cls=="SEMANTIC_REVIEW":
+            row.update(MANUAL[path])
+        rows.append(row)
     result={"candidate":"0061","batch":"A","from":"5.4.289","to":"5.4.292","counts":{},"semantic_review":[]}
     for r in rows:
         result["counts"][r["class"]]=result["counts"].get(r["class"],0)+1
