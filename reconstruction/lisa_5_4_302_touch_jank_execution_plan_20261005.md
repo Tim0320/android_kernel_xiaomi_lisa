@@ -1,7 +1,7 @@
 # Lisa 5.4.302 + Touch/Jank stabilization execution plan
 
-Plan version: 1.0
-Updated: 2026-10-05
+Plan version: 1.1
+Updated: 2026-10-06
 Active device baseline: HyperOS 3.0.9 / Android 16
 Canonical runtime reference: Candidate0059 r43da7c5
 
@@ -178,91 +178,117 @@ Metrics:
 Exit:
 - measurable control values recorded.
 
-### Phase 3 - Stable uplift Batch A
-Status: DONE
+### Phase 3 - Historical stable provenance checkpoint: Batch A
+Status: DONE / REFERENCE ONLY
 
-Target:
+Historical target:
 - 5.4.289 -> 5.4.292
 
-Method:
-1. Apply official stable semantics only.
-2. Resolve vendor conflicts semantically.
-3. Compare Qualcomm-sensitive files with MiYume only when necessary.
-4. olddefconfig.
-5. compile Image/modules.
-6. modpost.
-7. Module.symvers/CRC gates.
-8. ABI review policy: Candidate0059 exports must not disappear. CRC changes/additions are allowed only when their exact symbols are reviewed and traced to official Stable Batch A source changes; do not revert legitimate stable changes merely to force CRC identity.
-9. Current reviewed Batch A stable ABI deltas: xhci_dbg_trace, xhci_ext_cap_init, xhci_gen_setup, xhci_resume, xhci_suspend; additions flow_rule_match_ports_range, page_get_link_raw, tasklet_setup.
-10. CI evidence/oracle policy: do not depend on short-lived cross-workflow artifact download URLs as the only source of Candidate0059 config/Module.symvers or exact stock IKHEADERS. Preserve a durable oracle or regenerate stock IKHEADERS from the pinned stock boot, and validate hashes before build.
-11. If using the reviewed Batch A control run 37306854501, its exact control files are .config SHA256 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397 and Module.symvers SHA256 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff. Relative to that control, the repaired build must add only lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135 with zero changed/removed symbols.
-12. Keep stable source application side-effect-free. Candidate0059 config-oracle reconstruction is a separate MIXED_CONFLICT build-gate adaptation and must not be hidden inside the STABLE_ONLY 5.4.289->5.4.292 semantic apply script.
-13. The reviewed Candidate0059 control config delta currently consists of the C0059 LOCALVERSION, LOCALVERSION_AUTO=n, COMPAT_VDSO=n, ARM64_USE_LSE_ATOMICS=n, RELR=n, PERF_HELPER=y, and MILLET_CGROUP/SIG/BINDER/PKG/BINDER_GKI/CORE/HS=y; the exact post-olddefconfig SHA256 remains the acceptance oracle.
+Evidence retained:
+- clean build/ABI gate PASS at run 37331513181;
+- Candidate0059 build/KMI reconstruction path is proven;
+- reviewed Batch A semantic adapters remain reusable provenance evidence.
 
-No touch/performance modifications unless a conflict requires them.
+Important:
+- Phase 3 is no longer a required intermediate build gate for future Candidate0061 work.
+- It remains a trusted reference for reconstruction, ABI policy, and provenance classification.
 
-Exit:
-- Batch A compile/static/ABI PASS;
-- removed Candidate0059 symbols = 0;
-- any changed/added ABI symbol is explicitly stable-provenance reviewed.
-
-### Phase 4 - Stable uplift Batch B
-Status: BUILD GATE RUNNING
+### Phase 4 - Direct Candidate0061 Linux 5.4.302 uplift
+Status: ACTIVE
 
 Target:
-- 5.4.292 -> 5.4.296
+- Candidate0059/Lisa 5.4.289 -> Linux 5.4.302 in one integrated source/build gate.
 
-Same gates as Phase 3.
+This supersedes the old requirement to compile separately at 5.4.296, 5.4.299 and 5.4.302.
 
-Special attention:
-- pinctrl/QCOM/UFS-reset relevant changes.
-- Official linux-stable v5.4.x tags/incremental patches remain the canonical stable provenance.
-- MiYume0721/android_kernel_xiaomi_sm8350_miyume main is the preferred SM8350/Xiaomi
-  5.4.302 downstream final-state oracle for Qualcomm/Xiaomi paths. It is close enough to
-  expose the expected 5.4.302 vendor semantics, but it is not a whole-tree donor because it
-  also contains ReSukiSU/SuSFS, BPF 5.10 backports, F2FS tuning, Android17 support and
-  targets venus/mars/star/haydn rather than Lisa.
-- AOSP/ACK android11-5.4.x_r00 is used when a conflict is Android-common/GKI-specific.
-  android11-5.4.302_r00 remains the final Android 5.4.302 endpoint oracle.
-- Qualcomm CLO/CodeLinaro msm-5.4 becomes a fallback provenance/semantic oracle: consult it
-  when MiYume disagrees with stable/AOSP, lacks the path, or the exact Qualcomm lineage is
-  unclear. Do not query CLO mechanically for every conflict.
-- Lisa/Xiaomi source and the frozen Candidate0059 build contract remain the final device/KMI oracle.
-- The practical acceptance hierarchy is: linux-stable provenance -> MiYume SM8350/Xiaomi
-  final-state semantics -> AOSP/ACK for GKI-specific semantics -> CLO fallback when needed ->
-  Lisa device adaptation -> compile/modpost -> KMI/ABI gate.
-- The upstream kernel documents scripts/patch-kernel as an automation helper for normal
-  stable patch application, and kernel.org publishes incremental 5.4.y patches. Batch B/C/D
-  should therefore auto-apply clean hunks and pre-scan all non-clean overlaps in one run;
-  only reviewed semantic adapters are committed.
+#### Direct-302 execution model
 
-### Phase 5 - Stable uplift Batch C
-Status: NOT STARTED
+1. Recreate the frozen Candidate0059 source/build contract from r43da7c5 without modifying Candidate0059.
+2. Fetch official linux-stable v5.4.289 and v5.4.302 and construct the complete stable delta.
+3. Keep A/B/C/D only as provenance labels:
+   - A: 5.4.289 -> 5.4.292
+   - B: 5.4.292 -> 5.4.296
+   - C: 5.4.296 -> 5.4.299
+   - D: 5.4.299 -> 5.4.302
+   A/B/C/D identify where a stable hunk originated; they are not separate compile gates.
+4. Auto-apply clean stable hunks across the complete 5.4.289 -> 5.4.302 range.
+5. Pre-scan every non-clean overlap before the build and classify it as:
+   - STABLE_ONLY
+   - MIXED_CONFLICT
+   - NOT_APPLICABLE
+6. Resolve common Linux/Android/Qualcomm/Xiaomi semantics toward the 5.4.302 endpoint:
+   - official linux-stable remains canonical patch provenance;
+   - MiYume SM8350/Xiaomi 5.4.302 is the first downstream final-state oracle;
+   - AOSP android11-5.4.302_r00 is the Android/GKI endpoint oracle;
+   - CLO/CodeLinaro msm-5.4 is fallback only when MiYume/stable/AOSP do not resolve the Qualcomm lineage.
+7. Do not wholesale-copy MiYume files. Explicitly exclude or adapt:
+   - SM8350 / Lahaina / venus-only clock, interconnect, OPP, regulator, pinctrl, DTS and platform IDs;
+   - MiYume custom ReSukiSU/SuSFS, BPF 5.10 backports, F2FS tuning and Android17-only additions unless separately required later.
+8. Preserve Lisa-specific:
+   - SM7325 / Yupik platform semantics;
+   - Candidate0059 device/KMI build contract;
+   - Lisa vendor functionality that does not conflict with official stable semantics.
+9. Set final source identity directly to 5.4.302 and run only the integrated target gate:
+   - olddefconfig;
+   - Image/modules/dtbs;
+   - modpost;
+   - static compatibility checks;
+   - Module.symvers / ABI / KMI review;
+   - identity and packaging preparation.
+10. Acceptance for the direct uplift:
+   - source reports 5.4.302;
+   - compile/modpost PASS;
+   - Candidate0059 exported symbols removed = 0;
+   - every changed/added ABI symbol is explicitly traced to stable provenance or a separately reviewed MIXED_CONFLICT;
+   - no touch/performance intervention is mixed into this stable gate unless required to preserve semantics.
 
-Target:
-- 5.4.296 -> 5.4.299
+#### Provenance progress retained from the retired per-Batch build loop
 
-Special attention:
+- Segment A 5.4.289 -> 5.4.292: provenance reviewed, historical build/ABI PASS.
+- Segment B 5.4.292 -> 5.4.296: partial semantic review already completed:
+  - top-level Makefile SUBLEVEL adaptation;
+  - Cortex-A76AE CPU-ID adaptation;
+  - HID identity additions;
+  - QCOM pinctrl IRQ valid-mask adaptation.
+- Segment C 5.4.296 -> 5.4.299: pending review inside the direct-302 scan, not a separate build.
+- Segment D 5.4.299 -> 5.4.302: pending review inside the direct-302 scan, not a separate build.
+
+The in-flight legacy Batch B run may be retained only as evidence that already-reviewed Segment B adapters are valid. It must not cause the project to continue the retired 296 -> 299 -> 302 build loop.
+
+### Phase 5 - Direct-302 semantic conflict closure
+Status: PENDING AFTER DIRECT SCAN
+
+Purpose:
+- close the full non-clean 5.4.289 -> 5.4.302 conflict set before the integrated build;
+- resolve conflicts in final-state order rather than discovering one conflict per intermediate build.
+
+Priority review surfaces:
 - qcom mdt_loader;
-- dwc3/qcom;
-- boot/firmware sequencing.
-
-### Phase 6 - Stable uplift Batch D
-Status: NOT STARTED
-
-Target:
-- 5.4.299 -> 5.4.302
-
-Special attention:
-- qcom mdt_loader follow-up;
+- dwc3/qcom and gadget/core changes;
+- UFS/reset paths;
 - bam_dma;
 - q6v5;
 - rpmh-rsc;
-- qcom smem.
+- qcom smem;
+- pinctrl/QCOM paths;
+- any Android/GKI ABI-sensitive headers.
 
 Exit:
-- source reports 5.4.302;
-- compile/static/ABI gates PASS.
+- all direct-302 non-clean overlaps classified and adapted;
+- no unreviewed semantic conflict remains.
+
+### Phase 6 - Direct-302 integrated static/ABI gate
+Status: NOT STARTED
+
+Run one target build after Phase 5 conflict closure.
+
+Exit:
+- kernel source identity = 5.4.302;
+- Image/modules/dtbs + modpost PASS;
+- Candidate0059 removed ABI symbols = 0;
+- changed/added ABI symbols provenance-reviewed;
+- static/identity/packaging automation ready;
+- then proceed to Phase 7 touch/jank correction.
 
 ### Phase 7 - Touch/jank hot-path correction on 5.4.302
 Status: NOT STARTED
@@ -437,24 +463,22 @@ At the end of every execution:
 ## Current next action
 
 NEXT_ACTION:
-Inspect the Candidate0061 Batch B rerun triggered by dd09ac7 or later.
+Migrate Candidate0061 from the retired per-Batch build loop to a Direct-302 workflow.
 
-Run 37337064578 passed the stock ABI oracle, frozen Candidate0059 recreation,
-passed Batch A base, Candidate0059 ABI compatibility and control build. Its first
-Batch B blocker was the top-level Makefile. 657bba2 now preserves the downstream
-Qualcomm/Xiaomi Makefile and applies only the reviewed STABLE_ONLY SUBLEVEL 292->296
-semantic change.
+1. Do not create Batch C or Batch D build workflows.
+2. Treat run 37360064366 and earlier Batch B runs only as semantic/provenance evidence.
+3. Build a new direct 5.4.289 -> 5.4.302 scanner/apply workflow that:
+   - reconstructs frozen Candidate0059;
+   - fetches linux-stable v5.4.289 and v5.4.302;
+   - pins MiYume 5.4.302 final-state oracle;
+   - uses AOSP android11-5.4.302_r00 for GKI/Android endpoint semantics;
+   - uses CLO only as fallback;
+   - scans the complete non-clean overlap set before target build;
+   - reuses already-reviewed Segment A/B adapters where still valid;
+   - labels each applied change with provenance segment A/B/C/D without compiling at each segment.
+4. Resolve all remaining non-clean overlaps toward the 5.4.302 final state while preserving Lisa SM7325/Yupik-specific semantics.
+5. Run one integrated 5.4.302 compile/modpost/ABI gate.
+6. Only after the direct 5.4.302 static/ABI gate passes, begin the package-runtime/WALT touch/jank correction.
 
-To accelerate the remaining uplift without weakening provenance, Batch B now
-prefetches:
-- official linux-stable v5.4.292/v5.4.296 as the canonical patch source;
-- AOSP android11-5.4.292_r00/android11-5.4.296_r00 as the Android/GKI semantic oracle;
-- Qualcomm CLO kernel.lnx.5.4.r1-rel as a best-effort Qualcomm downstream oracle.
-
-The new oracle scan reports every non-clean Batch B overlap in one CI run with its
-AOSP/CLO relation before the strict apply gate. Use that report to classify the
-conflict set efficiently, but do not replace whole files merely because an oracle
-matches. Preserve the frozen Candidate0059 KMI/build contract. If apply/build passes,
-require zero removed ABI symbols and stable-provenance review for every changed/added
-symbol. If Batch B passes, immediately start Batch C 5.4.296->5.4.299 with the same
-oracle hierarchy.
+Strategic rule:
+"MiYume 5.4.302 alignment is primary for common Xiaomi/Qualcomm final-state semantics; Lisa SM7325/Yupik difference exclusion is secondary. Linux-stable remains canonical provenance."
