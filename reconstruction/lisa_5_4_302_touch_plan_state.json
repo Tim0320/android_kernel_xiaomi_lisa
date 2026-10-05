@@ -89,13 +89,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "ba4ce0eb7802d7c48f55fa8859f4712add8172c9",
+  "last_checked_commit": "f861836d00412eee1bb164a4d706b81c3ab4ec78",
   "last_checked_run": 37267450300,
-  "blocker": "BATCH_A_REMAINING_SEMANTIC_CONFLICT_REVIEW",
-  "next_action": "Continue classifying remaining 5.4.290-5.4.292 Lisa vendor overlaps. Confirmed decisions so far: hrtimer hotplug patch is not directly applicable to Lisa's older CPUHP model; clk-rpmh needs the upstream unsigned-long cast; clk-alpha-pll already contains alpha_en_mask handling but still needs alpha_mode_mask semantic review; socinfo needs an item-size-aware serial-number bounds adaptation. After the remaining list is bounded, prepare an isolated Candidate0061 Batch A source and run compile/modpost/Module.symvers gates.",
+  "blocker": "BATCH_A_REVIEW_RERUN_PENDING",
+  "next_action": "Inspect the audit triggered by f861836. Consume candidate-0061-batch-a-review.json after the four known semantic conflicts are classified. If SEMANTIC_REVIEW is non-zero, classify the next remaining paths. If it reaches zero, prepare the isolated Candidate0061 Batch A source application/build workflow and run olddefconfig, Image/modules, modpost, Module.symvers/CRC gates.",
   "next_expected_evidence": [
-    "Remaining Batch A vendor-overlap classifications",
-    "Candidate0061 Batch A source application record",
+    "Fresh Candidate0061 audit after f861836",
+    "candidate-0061-batch-a-review.json with known hrtimer/clk-rpmh/clk-alpha-pll/socinfo conflicts removed from SEMANTIC_REVIEW",
+    "Count and paths of remaining unclassified Batch A conflicts",
+    "Candidate0061 Batch A source application/build workflow once semantic review reaches zero",
     "Batch A compile and modpost result",
     "Batch A Module.symvers and CRC result",
     "HyperOS 3.0.9 A16 touch control capture"
@@ -132,7 +134,12 @@
     "5.4.290 hrtimer hotplug fix classified not-directly-applicable because Lisa retains CPUHP_HRTIMERS_PREPARE with hrtimers_prepare_cpu state reset",
     "5.4.291 clk-rpmh overflow fix confirmed directly relevant to Lisa BCM recalc expression",
     "5.4.291 clk-alpha-pll review confirmed alpha_en_mask is already present in Lisa while alpha_mode_mask remains absent from configure logic",
-    "5.4.291 socinfo serial-number fix requires Lisa-specific item_size bounds adaptation"
+    "5.4.291 socinfo serial-number fix requires Lisa-specific item_size bounds adaptation",
+    "Known Batch A semantic conflict decisions encoded into candidate_0061_batch_a_review.py",
+    "5.4.291 clk-rpmh fix classified ADAPT: unsigned-long multiplication cast",
+    "5.4.291 clk-alpha-pll fix classified ADAPT: preserve vendor flow and add alpha mode bits to update mask",
+    "5.4.291 socinfo fix classified ADAPT: item-size-aware serial_num bounds in Lisa vendor semantics",
+    "5.4.290 hrtimer hotplug fix classified NOT_APPLICABLE to Lisa older CPUHP hrtimer model"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
