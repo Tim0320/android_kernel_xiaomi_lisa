@@ -179,7 +179,7 @@ Exit:
 - measurable control values recorded.
 
 ### Phase 3 - Stable uplift Batch A
-Status: BUILD GATE RUNNING
+Status: DONE
 
 Target:
 - 5.4.289 -> 5.4.292
@@ -207,7 +207,7 @@ Exit:
 - any changed/added ABI symbol is explicitly stable-provenance reviewed.
 
 ### Phase 4 - Stable uplift Batch B
-Status: NOT STARTED
+Status: BUILD GATE RUNNING
 
 Target:
 - 5.4.292 -> 5.4.296
@@ -418,18 +418,28 @@ At the end of every execution:
 ## Current next action
 
 NEXT_ACTION:
-Inspect the Candidate0061 Batch A run triggered by workflow repair commit 4b946ef
-or later. The prior failure was caused by workflow structural corruption introduced
-while restoring the Candidate0059 config oracle: the CONFIG_CFI_CLANG grep was
-truncated and duplicate build/ABI/report content leaked under the artifact path
-block. Stable apply side effects from 03b7025 were removed at c37d41c.
+Inspect the Candidate0061 Batch B run triggered by commit 83dbe9c or later.
 
-The repaired workflow is rebuilt from the first valid Batch A body, contains
-exactly one control/compat/target/ABI/report/upload sequence, reconstructs stock
-IKHEADERS from the pinned stock boot, replays the reviewed Candidate0059 config
-delta as MIXED_CONFLICT build-oracle compatibility only, and retains the exact
-config/Module.symvers hashes.
+Batch A is now fully closed by run 37331513181:
+- stock ABI PASS;
+- Candidate0059 inherited source recreation PASS;
+- Stable Batch A semantic apply PASS;
+- reviewed config PASS;
+- same-run control compile/modpost PASS;
+- Candidate0059 ABI compatibility PASS;
+- target compile/modpost PASS;
+- exact ABI gate PASS;
+- changed CRCs = 0;
+- removed symbols = 0;
+- added symbols = exactly lisa_mtdoops_checkpoint=0x002a7d5d and qcom_scm_get_download_mode=0xd9dc8135.
 
-If config/control/compat/target/ABI all pass, mark Batch A PASS and immediately
-start Batch B 5.4.292 -> 5.4.296. If it fails, repair only the first real blocker.
-Do not start Candidate0060/BPF5.10 integration yet.
+Batch B is 5.4.292 -> 5.4.296 and remains STABLE_ONLY. The first run is
+deliberately strict: any downstream overlap that cannot three-way merge must stop
+at the first path for semantic classification, and any non-zero changed/added ABI
+delta must be reviewed against official Stable Batch B provenance before it can be
+accepted. Removed Candidate0059 symbols are not allowed.
+
+If Batch B apply/build/ABI all pass, mark Batch B PASS and immediately start
+Batch C 5.4.296 -> 5.4.299. If it fails, repair only the first real blocker.
+Do not introduce package-runtime/WALT, MIGT FREQ_QOS, touch boost, Goodix or other
+touch/performance changes until the complete 5.4.302 Stable base is established.
