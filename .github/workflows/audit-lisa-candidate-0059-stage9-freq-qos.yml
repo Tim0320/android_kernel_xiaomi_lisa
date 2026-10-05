@@ -1,0 +1,127 @@
+name: Audit Lisa Candidate0059 Stage9 FREQ_QOS
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - reconstruction/scripts/candidate_0059_stage9_freq_qos.py
+      - reconstruction/scripts/candidate_0059_stage8_freq_api_audit.py
+      - reconstruction/scripts/candidate_0059_stage7_migt_control.py
+      - reconstruction/c0059_stage9_freq_qos_20261005.md
+      - .github/workflows/audit-lisa-candidate-0059-stage9-freq-qos.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-c0059-stage9-freq-qos
+  cancel-in-progress: true
+
+jobs:
+  stage9:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - name: Checkout Candidate0059 package
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: package
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact pinned Lisa source
+        uses: actions/checkout@v4
+        with:
+          repository: Tim0320/android_kernel_xiaomi_lisa
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Reconfirm Stage8 frequency API contract
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0059_stage8_freq_api_audit.py \
+            --source-root kernel \
+            --json candidate-0059-stage8-recheck.json | tee candidate-0059-stage8-recheck.txt
+          grep -q '^CANDIDATE0059_STAGE8_FREQ_API=PASS$' candidate-0059-stage8-recheck.txt
+          grep -q '^RAW_DONOR_NOTIFIER_PORT_ALLOWED=false$' candidate-0059-stage8-recheck.txt
+
+      - name: Apply Stages1 through 7 and Stage9
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0059_state_layer.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage2_hooks.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage3_accounting.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage4_migt_sched.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage5_game_load.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage6_render.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage7_migt_control.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage9_freq_qos.py apply \
+            --source kernel --json candidate-0059-stage9.json
+          python3 package/reconstruction/scripts/candidate_0059_stage9_freq_qos.py verify \
+            --source kernel --json candidate-0059-stage9-verify.json
+          git -C kernel diff --check
+          git -C kernel diff > candidate-0059-stage9.patch
+
+      - name: Install ARM64 build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+
+      - name: Prepare stock-based config
+        run: |
+          set -euo pipefail
+          mkdir -p kernel/out
+          cp kernel/reconstruction/stock_ikconfig kernel/out/.config
+          kernel/scripts/config --file kernel/out/.config -e MIHW -e PACKAGE_RUNTIME_INFO -e MIGT
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -q '^CONFIG_MIGT=y$' kernel/out/.config
+
+      - name: Compile Stage9 affected objects
+        run: |
+          set -euo pipefail
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 prepare
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- -j2 \
+            kernel/sched/pkg_state.o kernel/sched/pkg_bridge.o kernel/sched/pkg_core.o \
+            kernel/sched/migt_sched.o kernel/sched/migt_render.o kernel/sched/glk.o \
+            drivers/mihw/migt.o \
+            kernel/fork.o kernel/user.o kernel/cred.o kernel/exit.o \
+            kernel/time/timekeeping.o kernel/sched/walt/walt.o
+          aarch64-linux-gnu-nm kernel/out/drivers/mihw/migt.o | \
+            grep -E ' (migt_init|migt_ioctl|migt_enable|get_cur_render_uid|package_runtime_should_stop)$'
+          aarch64-linux-gnu-nm -u kernel/out/drivers/mihw/migt.o | tee candidate-0059-stage9-undefined.txt
+          grep -q 'freq_qos_add_request' candidate-0059-stage9-undefined.txt
+          grep -q 'freq_qos_update_request' candidate-0059-stage9-undefined.txt
+          grep -q 'freq_qos_remove_request' candidate-0059-stage9-undefined.txt
+          grep -q 'cpufreq_register_notifier' candidate-0059-stage9-undefined.txt
+          ! grep -q 'core_ctl_set_boost' candidate-0059-stage9-undefined.txt
+          printf '%s\n' \
+            'CANDIDATE0059_STAGE9_COMPILE=PASS' \
+            'POLICY_SCOPED_FREQ_QOS_PRESENT=true' \
+            'BOOST_FLOOR_PATH_PRESENT=true' \
+            'CEILING_CAP_PATH_PRESENT=true' \
+            'SET_CEILING_SUPPORTED=true' \
+            'CORE_CTL_BOOST_ACTIVE=false' \
+            'THERMAL_BYPASS_ADDED=false' \
+            'GLOBAL_MAX_PIN_ADDED=false' \
+            'RUNTIME_TESTED=false' \
+            | tee candidate-0059-stage9-result.txt
+
+      - name: Publish Stage9 evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0059-stage9-freq-qos-a${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            candidate-0059-stage8-recheck.*
+            candidate-0059-stage9*.json
+            candidate-0059-stage9*.txt
+            candidate-0059-stage9.patch
+            kernel/out/.config
+            kernel/out/drivers/mihw/migt.o
