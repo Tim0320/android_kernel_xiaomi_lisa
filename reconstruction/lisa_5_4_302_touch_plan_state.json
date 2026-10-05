@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "SEMANTIC_REVIEW_IN_PROGRESS",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "BUILD_GATE_RUNNING",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,16 +89,16 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "c57f15ab7abed01ceb0d9c4119a89fcceffdc0e6",
-  "last_checked_run": 37271389455,
-  "blocker": "BATCH_A_ZERO_SEMANTIC_REVIEW_AUDIT_PENDING",
-  "next_action": "Inspect Issue #1 for the audit triggered by c57f15a. Expected semantic_review_count is 0 because all seven remaining conflicts are now manually classified. If zero, immediately create the isolated Candidate0061 Batch A source-application/build gate; if nonzero, classify only the newly reported paths before proceeding.",
+  "last_checked_commit": "b87eb4e435ec8d00606f5c9a77c4a8759f54cf9d",
+  "last_checked_run": 37272240317,
+  "blocker": "BATCH_A_SOURCE_BUILD_RUNNING",
+  "next_action": "Inspect the Candidate0061 Batch A build gate triggered by c211f275. Read Issue #1 build evidence and workflow/job logs. If source application exposes a new mixed conflict between Candidate0059 and stable 5.4.292, resolve that first with MIXED_CONFLICT provenance. If compile/modpost fails, fix the first compiler or linker blocker. If build passes but Module.symvers reports changed/removed CRCs, classify the ABI delta before proceeding to Batch B.",
   "next_expected_evidence": [
-    "Issue #1 audit comment for c57f15a or later",
-    "semantic_review_count = 0",
-    "review_counts reflecting ADAPT/NOT_APPLICABLE for all previously unresolved Batch A paths",
-    "Candidate0061 Batch A source-application/build gate",
-    "Batch A olddefconfig/Image/modules/modpost/Module.symvers/CRC results",
+    "Issue #1 Candidate0061 Batch A source/build gate comment",
+    "Batch A source application PASS or first MIXED_CONFLICT",
+    "olddefconfig/prepare PASS",
+    "Image/modules/dtbs compile + modpost result",
+    "Module.symvers CRC delta versus Candidate0059 r43da7c5",
     "HyperOS 3.0.9 A16 touch control capture"
   ],
   "forbidden": [
@@ -147,7 +147,11 @@
     "Candidate0061 evidence reporter heredoc replaced with parser-safe single-line Python",
     "All seven previously remaining Batch A semantic-review paths classified",
     "kernel/cpu.c classified NOT_APPLICABLE with the hrtimer CPUHP model",
-    "gen_kheaders, FunctionFS, MMC binding, DWC3, softirq/tasklet and OOM changes classified ADAPT"
+    "gen_kheaders, FunctionFS, MMC binding, DWC3, softirq/tasklet and OOM changes classified ADAPT",
+    "Candidate0061 Batch A semantic review PASS at run 37272240317 with semantic_review_count=0",
+    "Candidate0061 Batch A build workflow created at c211f275",
+    "Batch A build gate recreates Candidate0059 performance and BPF Stage-A before applying 5.4.292 stable semantics",
+    "Batch A build gate uses stock-generation Clang 11.0.2 and audits Module.symvers against Candidate0059 artifact 11322443300"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
