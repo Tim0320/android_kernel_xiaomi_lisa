@@ -53,7 +53,7 @@
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
-    "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SEMANTIC_SCAN_QUEUED",
+    "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_SCAN_ATTEMPT_2_QUEUED_WAITING_RUNNER",
     "phase_5_direct_302_semantic_conflict_closure": "PENDING_DIRECT_SCAN",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
@@ -106,18 +106,17 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "2b2a64d1adeae36f3d0866dba4cb9c804e29057e",
+  "last_checked_commit": "4dc63971dd883e23cb943b17f2250e5560e1ed98",
   "last_checked_run": 37363542334,
-  "blocker": "NONE_DIRECT_302_SCAN_RUN_37363542334_QUEUED",
-  "next_action": "Inspect Direct-302 run 37363542334 / job 111943425458. Ignore legacy Batch B run 37360064366 as a build blocker; it is provenance evidence only and its final old-loop conflict was drivers/platform/Kconfig. The new direct workflow must complete frozen Candidate0059 reconstruction, fetch official stable 5.4.289/292/296/299/302 plus MiYume 5.4.302 and AOSP android11-5.4.302_r00, then emit the complete 5.4.289->5.4.302 semantic_review list in candidate-0061-direct-302-scan.json. Use that single inventory to batch-review final-state conflicts; do not resume per-Batch compilation or create Batch C/D workflows.",
+  "blocker": "GITHUB_ACTIONS_RUNNER_QUEUE_DIRECT_302_ATTEMPT_2",
+  "next_action": "Re-read Direct-302 run 37363542334 attempt 2 / job 111948549521. It is currently queued before any step, so do not classify this as a scanner/kernel failure and do not modify semantic adapters yet. Once a runner starts: verify fetch of v5.4.289/292/296/299/302, MiYume 5.4.302 and AOSP android11-5.4.302_r00; verify frozen Candidate0059 recreation and ABI compatibility; collect candidate-0061-direct-302-scan.json. If the run fails after steps start, repair the first actual workflow/scanner blocker and push; if the scan completes with semantic_review_count > 0, use the complete list for batch semantic closure rather than restoring per-Batch builds.",
   "next_expected_evidence": [
-    "Run 37363542334 starts successfully with valid Direct-302 workflow",
+    "Direct-302 attempt 2 leaves runner queue and begins steps",
+    "Fetch Direct-302 provenance and semantic oracles PASS",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
     "C0061_DIRECT_302_C0059_ABI_COMPAT=PASS",
     "C0061_DIRECT_302_SCAN=PASS",
-    "Direct scan reports full changed_file_count and semantic_review_count for 5.4.289->5.4.302",
-    "Every semantic_review entry includes A/B/C/D provenance segments and MiYume/AOSP endpoint relations",
-    "The next repair round uses the complete conflict inventory rather than one-conflict-per-build discovery"
+    "Complete semantic_review inventory with A/B/C/D provenance and MiYume/AOSP relations"
   ],
   "forbidden": [
     "global frequency pin",
@@ -265,7 +264,8 @@
     "Legacy Batch B run 37360064366 completed failure at drivers/platform/Kconfig; per plan 1.1 this is retained only as Segment B provenance evidence and is not repaired through another Batch B build",
     "Direct 5.4.289->5.4.302 scanner added at ca39b91 with A/B/C/D provenance membership, MiYume 5.4.302 final-state comparison, AOSP android11-5.4.302 endpoint comparison and optional CLO fallback evidence",
     "Direct-302 scan workflow added at 2b2a64d; it reconstructs Candidate0059, restores ABI compatibility contract and scans the complete non-clean 5.4.289->5.4.302 surface before any target build",
-    "GitHub accepted Direct-302 workflow; run 37363542334 / job 111943425458 queued"
+    "GitHub accepted Direct-302 workflow; run 37363542334 / job 111943425458 queued",
+    "Run 37363542334 attempt 2 / job 111948549521 rechecked on 2026-10-06: still queued before setup; no actual workflow, scanner, or kernel step has executed, so no code repair is justified yet."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
