@@ -132,6 +132,22 @@ jobs:
           fi
           "$DEST/bin/clang" --version | grep -q 'clang version 11.0.2'
 
+      - name: Download frozen Candidate0059 ABI/config baseline
+        if: ${{ steps.apply.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p c0059-baseline
+          curl -fL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/11322443300/zip" \
+            -o c0059-baseline.zip
+          unzip -q c0059-baseline.zip -d c0059-baseline
+          test -s c0059-baseline/candidate-0059.config
+          find c0059-baseline -name Module.symvers -type f -print
+
       - name: Prepare Batch A stock-derived config
         id: config
         env:
@@ -140,7 +156,9 @@ jobs:
           set -euo pipefail
           rm -rf kernel/out
           mkdir -p kernel/out
-          cp kernel/reconstruction/stock_ikconfig kernel/out/.config
+          # Preserve the exact Candidate0059 build scope before allowing
+          # Linux 5.4.292 olddefconfig to resolve only newly introduced Kconfig.
+          cp c0059-baseline/candidate-0059.config kernel/out/.config
           kernel/scripts/config --file kernel/out/.config \
             -e BOARD_XIAOMI_LISA -e MIHW -e PACKAGE_RUNTIME_INFO -e MIGT
           make -C kernel -j"$(nproc)" O="$PWD/kernel/out" \
@@ -174,21 +192,6 @@ jobs:
           test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
           sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
           echo C0061_BATCH_A_COMPILE_MODPOST=PASS
-
-      - name: Download Candidate0059 Module.symvers baseline
-        if: ${{ steps.build.outcome == 'success' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          mkdir -p c0059-baseline
-          curl -fL \
-            -H "Authorization: Bearer $GH_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/11322443300/zip" \
-            -o c0059-baseline.zip
-          unzip -q c0059-baseline.zip -d c0059-baseline
-          find c0059-baseline -name Module.symvers -type f -print
 
       - name: Audit Module.symvers CRC delta
         id: abi
@@ -277,6 +280,7 @@ jobs:
         with:
           name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
           retention-days: 14
+          include-hidden-files: true
           if-no-files-found: warn
           path: |
             candidate-0061-c0059-source.log
