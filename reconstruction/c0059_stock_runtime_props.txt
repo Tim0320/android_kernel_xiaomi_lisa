@@ -1,0 +1,7 @@
+# Candidate0059 working stock/runtime reference
+# Established from the healthy user/release runtime baseline and the controlled
+# Android16 comparison using the same reconstructed kernel identity.
+ro.debuggable=0
+ro.force.debuggable=0
+ro.secure=1
+ro.adb.secure=1
