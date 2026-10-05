@@ -52,10 +52,16 @@ jobs:
           stable=https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
           git -C kernel fetch --no-tags --depth=1 "$stable" \
             refs/tags/v5.4.289:refs/tags/upstream-v5.4.289 \
+            refs/tags/v5.4.290:refs/tags/upstream-v5.4.290 \
+            refs/tags/v5.4.291:refs/tags/upstream-v5.4.291 \
+            refs/tags/v5.4.292:refs/tags/upstream-v5.4.292 \
             refs/tags/v5.4.302:refs/tags/upstream-v5.4.302
           git -C donor fetch --no-tags --depth=1 "$stable" \
             refs/tags/v5.4.302:refs/tags/upstream-v5.4.302
           git -C kernel show upstream-v5.4.289:Makefile | sed -n '1,8p' > upstream-5.4.289-version.txt
+          git -C kernel show upstream-v5.4.290:Makefile | sed -n '1,8p' > upstream-5.4.290-version.txt
+          git -C kernel show upstream-v5.4.291:Makefile | sed -n '1,8p' > upstream-5.4.291-version.txt
+          git -C kernel show upstream-v5.4.292:Makefile | sed -n '1,8p' > upstream-5.4.292-version.txt
           git -C kernel show upstream-v5.4.302:Makefile | sed -n '1,8p' > upstream-5.4.302-version.txt
 
       - name: Build no-change conflict inventory
@@ -107,4 +113,7 @@ jobs:
             candidate-0061-uplift-inventory.md
             candidate-0061-apply-check.txt
             upstream-5.4.289-version.txt
+            upstream-5.4.290-version.txt
+            upstream-5.4.291-version.txt
+            upstream-5.4.292-version.txt
             upstream-5.4.302-version.txt
