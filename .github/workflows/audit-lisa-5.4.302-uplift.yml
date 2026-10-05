@@ -111,14 +111,7 @@ jobs:
           tail -n 40 candidate-0061-apply-check.txt >> "$GITHUB_STEP_SUMMARY"
           echo >> "$GITHUB_STEP_SUMMARY"
           echo '### Batch A semantic review' >> "$GITHUB_STEP_SUMMARY"
-          python3 - <<'PY' >> "$GITHUB_STEP_SUMMARY"
-import json
-p=json.load(open('candidate-0061-batch-a-review.json'))
-print('counts:', p['counts'])
-print('semantic_review_files:', len(p['semantic_review']))
-for x in p['semantic_review']:
-    print('-', x)
-PY
+          python3 -c "import json; p=json.load(open('candidate-0061-batch-a-review.json')); print('counts:', p['counts']); print('semantic_review_files:', len(p['semantic_review'])); [print('-', x) for x in p['semantic_review']]" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload Candidate0061 uplift audit
         uses: actions/upload-artifact@v4
