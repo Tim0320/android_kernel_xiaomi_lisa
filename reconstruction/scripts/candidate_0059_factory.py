@@ -109,8 +109,8 @@ def patch_build(files: dict[str, str]) -> None:
 
     text = once(
         text,
-        "        'install_bpf59(base, ROOT, KERNEL)\\n\\n' + hook)",
-        "        'install_bpf59(base, ROOT, KERNEL)\\n'\n"
+        "        'install_bpf58(base, ROOT, KERNEL)\\n\\n' + hook)",
+        "        'install_bpf58(base, ROOT, KERNEL)\\n'\n"
         "        'from candidate_0059_perf_port import install as install_perf59\\n'\n"
         "        'install_perf59(base, ROOT, KERNEL)\\n\\n' + hook)",
     )
