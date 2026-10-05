@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "BUILD_GATE_RUNNING",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "BUILD_GATE_RETRY",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,14 +89,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "b87eb4e435ec8d00606f5c9a77c4a8759f54cf9d",
-  "last_checked_run": 37272240317,
-  "blocker": "BATCH_A_SOURCE_BUILD_RUNNING",
-  "next_action": "Inspect the Candidate0061 Batch A build gate triggered by c211f275. Read Issue #1 build evidence and workflow/job logs. If source application exposes a new mixed conflict between Candidate0059 and stable 5.4.292, resolve that first with MIXED_CONFLICT provenance. If compile/modpost fails, fix the first compiler or linker blocker. If build passes but Module.symvers reports changed/removed CRCs, classify the ABI delta before proceeding to Batch B.",
+  "last_checked_commit": "b3c5d7e986c33af54662ce0c408651d18c7f73d1",
+  "last_checked_run": 37282747022,
+  "blocker": "BATCH_A_C0059_BPF_PATH_FIX_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A build rerun triggered by b3c5d7e. The prior run 37282747022 failed before stable application because candidate_0058_bpf_port.apply() received a relative package path while git apply ran with cwd=kernel. The workflow now resolves package/kernel to absolute paths. If the C0059 source recreation passes, continue to the first stable-application mixed conflict or compiler/modpost blocker; do not skip ahead.",
   "next_expected_evidence": [
-    "Issue #1 Candidate0061 Batch A source/build gate comment",
-    "Batch A source application PASS or first MIXED_CONFLICT",
-    "olddefconfig/prepare PASS",
+    "New Candidate0061 Batch A build run for b3c5d7e or later",
+    "C0059_SOURCE_FEATURES_RECREATED=PASS",
+    "Candidate0061 Batch A source apply PASS or first MIXED_CONFLICT",
+    "olddefconfig/prepare result",
     "Image/modules/dtbs compile + modpost result",
     "Module.symvers CRC delta versus Candidate0059 r43da7c5",
     "HyperOS 3.0.9 A16 touch control capture"
@@ -151,7 +152,10 @@
     "Candidate0061 Batch A semantic review PASS at run 37272240317 with semantic_review_count=0",
     "Candidate0061 Batch A build workflow created at c211f275",
     "Batch A build gate recreates Candidate0059 performance and BPF Stage-A before applying 5.4.292 stable semantics",
-    "Batch A build gate uses stock-generation Clang 11.0.2 and audits Module.symvers against Candidate0059 artifact 11322443300"
+    "Batch A build gate uses stock-generation Clang 11.0.2 and audits Module.symvers against Candidate0059 artifact 11322443300",
+    "Run 37282747022 first blocker identified: relative BPF patch path was resolved from kernel cwd and caused ENOENT",
+    "Candidate0061 Batch A workflow now resolves package and kernel paths to absolute paths before recreating Candidate0059 BPF Stage-A",
+    "C0059 source recreation log added to persistent Batch A evidence"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
