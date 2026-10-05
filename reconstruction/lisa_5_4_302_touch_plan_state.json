@@ -1,0 +1,110 @@
+{
+  "plan_version": "1.0",
+  "updated_at": "2026-10-05",
+  "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
+  "active_device_baseline": {
+    "system": "HyperOS 3.0.9",
+    "android": "16",
+    "policy": "Use until an explicit deep-flash/base change is recorded."
+  },
+  "reference": {
+    "candidate": "0059",
+    "kernel_commit": "43da7c5d3ea7ccc8864a46edf80ba7ce2f22f1b7",
+    "kernel_release": "5.4.289-qgki-lisa-c0059-r43da7c5-by-Tim0320",
+    "static_gates": "PASS",
+    "jank_result": "IMPROVED_SUBJECTIVE",
+    "touch_result": "REGRESSED",
+    "developer_options_props": "0/0/1/1 PASS"
+  },
+  "uplift": {
+    "source_version": "5.4.289",
+    "target_version": "5.4.302",
+    "official_stable_steps": 13,
+    "changed_files": 1760,
+    "lisa_overlap_files": 271,
+    "sensitive_overlap_files": 140,
+    "miyume_overlap_files": 237
+  },
+  "current_phase": "PHASE_3_STABLE_BATCH_A",
+  "phase_status": {
+    "phase_0_baseline_freeze": "DONE",
+    "phase_1_uplift_inventory": "DONE",
+    "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "NEXT",
+    "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
+    "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
+    "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
+    "phase_7_touch_jank_hotpath_correction": "NOT_STARTED",
+    "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
+    "phase_9_kernel_latency_tracing": "CONDITIONAL",
+    "phase_10_candidate0061_a16_validation": "NOT_STARTED",
+    "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061"
+  },
+  "research_verdict": {
+    "method_supported_by_public_evidence": true,
+    "exact_lisa_fix_proven": false,
+    "key_points": [
+      "Smooth frame delivery can coexist with higher input latency.",
+      "Qualcomm input boost is explicitly coupled to touchscreen events and cpufreq policy updates.",
+      "Frequent scheduler-context cpufreq work can add overhead; rate limiting exists to control it.",
+      "Objective Perfetto android_input_events and FrameTimeline should be used for A/B.",
+      "Xiaomi donor defers package history roll and exposes pause_mode; Candidate0059 differs in WALT hot-path semantics."
+    ]
+  },
+  "primary_hypotheses": [
+    {
+      "id": "H1",
+      "component": "SCHED_WALT",
+      "hypothesis": "Candidate0059 package-runtime/WALT hot path performs unnecessary shared user history writes compared with donor semantics, increasing tail latency.",
+      "priority": 1,
+      "status": "OPEN"
+    },
+    {
+      "id": "H2",
+      "component": "CPUFREQ_QOS",
+      "hypothesis": "Candidate0059 MIGT FREQ_QOS activity interferes with Qualcomm touch/input boost timing or adds redundant scheduler/cpufreq work.",
+      "priority": 2,
+      "status": "OPEN"
+    },
+    {
+      "id": "H3",
+      "component": "TOUCH_IRQ",
+      "hypothesis": "Goodix IRQ delivery/affinity/rate is abnormal under Candidate0059.",
+      "priority": 3,
+      "status": "UNPROVEN_NEEDS_CONTROL"
+    },
+    {
+      "id": "H4",
+      "component": "TOUCH_HAL",
+      "hypothesis": "TouchFeature HwBinder -74 contributes materially to the regression.",
+      "priority": 4,
+      "status": "UNPROVEN"
+    }
+  ],
+  "gates": {
+    "stable_uplift_gate": "OPEN",
+    "abi_module_gate": "OPEN_FOR_C0061",
+    "touch_latency_gate": "FAIL_ON_C0059_USERB",
+    "performance_retention_gate": "PASS_SUBJECTIVE_ON_C0059_USERB",
+    "device_baseline_gate": "HYPEROS_3_0_9_A16",
+    "bpf_a17_gate": "BLOCKED"
+  },
+  "last_checked_commit": "3c6d0e5c82bc2bc8c3fb0b48be54f3fb2bef2ccd",
+  "last_checked_run": 37267450300,
+  "blocker": null,
+  "next_action": "Prepare and execute Candidate0061 Batch A using official Linux 5.4.290 through 5.4.292 stable changes. Keep Candidate0059 untouched. Preserve separate stable and touch/performance provenance. In parallel, the next required device evidence is a HyperOS 3.0.9 A16 touch-control capture.",
+  "next_expected_evidence": [
+    "Batch A official stable provenance",
+    "Batch A conflict list",
+    "Batch A compile/modpost/Module.symvers result",
+    "HyperOS 3.0.9 A16 touch runtime capture when available"
+  ],
+  "forbidden": [
+    "global frequency pin",
+    "thermal disable",
+    "SELinux weakening",
+    "fake device/ioctl/property success",
+    "wholesale MiYume Qualcomm/Xiaomi file replacement",
+    "touch driver/firmware replacement without evidence"
+  ]
+}
