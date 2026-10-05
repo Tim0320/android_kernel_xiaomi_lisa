@@ -89,15 +89,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "3c6d0e5c82bc2bc8c3fb0b48be54f3fb2bef2ccd",
+  "last_checked_commit": "784930def504e523439af8000128767b4d73ea75",
   "last_checked_run": 37267450300,
   "blocker": null,
-  "next_action": "Prepare and execute Candidate0061 Batch A using official Linux 5.4.290 through 5.4.292 stable changes. Keep Candidate0059 untouched. Preserve separate stable and touch/performance provenance. In parallel, the next required device evidence is a HyperOS 3.0.9 A16 touch-control capture.",
+  "next_action": "Prepare Candidate0061 Batch A from official incremental stable releases 5.4.289->5.4.290->5.4.291->5.4.292. Produce changed-file/conflict provenance first, then compile/static/ABI gates. Keep Candidate0059 untouched. HyperOS 3.0.9 A16 touch-control capture remains the next device-data gate.",
   "next_expected_evidence": [
-    "Batch A official stable provenance",
-    "Batch A conflict list",
-    "Batch A compile/modpost/Module.symvers result",
-    "HyperOS 3.0.9 A16 touch runtime capture when available"
+    "Official Batch A incremental patch provenance (5.4.289-290, 290-291, 291-292)",
+    "Batch A Lisa vendor conflict list and classifications",
+    "Batch A compile/modpost/Module.symvers/CRC result",
+    "HyperOS 3.0.9 A16 touch A/B capture when device evidence is next available"
   ],
   "forbidden": [
     "global frequency pin",
@@ -106,5 +106,26 @@
     "fake device/ioctl/property success",
     "wholesale MiYume Qualcomm/Xiaomi file replacement",
     "touch driver/firmware replacement without evidence"
+  ],
+  "completed_steps": [
+    "Candidate0059 frozen as r43da7c5 reference",
+    "User B touch regression evidence recorded",
+    "HyperOS 3.0.9 Android16 set as active device baseline",
+    "5.4.289->5.4.302 official stable conflict inventory completed",
+    "MiYume 5.4.302 donor role constrained to vendor/adaptation reference",
+    "Candidate0060 rebased conceptually onto completed 5.4.302 base",
+    "Public research completed for touch latency vs jank, Qualcomm input boost, scheduler/cpufreq overhead, and kernel latency tracing",
+    "Persistent canonical execution plan created",
+    "Persistent machine-readable state created",
+    "Lisa automation updated to read plan/state before every run"
+  ],
+  "research_sources": [
+    "https://perfetto.dev/docs/data-sources/frametimeline",
+    "https://perfetto.dev/docs/analysis/stdlib-docs",
+    "https://android.googlesource.com/kernel/msm.git/+/0f324698e476a247eed127f0745a4ef2805bf54a/drivers/cpufreq/cpu-boost.c",
+    "https://www.kernel.org/doc/html/v5.4/admin-guide/pm/cpufreq.html",
+    "https://kernel.org/doc/html/latest/scheduler/sched-util-clamp.html",
+    "https://www.kernel.org/doc/html/v4.20/trace/ftrace.html",
+    "https://kernel.org/pub/linux/kernel/v5.x/incr/"
   ]
 }
