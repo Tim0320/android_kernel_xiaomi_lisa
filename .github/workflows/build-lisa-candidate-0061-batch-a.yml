@@ -191,16 +191,3408 @@ jobs:
           rm -rf kernel/out
           mkdir -p kernel/out
           cp kernel/reconstruction/stock_ikconfig kernel/out/.config
-          kernel/scripts/config --file kernel/out/.config             -e BOARD_XIAOMI_LISA -e MIHW -e PACKAGE_RUNTIME_INFO -e MIGT
+          # Reproduce the reviewed Candidate0059 control config exactly.
+          # Delta is the complete config difference between run 37323757115
+          # and reviewed control run 37306854501.
+          kernel/scripts/config --file kernel/out/.config --set-str LOCALVERSION "-qgki-lisa-c0059-r43da7c5-by-Tim0320" -d LOCALVERSION_AUTO -d COMPAT_VDSO -d ARM64_USE_LSE_ATOMICS -d RELR -e PERF_HELPER -e MILLET_CGROUP -e MILLET_SIG -e MILLET_BINDER -e MILLET_PKG -e MILLET_BINDER_GKI -e MILLET_CORE -e MILLET_HS -e BOARD_XIAOMI_LISA -e MIHW -e PACKAGE_RUNTIME_INFO -e MIGT
           make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-config.log
           grep -E '^(CONFIG_MIHW|CONFIG_MIGT|CONFIG_PACKAGE_RUNTIME_INFO|CONFIG_MODVERSIONS|CONFIG_CFI_CLANG|CONFIG_QCOM_WATCHDOG_BARK_TIME|CONFIG_QCOM_WATCHDOG_PET_TIME)='             kernel/out/.config | tee candidate-0061-batch-a-config.txt
           grep -q '^CONFIG_MIHW=y$' kernel/out/.config
           grep -q '^CONFIG_MIGT=y$' kernel/out/.config
           grep -q '^CONFIG_PACKAGE_RUNTIME_INFO=y$' kernel/out/.config
           grep -q '^CONFIG_MODVERSIONS=y$' kernel/out/.config
-          grep -q '^CONFIG_CFI_CLANG=y$' kernel/out/.config
-          grep -q '^CONFIG_LEDS_QTI_FLASH=m$' kernel/out/.config
-          grep -q '^CONFIG_MI_HARDWARE_ID=m$' kernel/out/.config
+          grep -q '^CONFIG_CFI_CLANG=y          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_LOCALVERSION="-qgki-lisa-c0059-r43da7c5-by-Tim0320"          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^# CONFIG_LOCALVERSION_AUTO is not set          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^# CONFIG_COMPAT_VDSO is not set          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^# CONFIG_ARM64_USE_LSE_ATOMICS is not set          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^# CONFIG_RELR is not set          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_PERF_HELPER=y          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_MILLET_CGROUP=y          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_MILLET_SIG=y          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_MILLET_BINDER=y          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_MILLET_PKG=y          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_MILLET_BINDER_GKI=y          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_MILLET_CORE=y          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_MILLET_HS=y          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_LEDS_QTI_FLASH=m          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
+          grep -q '^CONFIG_MI_HARDWARE_ID=m          grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
+          grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
+          config_sha="$(sha256sum kernel/out/.config | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_CONFIG_SHA256=$config_sha"
+          test "$config_sha" = 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          cp kernel/out/.config candidate-0061-batch-a-control.config
+
+      - name: Compile reviewed Batch A control
+        id: control_build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-control-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          cp kernel/out/Module.symvers candidate-0061-batch-a-control.Module.symvers
+          control_symvers_sha="$(sha256sum candidate-0061-batch-a-control.Module.symvers | awk '{print $1}')"
+          echo "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=$control_symvers_sha"
+          test "$control_symvers_sha" = 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-control-Image.sha256
+          echo C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS
+
+      - name: Apply Candidate0059 ABI compatibility delta
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-batch-a-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_C0059_ABI_COMPAT_GATE=PASS")
+          PY
+          grep -q '^C0061_C0059_ABI_COMPAT_GATE=PASS$' candidate-0061-batch-a-compat.log
+          git -C kernel diff --check
+
+      - name: Rebuild Batch A target with ABI compatibility
+        id: build
+        env:
+          PATH: ${{ runner.temp }}/clang-r383902b1/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+          CONFIG_USE_COMMON_CAMERA: y
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out
+          mkdir -p kernel/out
+          cp candidate-0061-batch-a-control.config kernel/out/.config
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts             2>&1 | tee candidate-0061-batch-a-target-config.log
+          test "$(sha256sum kernel/out/.config | awk '{print $1}')" =             664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out"             ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1             CROSS_COMPILE=aarch64-linux-gnu-             CROSS_COMPILE_COMPAT=arm-linux-gnueabi-             CLANG_TRIPLE=aarch64-linux-gnu-             Image modules dtbs 2>&1 | tee candidate-0061-batch-a-build.log
+          test -s kernel/out/arch/arm64/boot/Image
+          test -s kernel/out/Module.symvers
+          test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
+          sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-batch-a-Image.sha256
+          echo C0061_BATCH_A_COMPILE_MODPOST=PASS
+
+      - name: Audit exact ABI compatibility delta
+        id: abi
+        if: ${{ steps.build.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 - candidate-0061-batch-a-control.Module.symvers kernel/out/Module.symvers candidate-0061-batch-a-abi.json <<'PY'
+          import json, sys
+          from pathlib import Path
+
+          def load(path):
+              out = {}
+              for raw in Path(path).read_text(errors="replace").splitlines():
+                  fields = raw.split()
+                  if len(fields) >= 2:
+                      out[fields[1]] = fields[0].lower()
+              return out
+
+          control = load(sys.argv[1])
+          target = load(sys.argv[2])
+          changed = {k: {"control": control[k], "target": target[k]}
+                     for k in sorted(control.keys() & target.keys())
+                     if control[k] != target[k]}
+          removed = {k: control[k] for k in sorted(control.keys() - target.keys())}
+          added = {k: target[k] for k in sorted(target.keys() - control.keys())}
+          expected_added = {
+              "lisa_mtdoops_checkpoint": "0x002a7d5d",
+              "qcom_scm_get_download_mode": "0xd9dc8135",
+          }
+          result = {
+              "control": "reviewed Batch A control equivalent to run 37306854501",
+              "control_config_sha256": "664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
+              "control_symvers_sha256": "846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
+              "target": "Candidate0061 Batch A + restored Candidate0059 ABI exports",
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "changed": changed,
+              "removed": removed,
+              "added": added,
+              "expected_added": expected_added,
+              "candidate0059_stable_provenance": {
+                  "reviewed_changed": [
+                      "xhci_dbg_trace", "xhci_ext_cap_init", "xhci_gen_setup",
+                      "xhci_resume", "xhci_suspend"
+                  ],
+                  "reviewed_added": [
+                      "flow_rule_match_ports_range", "page_get_link_raw", "tasklet_setup"
+                  ],
+              },
+          }
+          Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
+          print(json.dumps({
+              "changed_crc_count": len(changed),
+              "removed_symbol_count": len(removed),
+              "added_symbol_count": len(added),
+              "added": added,
+          }, sort_keys=True))
+          if changed or removed or added != expected_added:
+              raise SystemExit("ABI_COMPAT_DELTA_MISMATCH")
+          print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
+          PY
+
+      - name: Report Batch A build evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
+          CONFIG_OUTCOME: ${{ steps.config.outcome }}
+          CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          ABI_OUTCOME: ${{ steps.abi.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Batch A source/build gate"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- apply: $APPLY_OUTCOME"
+            echo "- config: $CONFIG_OUTCOME"
+            echo "- control_build: $CONTROL_BUILD_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- build: $BUILD_OUTCOME"
+            echo "- abi: $ABI_OUTCOME"
+            if test -s candidate-0061-batch-a-apply.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-apply.json')); print('- apply_counts:', p.get('counts', {}))"
+            fi
+            if test -s candidate-0061-batch-a-abi.json; then
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-abi.json')); print('- delta_changed:', p.get('changed_crc_count')); print('- delta_removed:', p.get('removed_symbol_count')); print('- delta_added:', p.get('added_symbol_count')); print('- delta_symbols:', p.get('added', {}))"
+            fi
+            echo
+            if test -s candidate-0061-batch-a-build.log; then
+              echo "target-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-build.log
+            elif test -s candidate-0061-batch-a-control-build.log; then
+              echo "control-build-log-tail:"
+              tail -n 30 candidate-0061-batch-a-control-build.log
+            elif test -s candidate-0061-batch-a-config.log; then
+              echo "config-log-tail:"
+              tail -n 30 candidate-0061-batch-a-config.log
+            elif test -s candidate-0061-batch-a-apply.log; then
+              echo "apply-log-tail:"
+              tail -n 30 candidate-0061-batch-a-apply.log
+            elif test -s candidate-0061-c0059-source.log; then
+              echo "c0059-source-log-tail:"
+              tail -n 30 candidate-0061-c0059-source.log
+            elif test -s candidate-0061-stock-ikheaders.log; then
+              echo "stock-ikheaders-log-tail:"
+              tail -n 30 candidate-0061-stock-ikheaders.log
+            fi
+          } > candidate-0061-batch-a-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-batch-a-issue.md
+
+      - name: Upload Candidate0061 Batch A evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-batch-a-evidence-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-stock-ikheaders.json
+            candidate-0061-stock-ikheaders.log
+            candidate-0061-c0059-source.log
+            candidate-0061-c0059-source-stat.txt
+            candidate-0061-batch-a-apply.json
+            candidate-0061-batch-a-apply.log
+            candidate-0061-batch-a-source-stat.txt
+            candidate-0061-batch-a-config.log
+            candidate-0061-batch-a-config.txt
+            candidate-0061-batch-a-control.config
+            candidate-0061-batch-a-control.Module.symvers
+            candidate-0061-batch-a-control-build.log
+            candidate-0061-batch-a-control-Image.sha256
+            candidate-0061-batch-a-compat.log
+            candidate-0061-batch-a-target-config.log
+            candidate-0061-batch-a-build.log
+            candidate-0061-batch-a-Image.sha256
+            candidate-0061-batch-a-abi.json
+            kernel/out/.config
+            kernel/out/Module.symvers
+            kernel/out/System.map
+            kernel/out/arch/arm64/boot/Image
+ kernel/out/.config
           grep -q 'proc_create_proc_ops' kernel/include/linux/proc_fs.h
           grep -q '#define proc_create proc_create_proc_ops' kernel/include/linux/proc_fs.h
           grep -q 'STOCK_ABI_ROOT' kernel/scripts/Makefile.build
