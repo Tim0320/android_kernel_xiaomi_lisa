@@ -89,15 +89,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "784930def504e523439af8000128767b4d73ea75",
+  "last_checked_commit": "061b68297849f52ae35082bb0b57ccdb58b3eb5d",
   "last_checked_run": 37267450300,
-  "blocker": null,
-  "next_action": "Prepare Candidate0061 Batch A from official incremental stable releases 5.4.289->5.4.290->5.4.291->5.4.292. Produce changed-file/conflict provenance first, then compile/static/ABI gates. Keep Candidate0059 untouched. HyperOS 3.0.9 A16 touch-control capture remains the next device-data gate.",
+  "blocker": "BATCH_A_SEMANTIC_CONFLICT_REVIEW",
+  "next_action": "Continue Batch A semantic review using official 5.4.289 to 5.4.292 provenance, then proceed to the Batch A build gate.",
   "next_expected_evidence": [
-    "Official Batch A incremental patch provenance (5.4.289-290, 290-291, 291-292)",
-    "Batch A Lisa vendor conflict list and classifications",
-    "Batch A compile/modpost/Module.symvers/CRC result",
-    "HyperOS 3.0.9 A16 touch A/B capture when device evidence is next available"
+    "Batch A semantic review record",
+    "Batch A compile and modpost result",
+    "Batch A Module.symvers and CRC result",
+    "HyperOS 3.0.9 A16 touch control capture"
   ],
   "forbidden": [
     "global frequency pin",
@@ -117,7 +117,11 @@
     "Public research completed for touch latency vs jank, Qualcomm input boost, scheduler/cpufreq overhead, and kernel latency tracing",
     "Persistent canonical execution plan created",
     "Persistent machine-readable state created",
-    "Lisa automation updated to read plan/state before every run"
+    "Lisa automation updated to read plan/state before every run",
+    "Run 37267450300 uplift audit artifact inspected",
+    "Batch A official incremental provenance inspected",
+    "Batch A A1 hrtimer dependency mismatch identified for semantic handling",
+    "Batch A 5.4.291 Qualcomm clock fixes reviewed"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
