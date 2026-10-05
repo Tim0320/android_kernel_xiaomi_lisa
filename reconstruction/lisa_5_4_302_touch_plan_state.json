@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "ABI_GATE_RETRY",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "ABI_SOURCE_STACK_RETRY",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,17 +89,17 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "375b1e6560cfa48408653139f0093cfde713c067",
-  "last_checked_run": 37284085226,
-  "blocker": "BATCH_A_ABI_SCOPE_MISMATCH_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A rerun triggered by 375b1e6. Run 37284085226 proved stable apply/config/build/modpost PASS, but its ABI comparison was invalid because Batch A rebuilt from stock_ikconfig while the frozen Candidate0059 Module.symvers baseline came from candidate-0059.config. The workflow now restores the exact Candidate0059 config before Linux 5.4.292 olddefconfig. If compile passes, review the new removed/added symbol set first, then classify CRC changes by stable provenance rather than requiring zero CRC drift.",
+  "last_checked_commit": "d4d4134966cb8a64f5535425ef93e03c8be62ace",
+  "last_checked_run": 37287385194,
+  "blocker": "BATCH_A_INCOMPLETE_C0059_SOURCE_STACK_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A rerun triggered by d4d4134. Run 37287385194 still passed stable apply/config/build/modpost but ABI failed with 9698 changed CRCs, 82 removed symbols and 3 added symbols. The remaining removed set contains 75+ camera/vendor exports plus lisa_mtdoops_checkpoint, mi_power_save_battery_cave, power_debug_print_enabled, proc_create_data_proc_ops/proc_create_proc_ops, qcom_scm_get_download_mode and mius_afe, proving Batch A was not recreating Candidate0059's inherited Candidate0057 ownership + Candidate0056 power + Candidate0055 UFS + Candidate0054 fault source stack. The workflow now seeds the frozen Candidate0059 config, restores exact stock ABI headers artifact 10637733529, generates Candidate0059 inherited recipes, applies candidate_0059_ownership_patch, then Candidate0059 performance and BPF Stage-A before Stable Batch A. If build passes, review removed/added symbols first; only after source-scope parity is demonstrated should CRC drift be classified by stable provenance.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A run for 375b1e6 or later",
-    "C0059_SOURCE_FEATURES_RECREATED=PASS",
+    "New Candidate0061 Batch A run for d4d4134 or later",
+    "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
     "C0061_BATCH_A_APPLY=PASS",
     "olddefconfig using frozen candidate-0059.config",
     "Image/modules/dtbs compile + modpost PASS",
-    "Module.symvers removed/added symbols materially reduced versus run 37284085226",
+    "Module.symvers removed/added symbols reduced to only stable-provenance changes or zero",
     "CRC delta classified against official 5.4.289->5.4.292 stable provenance",
     "HyperOS 3.0.9 A16 touch control capture"
   ],
@@ -164,7 +164,11 @@
     "Run 37284085226 passed stable apply, olddefconfig, Image/modules/dtbs and modpost; first real blocker moved to ABI audit",
     "ABI evidence from run 37284085226 showed 9693 changed CRCs, 92 removed symbols and 3 added symbols",
     "The 92 removed symbols were dominated by camera/vendor exports, proving the ABI gate compared different build scopes rather than isolating stable uplift effects",
-    "Batch A workflow now restores frozen Candidate0059 candidate-0059.config before 5.4.292 olddefconfig and uploads hidden .config evidence"
+    "Batch A workflow now restores frozen Candidate0059 candidate-0059.config before 5.4.292 olddefconfig and uploads hidden .config evidence",
+    "Run 37287385194 confirmed exact Candidate0059 config alone is insufficient: ABI still showed 9698 CRC changes, 82 removed symbols and 3 added symbols",
+    "Remaining removed symbols include camera/vendor exports plus lisa_mtdoops_checkpoint, power providers, proc_ops compatibility and qcom_scm_get_download_mode, identifying missing inherited Candidate0059 source layers",
+    "Batch A workflow now reconstructs Candidate0059 inherited Candidate0057 ownership, Candidate0056 power, Candidate0055 UFS and Candidate0054 fault layers before performance+BPF and stable uplift",
+    "Exact stock ABI headers artifact 10637733529 is now supplied to the inherited power-provider source gate"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
