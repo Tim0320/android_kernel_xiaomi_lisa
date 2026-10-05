@@ -1,0 +1,110 @@
+name: Audit Lisa Candidate0059 preflight
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - reconstruction/scripts/candidate_0059_preflight.py
+      - reconstruction/c0059_debug_provenance_android16.json
+      - reconstruction/c0059_stock_runtime_props.txt
+      - reconstruction/scripts/candidate_0059_state_layer.py
+      - reconstruction/scripts/candidate_0059_stage2_hooks.py
+      - reconstruction/scripts/candidate_0059_stage3_accounting.py
+      - reconstruction/scripts/candidate_0059_stage4_migt_sched.py
+      - reconstruction/scripts/candidate_0059_stage5_game_load.py
+      - reconstruction/scripts/candidate_0059_stage6_render.py
+      - reconstruction/scripts/candidate_0059_stage7_migt_control.py
+      - reconstruction/scripts/candidate_0059_stage9_freq_qos.py
+      - .github/workflows/audit-lisa-candidate-0059-preflight.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lisa-c0059-preflight
+  cancel-in-progress: true
+
+jobs:
+  preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - name: Checkout Candidate0059 package
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: package
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout exact pinned Lisa source
+        uses: actions/checkout@v4
+        with:
+          repository: Tim0320/android_kernel_xiaomi_lisa
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Apply Candidate0059 performance stages
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0059_state_layer.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage2_hooks.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage3_accounting.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage4_migt_sched.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage5_game_load.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage6_render.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage7_migt_control.py apply --source kernel
+          python3 package/reconstruction/scripts/candidate_0059_stage9_freq_qos.py apply --source kernel
+          git -C kernel diff --check
+          git -C kernel diff > candidate-0059-preflight.patch
+
+      - name: Install config dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex build-essential libssl-dev libelf-dev gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi
+
+      - name: Prepare stock-derived Candidate0059 config
+        run: |
+          set -euo pipefail
+          mkdir -p kernel/out
+          cp kernel/reconstruction/stock_ikconfig kernel/out/.config
+          kernel/scripts/config --file kernel/out/.config -e MIHW -e PACKAGE_RUNTIME_INFO -e MIGT
+          make -C kernel O="$PWD/kernel/out" ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- olddefconfig
+          grep -E '^(CONFIG_MIHW|CONFIG_MIGT|CONFIG_PACKAGE_RUNTIME_INFO|CONFIG_OEM_KERNEL|CONFIG_MODVERSIONS|CONFIG_CFI_CLANG)=' kernel/out/.config | tee candidate-0059-preflight-config.txt
+          grep -q '^CONFIG_MIHW=y$' kernel/out/.config
+          grep -q '^CONFIG_MIGT=y$' kernel/out/.config
+          grep -q '^CONFIG_PACKAGE_RUNTIME_INFO=y$' kernel/out/.config
+
+      - name: Run Candidate0059 PREBUILD gate
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0059_preflight.py \
+            --phase prebuild \
+            --source-root kernel \
+            --config kernel/out/.config \
+            --stock-props package/reconstruction/c0059_stock_runtime_props.txt \
+            --debug-evidence package/reconstruction/c0059_debug_provenance_android16.json \
+            --iorap-strategy defer-outside-c0059 \
+            | tee candidate-0059-preflight-result.txt
+          grep -q '^CANDIDATE0059_PREBUILD=PASS$' candidate-0059-preflight-result.txt
+          grep -q '^DEBUG_PROVENANCE_MODE=android16-performance-scoped$' candidate-0059-preflight-result.txt
+          grep -q '^PERFORMANCE_BUILD_ALLOWED=true$' candidate-0059-preflight-result.txt
+          grep -q '^ANDROID14_DEBUG_ROOT_CAUSE_RESOLVED=false$' candidate-0059-preflight-result.txt
+          grep -q '^POSTDEVICE_REQUIRED=true$' candidate-0059-preflight-result.txt
+
+      - name: Publish preflight evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0059-preflight-a${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            candidate-0059-preflight.patch
+            candidate-0059-preflight-config.txt
+            candidate-0059-preflight-result.txt
+            kernel/out/.config
