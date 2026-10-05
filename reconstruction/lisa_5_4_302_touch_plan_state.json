@@ -89,16 +89,16 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "cbb61ab6af73cd12e7711603156d9e3634bc72ee",
-  "last_checked_run": 37267450300,
-  "blocker": "BATCH_A_AUDIT_EVIDENCE_PENDING",
-  "next_action": "Read issue #1 ([CI Evidence] Candidate0061 Batch A) and reconstruction/generated/c0061_batch_a_review_latest.json after the cbb61ab workflow run. Use the reported run_id/job_status/review_counts to either fix the first failing step or finish the remaining SEMANTIC_REVIEW classifications. If semantic_review_count reaches zero, immediately create the isolated Candidate0061 Batch A source/build gate.",
+  "last_checked_commit": "c57f15ab7abed01ceb0d9c4119a89fcceffdc0e6",
+  "last_checked_run": 37271389455,
+  "blocker": "BATCH_A_ZERO_SEMANTIC_REVIEW_AUDIT_PENDING",
+  "next_action": "Inspect Issue #1 for the audit triggered by c57f15a. Expected semantic_review_count is 0 because all seven remaining conflicts are now manually classified. If zero, immediately create the isolated Candidate0061 Batch A source-application/build gate; if nonzero, classify only the newly reported paths before proceeding.",
   "next_expected_evidence": [
-    "Issue #1 workflow evidence comment for cbb61ab or later",
-    "reconstruction/generated/c0061_batch_a_review_latest.json if repository write succeeds",
-    "workflow source SHA, run ID, job status, review_counts and semantic_review_count",
-    "Candidate0061 Batch A source/build gate once semantic review reaches zero",
-    "Batch A compile/modpost/Module.symvers/CRC results",
+    "Issue #1 audit comment for c57f15a or later",
+    "semantic_review_count = 0",
+    "review_counts reflecting ADAPT/NOT_APPLICABLE for all previously unresolved Batch A paths",
+    "Candidate0061 Batch A source-application/build gate",
+    "Batch A olddefconfig/Image/modules/modpost/Module.symvers/CRC results",
     "HyperOS 3.0.9 A16 touch control capture"
   ],
   "forbidden": [
@@ -144,7 +144,10 @@
     "Created persistent GitHub issue #1 as Candidate0061 CI evidence sink",
     "Uplift audit now reports source SHA, run ID, job status and semantic review count to issue #1 on every run",
     "Repository evidence push made non-fatal so branch protection cannot hide later audit diagnostics",
-    "Candidate0061 evidence reporter heredoc replaced with parser-safe single-line Python"
+    "Candidate0061 evidence reporter heredoc replaced with parser-safe single-line Python",
+    "All seven previously remaining Batch A semantic-review paths classified",
+    "kernel/cpu.c classified NOT_APPLICABLE with the hrtimer CPUHP model",
+    "gen_kheaders, FunctionFS, MMC binding, DWC3, softirq/tasklet and OOM changes classified ADAPT"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
