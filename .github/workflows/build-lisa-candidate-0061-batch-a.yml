@@ -9,6 +9,7 @@ on:
       - reconstruction/scripts/candidate_0061_batch_a_apply.py
       - reconstruction/scripts/candidate_0061_batch_a_manual.py
       - reconstruction/scripts/candidate_0061_batch_a_review.py
+      - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
       - reconstruction/scripts/candidate_0046_build.py
       - reconstruction/scripts/candidate_0050_proc_abi_patch.py
       - reconstruction/scripts/candidate_0059_factory.py
@@ -117,6 +118,7 @@ jobs:
           from types import SimpleNamespace
           import candidate_0046_build as c46
           import candidate_0050_proc_abi_patch as proc50
+          import candidate_0061_c0059_abi_compat as abi_compat
           import candidate_0056_power_patch as power
           import candidate_0059_ownership_patch as ownership
           import candidate_0059_perf_port as perf
@@ -144,6 +146,7 @@ jobs:
           c46.patch_qgki_module_abi()
 
           proc50.apply(root, kernel)
+          abi_compat.apply(root, kernel)
 
           ownership.retained = lambda _root: SimpleNamespace(apply=lambda _r, _k: None)
           ownership.apply(root, kernel)
@@ -272,6 +275,20 @@ jobs:
                      for k in sorted(base.keys() & now.keys()) if base[k] != now[k]}
           removed = {k: base[k] for k in sorted(base.keys() - now.keys())}
           added = {k: now[k] for k in sorted(now.keys() - base.keys())}
+          reviewed_changed = {
+              "xhci_dbg_trace",
+              "xhci_ext_cap_init",
+              "xhci_gen_setup",
+              "xhci_resume",
+              "xhci_suspend",
+          }
+          reviewed_added = {
+              "flow_rule_match_ports_range",
+              "page_get_link_raw",
+              "tasklet_setup",
+          }
+          unexpected_changed = sorted(set(changed) - reviewed_changed)
+          unexpected_added = sorted(set(added) - reviewed_added)
           result = {
               "baseline": "Candidate0059 r43da7c5 / artifact 11322443300",
               "target": "Candidate0061 Batch A Linux 5.4.292",
@@ -281,10 +298,20 @@ jobs:
               "changed": changed,
               "removed": removed,
               "added": added,
+              "reviewed_stable_changed": sorted(set(changed) & reviewed_changed),
+              "reviewed_stable_added": sorted(set(added) & reviewed_added),
+              "unexpected_changed": unexpected_changed,
+              "unexpected_added": unexpected_added,
+              "provenance": {
+                  "xhci": "STABLE_ONLY: official Batch A modifies drivers/usb/host/xhci*.c,h",
+                  "page_get_link_raw": "STABLE_ONLY: official Batch A modifies fs/namei.c",
+                  "tasklet_setup": "STABLE_ONLY: official Batch A modifies kernel/softirq.c",
+                  "flow_rule_match_ports_range": "STABLE_ONLY: official Batch A modifies net/core/flow_offload.c",
+              },
           }
           Path(sys.argv[3]).write_text(json.dumps(result, indent=2) + "\n")
           print(json.dumps({k: result[k] for k in ("changed_crc_count","removed_symbol_count","added_symbol_count")}))
-          if changed or removed:
+          if removed or unexpected_changed or unexpected_added:
               raise SystemExit("ABI_REVIEW_REQUIRED")
           print("C0061_BATCH_A_MODULE_SYMVERS_GATE=PASS")
           PY
