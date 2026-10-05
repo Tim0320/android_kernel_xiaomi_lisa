@@ -1,6 +1,11 @@
 name: Reverify existing Lisa Candidate0059 build
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/reverify-lisa-candidate-0059-existing-build.yml
+      - reconstruction/scripts/candidate_0059_perf_port.py
   workflow_dispatch:
     inputs:
       source_run_id:
@@ -42,16 +47,16 @@ jobs:
     timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
-      SOURCE_COMMIT: ${{ inputs.source_commit }}
-      CHECKPOINT_ARTIFACT: ${{ inputs.checkpoint_artifact }}
-      EXPECTED_BOOT_SHA256: ${{ inputs.expected_boot_sha256 }}
+      SOURCE_RUN_ID: ${{ inputs.source_run_id || '37252626006' }}
+      SOURCE_COMMIT: ${{ inputs.source_commit || '9a1ef13d3e8719aa95f6bf2af9d28d574069e6c0' }}
+      CHECKPOINT_ARTIFACT: ${{ inputs.checkpoint_artifact || 'lisa-c0059-reverify-inputs-a1' }}
+      EXPECTED_BOOT_SHA256: ${{ inputs.expected_boot_sha256 || '5519a45a133ac382bbaa0075315cffe4c81c08cff9fc16dc0751a91e8f8dab33' }}
 
     steps:
       - name: Checkout verifier source only
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.verifier_ref }}
+          ref: ${{ inputs.verifier_ref || github.sha }}
           fetch-depth: 1
           lfs: false
           persist-credentials: false
@@ -115,10 +120,10 @@ jobs:
       - name: Download checkpoint from selected source run
         uses: actions/download-artifact@v4
         with:
-          name: ${{ inputs.checkpoint_artifact }}
+          name: ${{ inputs.checkpoint_artifact || 'lisa-c0059-reverify-inputs-a1' }}
           path: .checkpoint-download
           github-token: ${{ github.token }}
-          run-id: ${{ inputs.source_run_id }}
+          run-id: ${{ inputs.source_run_id || '37252626006' }}
 
       - name: Install verifier tools
         run: |
@@ -144,6 +149,21 @@ jobs:
           else
             echo "EXPECTED_BOOT_SHA256_MATCH=NOT_REQUESTED" | tee -a reverify-source.txt
           fi
+
+      - name: Inspect Candidate0059 linked performance symbols
+        run: |
+          set -euo pipefail
+          {
+            echo '=== System.map performance candidates ==='
+            grep -E '(^|[[:space:]])(__cfi_jt_)?(migt_init|migt_sched_init|game_load_init|pkg_init)([.[:alnum:]_]+)?$|__initcall_.*(migt|game_load|pkg)' kernel/out/System.map || true
+            echo '=== migt.o symbols ==='
+            aarch64-linux-gnu-nm -a kernel/out/drivers/mihw/migt.o | grep -E 'migt_init|__initcall|freq_qos|migt_qos' || true
+            echo '=== scheduler object init symbols ==='
+            for obj in kernel/out/kernel/sched/pkg_state.o kernel/out/kernel/sched/pkg_bridge.o kernel/out/kernel/sched/pkg_core.o kernel/out/kernel/sched/migt_sched.o kernel/out/kernel/sched/migt_render.o kernel/out/kernel/sched/glk.o; do
+              echo "--- $obj"
+              aarch64-linux-gnu-nm -a "$obj" | grep -E 'migt_sched_init|game_load_init|pkg_init|__initcall' || true
+            done
+          } | tee candidate-0059-linked-symbol-diagnostic.txt
 
       - name: Revalidate inherited and Candidate0059 gates without make
         run: |
