@@ -1,0 +1,194 @@
+name: Scan Lisa Candidate0061 Direct 5.4.302
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/build-lisa-candidate-0061-direct-302.yml
+      - reconstruction/scripts/candidate_0061_direct_302_scan.py
+      - reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py
+      - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+concurrency:
+  group: lisa-c0061-direct-302
+  cancel-in-progress: true
+
+jobs:
+  direct-302-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout Candidate0061 package
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: package
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Checkout frozen Lisa 5.4.289 source
+        uses: actions/checkout@v4
+        with:
+          repository: Tim0320/android_kernel_xiaomi_lisa
+          ref: 6e568aabc77a06fa787baec1d9e60e4b559874a3
+          path: kernel
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Fetch Direct-302 provenance and semantic oracles
+        run: |
+          set -euo pipefail
+          stable=https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git
+          git -C kernel fetch --no-tags --depth=1 "$stable" \
+            refs/tags/v5.4.289:refs/tags/upstream-v5.4.289 \
+            refs/tags/v5.4.292:refs/tags/upstream-v5.4.292 \
+            refs/tags/v5.4.296:refs/tags/upstream-v5.4.296 \
+            refs/tags/v5.4.299:refs/tags/upstream-v5.4.299 \
+            refs/tags/v5.4.302:refs/tags/upstream-v5.4.302
+
+          aosp=https://android.googlesource.com/kernel/common
+          git -C kernel fetch --no-tags --depth=1 "$aosp" \
+            refs/tags/android11-5.4.302_r00:refs/tags/aosp-android11-5.4.302
+
+          miyume=https://github.com/MiYume0721/android_kernel_xiaomi_sm8350_miyume.git
+          git -C kernel fetch --no-tags --depth=1 "$miyume" \
+            refs/heads/main:refs/tags/miyume-sm8350-5.4.302
+
+          clo=https://git.codelinaro.org/clo/la/kernel/msm-5.4.git
+          if git -C kernel fetch --no-tags --depth=1 "$clo" \
+              refs/heads/kernel.lnx.5.4.r1-rel:refs/tags/clo-msm-5.4-r1-rel; then
+            echo "C0061_DIRECT_302_CLO_FETCH=PASS"
+          else
+            echo "C0061_DIRECT_302_CLO_FETCH=UNAVAILABLE"
+          fi
+
+      - name: Materialize Candidate0058 BPF Stage-A payload
+        run: |
+          set -euo pipefail
+          cat package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part00 \
+              package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part01 \
+              package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part02 \
+              package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part03 \
+            > package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz
+
+      - name: Materialize durable stock ABI oracle
+        id: stock_abi
+        run: |
+          set -euo pipefail
+          git -C package lfs install --local
+          git -C package lfs pull --include="reconstruction/stock/stock-Image/boot.img"
+          boot="package/reconstruction/stock/stock-Image/boot.img"
+          test -s "$boot"
+          test "$(stat -c %s "$boot")" -eq 201326592
+          test "$(sha256sum "$boot" | awk '{print $1}')" = e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+          mkdir -p stock-abi
+          python3 package/reconstruction/scripts/extract_stock_ikheaders_from_boot.py \
+            --boot "$boot" --out stock-abi/stock-kheaders \
+            --manifest candidate-0061-direct-302-stock-ikheaders.json \
+            2>&1 | tee candidate-0061-direct-302-stock-ikheaders.log
+          grep -q '^LISA_STOCK_IKHEADERS_EXTRACT=PASS$' candidate-0061-direct-302-stock-ikheaders.log
+
+      - name: Recreate frozen Candidate0059 source contract
+        id: c0059
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+          STOCK_ABI_ROOT: ${{ github.workspace }}/stock-abi/stock-kheaders
+        run: |
+          set -euo pipefail
+          rm -rf kernel/out && mkdir -p kernel/out
+          cp kernel/reconstruction/stock_ikconfig kernel/out/.config
+          python3 package/reconstruction/scripts/candidate_0059_factory.py
+          python3 package/reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py \
+            --package package --kernel kernel \
+            2>&1 | tee candidate-0061-direct-302-c0059-source.log
+          grep -q '^C0059_INHERITED_SOURCE_STACK_RECREATED=PASS$' candidate-0061-direct-302-c0059-source.log
+
+      - name: Restore Candidate0059 ABI compatibility contract
+        id: compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-direct-302-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_DIRECT_302_C0059_ABI_COMPAT=PASS")
+          PY
+          grep -q '^C0061_DIRECT_302_C0059_ABI_COMPAT=PASS$' candidate-0061-direct-302-compat.log
+          git -C kernel diff --check
+
+      - name: Scan complete 5.4.289 to 5.4.302 semantic surface
+        id: scan
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0061_direct_302_scan.py \
+            --source kernel --out candidate-0061-direct-302-scan.json \
+            2>&1 | tee candidate-0061-direct-302-scan.log
+          grep -q '^C0061_DIRECT_302_SCAN=PASS$' candidate-0061-direct-302-scan.log
+          count="$(python3 -c "import json;print(json.load(open('candidate-0061-direct-302-scan.json'))['semantic_review_count'])")"
+          echo "semantic_review_count=$count" >> "$GITHUB_OUTPUT"
+
+      - name: Gate Direct-302 semantic closure
+        id: closure
+        run: |
+          set -euo pipefail
+          count="${{ steps.scan.outputs.semantic_review_count }}"
+          if [ "$count" -ne 0 ]; then
+            echo "C0061_DIRECT_302_SEMANTIC_CLOSURE=BLOCKED count=$count"
+            exit 1
+          fi
+          echo "C0061_DIRECT_302_SEMANTIC_CLOSURE=PASS"
+
+      - name: Report Direct-302 scan evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Direct 5.4.302 semantic scan"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- direct_302_scan: $SCAN_OUTCOME"
+            echo "- semantic_closure: $CLOSURE_OUTCOME"
+            if test -s candidate-0061-direct-302-scan.json; then
+              python3 - <<'PY'
+          import json
+          p=json.load(open("candidate-0061-direct-302-scan.json"))
+          print("- changed_file_count:", len(p.get("files", [])))
+          print("- counts:", p.get("counts", {}))
+          print("- semantic_review_count:", p.get("semantic_review_count"))
+          print("- semantic_paths:", [x.get("path") for x in p.get("semantic_review", [])])
+          PY
+            fi
+          } > candidate-0061-direct-302-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-direct-302-issue.md
+
+      - name: Upload Direct-302 scan evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-direct-302-scan-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-direct-302-*
