@@ -30,7 +30,7 @@
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
-    "phase_3_batch_a_5_4_290_to_5_4_292": "REVIEWED_CONFIG_DELTA_RERUN_PENDING",
+    "phase_3_batch_a_5_4_290_to_5_4_292": "WORKFLOW_REBUILT_CONFIG_ORACLE_RERUN_PENDING",
     "phase_4_batch_b_5_4_293_to_5_4_296": "NOT_STARTED",
     "phase_5_batch_c_5_4_297_to_5_4_299": "NOT_STARTED",
     "phase_6_batch_d_5_4_300_to_5_4_302": "NOT_STARTED",
@@ -89,15 +89,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "356ba83d5e2a86fe12bf0875b7250a9d387ae7c5",
+  "last_checked_commit": "62cdd2e12e5e971096302ceff4eeab3a3d804dd4",
   "last_checked_run": 37323757115,
-  "blocker": "BATCH_A_REVIEWED_CONFIG_DELTA_RESTORED_RERUN_PENDING",
-  "next_action": "Inspect the Candidate0061 Batch A run triggered by 356ba83 or later. Run 37323757115 proved the artifact-independent stock ABI path is working: stock IKHEADERS recreation PASS, Candidate0059 inherited source recreation PASS, and Stable Batch A apply PASS. The first blocker was the reviewed-control config hash: stock_ikconfig + generic flags produced 4a60f46f2cc7afa497fd4c051e5c9290cf4769c4fe43a461a0713d97fcdac1f3 instead of reviewed 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397. Direct artifact comparison against run 37306854501 showed the complete config delta: C0059 LOCALVERSION, LOCALVERSION_AUTO=n, COMPAT_VDSO=n, ARM64_USE_LSE_ATOMICS=n, RELR=n, PERF_HELPER=y, and MILLET_CGROUP/SIG/BINDER/PKG/BINDER_GKI/CORE/HS=y. Commit 356ba83 now replays exactly those settings before olddefconfig and keeps the reviewed config hash gate unchanged. If config passes, continue through control build, exact Module.symvers hash, two-export ABI compatibility delta, target rebuild and exact delta gate; if Batch A passes, begin Batch B immediately.",
+  "blocker": "BATCH_A_WORKFLOW_STRUCTURE_REPAIRED_RERUN_PENDING",
+  "next_action": "Inspect the Candidate0061 Batch A run triggered by 4b946ef or later. After the user reported the post-356ba83 failure, fresh repository inspection found that 356ba83 had structurally corrupted the workflow itself: the CONFIG_CFI_CLANG grep was truncated and duplicate build/ABI/report content had leaked beneath the artifact upload path block. Because that malformed structure prevented reliable issue-sink evidence, 37323757115 remains the latest run with complete job/log evidence. Commit c37d41c restored candidate_0061_batch_a_apply.py to side-effect-free STABLE_ONLY behavior, removing the 03b7025 config-oracle mutation. Commit 4b946ef rebuilt the workflow from the first valid body, trimmed all post-upload garbage, retained one control/compat/target/ABI/report/upload sequence, and replays the reviewed Candidate0059 config delta only in the MIXED_CONFLICT build-oracle gate. Read back confirms one clean CFI gate, no stale artifact IDs, no post-upload garbage, and exact config hash gate retained. If config/control/compat/target/ABI pass, mark Batch A PASS and immediately start Batch B.",
   "next_expected_evidence": [
-    "New Candidate0061 Batch A run for 356ba83 or later",
+    "New Candidate0061 Batch A run for 4b946ef or later",
     "LISA_STOCK_IKHEADERS_EXTRACT=PASS",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
-    "C0061_BATCH_A_APPLY=PASS",
+    "C0061_BATCH_A_APPLY=PASS with stable apply not mutating reconstruction/stock_ikconfig",
     "C0061_BATCH_A_CONTROL_CONFIG_SHA256=664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
     "C0061_BATCH_A_CONTROL_SYMVERS_SHA256=846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
     "C0061_BATCH_A_CONTROL_COMPILE_MODPOST=PASS",
@@ -204,7 +204,12 @@
     "Run 37323757115 first blocker moved to config gate: produced config SHA256 4a60f46f2cc7afa497fd4c051e5c9290cf4769c4fe43a461a0713d97fcdac1f3 instead of reviewed 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397",
     "Reviewed run 37306854501 artifact re-downloaded and hashes revalidated: .config 664d12d837af3e3b26d2f04da0f11cefd8ba2b53e0fa01f3e7e274921f589397, Module.symvers 846e9ceec05d4da4a0bf9c3ca4b7677bd1955091ccd0d7c46d4848bb7c14b7ff",
     "Direct config comparison found a complete 28-line delta limited to C0059 localversion, LOCALVERSION_AUTO, COMPAT_VDSO/LSE/RELR, PERF_HELPER and seven MILLET options",
-    "Batch A workflow commit 356ba83 now replays the complete reviewed Candidate0059 config delta before olddefconfig while retaining the exact control hash gate"
+    "Batch A workflow commit 356ba83 now replays the complete reviewed Candidate0059 config delta before olddefconfig while retaining the exact control hash gate",
+    "Post-356ba83 failure investigation found workflow structural corruption: CONFIG_CFI_CLANG grep truncated and duplicate build/ABI/report content leaked under the artifact path block",
+    "Unintended 03b7025 Candidate0059 config-oracle mutation removed from the STABLE_ONLY Batch A apply script at c37d41c",
+    "Batch A workflow rebuilt at 4b946ef from the first valid body and trimmed to the intended upload-path end",
+    "4b946ef read-back validation: 430 lines; exactly one control/compat/target/ABI/report/upload step; one exact CFI gate; no stale cross-run artifact IDs; no post-upload garbage; exact reviewed config hash retained",
+    "Canonical plan updated at 62cdd2e to keep STABLE_ONLY source application separate from MIXED_CONFLICT config-oracle reconstruction"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
