@@ -217,14 +217,20 @@ Same gates as Phase 3.
 Special attention:
 - pinctrl/QCOM/UFS-reset relevant changes.
 - Official linux-stable v5.4.x tags/incremental patches remain the canonical stable provenance.
-- AOSP/ACK android11-5.4.x_r00 is the Android/GKI semantic oracle. For each Batch B/C/D
-  conflict, compare the corresponding Android Common Kernel endpoint before inventing an
-  Android-specific adaptation. android11-5.4.302_r00 is the final Android 5.4.302 oracle.
-- Qualcomm CLO/CodeLinaro msm-5.4 is a downstream semantic oracle for Qualcomm-specific
-  BSP structure/backports, not the canonical Linux version source and not a whole-tree donor.
-- Lisa/Xiaomi source and the frozen Candidate0059 build contract remain the device/KMI oracle.
-- The acceptance hierarchy is: linux-stable provenance -> AOSP/ACK Android semantics ->
-  CLO Qualcomm semantics -> Lisa device adaptation -> compile/modpost -> KMI/ABI gate.
+- MiYume0721/android_kernel_xiaomi_sm8350_miyume main is the preferred SM8350/Xiaomi
+  5.4.302 downstream final-state oracle for Qualcomm/Xiaomi paths. It is close enough to
+  expose the expected 5.4.302 vendor semantics, but it is not a whole-tree donor because it
+  also contains ReSukiSU/SuSFS, BPF 5.10 backports, F2FS tuning, Android17 support and
+  targets venus/mars/star/haydn rather than Lisa.
+- AOSP/ACK android11-5.4.x_r00 is used when a conflict is Android-common/GKI-specific.
+  android11-5.4.302_r00 remains the final Android 5.4.302 endpoint oracle.
+- Qualcomm CLO/CodeLinaro msm-5.4 becomes a fallback provenance/semantic oracle: consult it
+  when MiYume disagrees with stable/AOSP, lacks the path, or the exact Qualcomm lineage is
+  unclear. Do not query CLO mechanically for every conflict.
+- Lisa/Xiaomi source and the frozen Candidate0059 build contract remain the final device/KMI oracle.
+- The practical acceptance hierarchy is: linux-stable provenance -> MiYume SM8350/Xiaomi
+  final-state semantics -> AOSP/ACK for GKI-specific semantics -> CLO fallback when needed ->
+  Lisa device adaptation -> compile/modpost -> KMI/ABI gate.
 - The upstream kernel documents scripts/patch-kernel as an automation helper for normal
   stable patch application, and kernel.org publishes incremental 5.4.y patches. Batch B/C/D
   should therefore auto-apply clean hunks and pre-scan all non-clean overlaps in one run;
