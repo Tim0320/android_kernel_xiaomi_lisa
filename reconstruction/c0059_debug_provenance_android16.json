@@ -1,0 +1,26 @@
+{
+  "candidate": "0059",
+  "build_scope": "android16-performance",
+  "resolved": false,
+  "kernel_causality_excluded": true,
+  "same_kernel_controlled_comparison": true,
+  "android16_runtime_matches_stock": true,
+  "candidate_boot_ramdisk_stock_equivalent": true,
+  "external_override_unresolved": true,
+  "first_override_path_proven": false,
+  "ro_secure_zero_source_resolved": false,
+  "override_source": "external-to-candidate-kernel-unresolved",
+  "fix_location": "outside-candidate-kernel-pending-provenance",
+  "allow_performance_build": true,
+  "source_evidence": [
+    "Candidate0057 fa96c94 with the same reconstructed kernel identity produced 1/1/0/0 debug properties on Android14 but 0/0/1/1 on Android16.",
+    "Candidate0058 published boot ramdisk is byte-identical to the healthy stock ramdisk and contains no force_debuggable, adb_debug.prop, or userdebug_plat_sepolicy.cil.",
+    "User A vendor_boot live image is buildvariant=user and contains no obvious force_debuggable, adb_debug.prop, debug_ramdisk, or ro.secure=0 marker.",
+    "The Android14 first override source and independent ro.secure=0 source remain unresolved and must not be represented as a kernel fix."
+  ],
+  "affected_files": [
+    "reconstruction/c0059_developer_options_provenance_20261005.md",
+    "reconstruction/tools/collect_c0059_boot_provenance.ps1"
+  ],
+  "postdevice_required": true
+}
