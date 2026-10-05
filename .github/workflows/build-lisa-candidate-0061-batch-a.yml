@@ -112,12 +112,30 @@ jobs:
           python3 package/reconstruction/scripts/candidate_0059_factory.py
           python3 - <<'PY' 2>&1 | tee candidate-0061-c0059-source.log
           from pathlib import Path
-          import candidate_0059_ownership_patch as inherited
+          from types import SimpleNamespace
+          import candidate_0056_power_patch as power
+          import candidate_0059_ownership_patch as ownership
           import candidate_0059_perf_port as perf
           import candidate_0059_bpf_port as bpf
           root = Path("package").resolve()
           kernel = Path("kernel").resolve()
-          inherited.apply(root, kernel)
+
+          # The pinned 5.4.289 source already contains the Candidate0055 UFS
+          # registry bridge. Re-applying the retained chain double-patches it.
+          # Recreate only the missing later layers, preserving the existing UFS
+          # source bytes.
+          ufs = (kernel / "drivers/scsi/ufs/ufshcd.c").read_text()
+          mem = (kernel / "drivers/misc/mi-memory/mem_interface.c").read_text()
+          if "set_ufs_hba_data(sdev);" not in ufs or "void set_ufs_hba_data(" not in mem:
+              raise RuntimeError("Frozen 5.4.289 source no longer carries the expected Candidate0055 UFS bridge")
+
+          power.retained = lambda _root: SimpleNamespace(apply=lambda _r, _k: None)
+          if not (kernel / "kernel/power/lisa_power_compat.c").exists():
+              power.apply(root, kernel)
+
+          ownership.retained = lambda _root: SimpleNamespace(apply=lambda _r, _k: None)
+          ownership.apply(root, kernel)
+
           perf.apply_sources(root, kernel)
           bpf.apply(root, kernel)
           print("C0059_INHERITED_SOURCE_STACK_RECREATED=PASS")
