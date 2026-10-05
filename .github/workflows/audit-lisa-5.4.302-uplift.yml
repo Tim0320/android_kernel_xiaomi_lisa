@@ -155,14 +155,7 @@ jobs:
             echo "- run_id: $RUN_ID"
             echo "- job_status: $JOB_STATUS"
             if test -s candidate-0061-batch-a-review.json; then
-              python3 - <<'PY'
-          import json
-          p=json.load(open("candidate-0061-batch-a-review.json"))
-          print("- review_counts:", p.get("counts", {}))
-          print("- semantic_review_count:", len(p.get("semantic_review", [])))
-          for x in p.get("semantic_review", []):
-              print("  -", x)
-          PY
+              python3 -c "import json; p=json.load(open('candidate-0061-batch-a-review.json')); print('- review_counts:', p.get('counts', {})); print('- semantic_review_count:', len(p.get('semantic_review', []))); [print('  -', x) for x in p.get('semantic_review', [])]"
             else
               echo "- batch_a_review: MISSING"
             fi
