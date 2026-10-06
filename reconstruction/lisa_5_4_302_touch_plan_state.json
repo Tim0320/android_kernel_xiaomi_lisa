@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_DIRECT_302_INTEGRATED_STATIC_ABI_GATE",
+  "current_phase": "PHASE_7_TOUCH_JANK_HOTPATH_CORRECTION",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -48,14 +48,14 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "NOT_STARTED",
+    "phase_7_touch_jank_hotpath_correction": "ACTIVE_PHASE7A_TOUCH_PERF_ONLY_STATIC_RERUN_IN_PROGRESS",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "IDENTITY_SUFFIX_FIX_RERUN_IN_PROGRESS"
+    "phase_6_direct_302_integrated_static_abi_gate": "DONE_STATIC_ABI_IDENTITY_PACKAGING_PASS_RUN_37498709196"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,26 +99,26 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "OPEN",
-    "abi_module_gate": "OPEN_FOR_C0061",
+    "stable_uplift_gate": "PASS",
+    "abi_module_gate": "PASS_C0061_REMOVED_0",
     "touch_latency_gate": "FAIL_ON_C0059_USERB",
     "performance_retention_gate": "PASS_SUBJECTIVE_ON_C0059_USERB",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "b109290793251d850e40361ce364b337dc54453b",
-  "last_checked_run": 37498709196,
-  "blocker": "IDENTITY_DIRTY_SCM_PLUS_FIXED_RERUN_IN_PROGRESS",
-  "next_action": "Inspect integrated run 37498709196 from commit b109290. Prior run 37488653473 passed integrated 5.4.302 Image/modules/dtbs/modpost and ABI/KMI with removed_symbol_count=0, changed_crc_count=5, added_symbol_count=12, then failed only because kernelrelease had an SCM dirty suffix '+': expected 5.4.302-qgki-lisa-c0061-r05a48c6-by-Tim0320 but actual was the same string plus '+'. Commit b109290 sets LOCALVERSION= explicitly on control/target make invocations and kernelrelease query to suppress the non-deterministic dirty SCM suffix while retaining CONFIG_LOCALVERSION and the strict identity check. Require identity exact-match PASS, ARM64 Image magic PASS, then proceed immediately to boot.img packaging/static validation.",
+  "last_checked_commit": "60d45eaaec358d62ba17f5cd930b187ee6042dae",
+  "last_checked_run": 37508028472,
+  "blocker": "NONE_PHASE7A_RUN_37508028472_IN_PROGRESS",
+  "next_action": "Inspect Phase7A integrated run 37508028472 from commit 60d45ea. The prior baseline run 37498709196 completed Direct-302 static/ABI/identity/packaging PASS and produced static-verified boot artifact 11431741252. Phase7A is a Candidate0061-only TOUCH_PERF_ONLY overlay applied after Direct-302 materialization: retain task/MIGT accounting, remove shared user history-slot writes from the WALT hot path, roll user history via system_long_wq, and add a bounded donor-equivalent pause hook. Run 37507943931 is invalid evidence because workflow YAML was corrupted before runner allocation; workflow was rebuilt cleanly from b109290 at 60d45ea. Require Phase7 overlay apply PASS, compile/modpost PASS, ABI removed=0 with no unexpected delta beyond reviewed stable provenance, exact identity PASS, and boot static packaging PASS.",
   "next_expected_evidence": [
-    "Integrated run 37498709196 control build PASS",
-    "Direct-302 semantic closure remains raw=34 reviewed=34 unresolved=0",
+    "Phase7A run 37508028472 reaches runner and Phase7 overlay apply step",
+    "C0061_TOUCH_JANK_HOTPATH=PASS CLASSIFICATION=TOUCH_PERF_ONLY",
+    "user_state history-slot hot-path writes absent while migt_hook/task history remain",
+    "system_long_wq deferred user-history roll present",
     "integrated 5.4.302 Image/modules/dtbs/modpost PASS",
     "C0061_INTEGRATED_ABI_KMI_GATE=PASS with removed_symbol_count=0",
-    "actual_kernelrelease exactly equals expected 5.4.302-qgki-lisa-c0061-r<short>-by-Tim0320 with no trailing '+'",
-    "C0061_INTEGRATED_ARM64_IMAGE_MAGIC=PASS",
-    "C0061_INTEGRATED_IDENTITY_GATE=PASS",
-    "C0061_INTEGRATED_BOOT_STATIC_GATE=PASS and boot.img uploaded"
+    "exact Candidate0061 kernel identity PASS",
+    "C0061_INTEGRATED_BOOT_STATIC_GATE=PASS with new Phase7A boot artifact"
   ],
   "forbidden": [
     "global frequency pin",
@@ -434,7 +434,12 @@
     "Run 37488653473 completed target Image/modules/dtbs/modpost PASS and ABI/KMI PASS with removed=0, changed=5, added=12",
     "Run 37488653473 first failing gate moved to kernel identity only: expected release matched actual except for trailing dirty-SCM '+' suffix",
     "Commit b109290793251d850e40361ce364b337dc54453b makes integrated control/target builds deterministic by passing LOCALVERSION= to make and kernelrelease without weakening the exact identity gate",
-    "Integrated rerun 37498709196 started from b109290"
+    "Integrated rerun 37498709196 started from b109290",
+    "Run 37498709196 completed SUCCESS: Direct-302 34/34/0, compile/modpost PASS, ABI removed=0 changed=5 added=12, exact identity PASS, boot static packaging PASS",
+    "Static-verified Candidate0061 5.4.302 boot artifact 11431741252 produced from b109290; boot SHA256 7d459f77556006185a46129a1bae78a1c545e524cb517b089ad584626f3aa629",
+    "Candidate0061 Phase7A TOUCH_PERF_ONLY overlay added at 164f93b to remove shared user history hot-path copies and defer user-history rolling to system_long_wq while preserving task/MIGT accounting",
+    "Phase7 workflow first attempt 37507943931 invalidated by JS replacement-token YAML corruption before runner allocation",
+    "Phase7 workflow rebuilt cleanly from successful b109290 workflow at 60d45ea; run 37508028472 started"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
