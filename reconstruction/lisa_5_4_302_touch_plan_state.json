@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-06",
+  "updated_at": "2026-10-07",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -55,7 +55,7 @@
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "ABI_REMOVED_2_COMPAT_RERUN_IN_PROGRESS"
+    "phase_6_direct_302_integrated_static_abi_gate": "IDENTITY_SUFFIX_FIX_RERUN_IN_PROGRESS"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -106,19 +106,19 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "05a48c6f6c0c1234b9581539cdc0a07c5dbf01a5",
-  "last_checked_run": 37488653473,
-  "blocker": "NONE_RUNS_37488653736_37488653473_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37488653736 / job 112355290151 and integrated run 37488653473. Prior integrated run 37472578561 proved the timer_delete_sync bridge works: integrated 5.4.302 Image/modules/dtbs/modpost all PASS, then ABI/KMI failed only because removed symbols were irq_set_affinity_hint and qdisc_warn_nonwc (removed=2, changed CRC=5 xHCI symbols, added=12). Stable provenance shows irq_set_affinity_hint export was removed by stable commit 7b2a6732 when it became an inline deprecated wrapper over __irq_apply_affinity_hint; qdisc_warn_nonwc export was removed by stable commit 71d84658 when it became header inline as part of the QFQ null-deref fix. Commit bf74d0a restores only these two Candidate0059 compatibility exports while preserving Stable __irq_apply_affinity_hint/new affinity APIs and qdisc_peek_len/QFQ fix. Workflows now rerun the compatibility layer after Direct-302 materialization. Parser corruption caused by JavaScript $' replacement expansion was removed by rebuilding from the last known-good workflows at 6bc6335/fa7de6c; compatibility gate variable shadowing was fixed at 7221f75 and pre/post-stable gate logic at 05a48c6. Require Direct-302 pre-compat, semantic closure 34/34/0, materialization, post-compat and git diff check all PASS. Then require integrated target build PASS and ABI removed symbols=0. If ABI passes, proceed immediately to identity and boot.img packaging/static validation; repair only the first actual failing gate.",
+  "last_checked_commit": "b109290793251d850e40361ce364b337dc54453b",
+  "last_checked_run": 37498709196,
+  "blocker": "IDENTITY_DIRTY_SCM_PLUS_FIXED_RERUN_IN_PROGRESS",
+  "next_action": "Inspect integrated run 37498709196 from commit b109290. Prior run 37488653473 passed integrated 5.4.302 Image/modules/dtbs/modpost and ABI/KMI with removed_symbol_count=0, changed_crc_count=5, added_symbol_count=12, then failed only because kernelrelease had an SCM dirty suffix '+': expected 5.4.302-qgki-lisa-c0061-r05a48c6-by-Tim0320 but actual was the same string plus '+'. Commit b109290 sets LOCALVERSION= explicitly on control/target make invocations and kernelrelease query to suppress the non-deterministic dirty SCM suffix while retaining CONFIG_LOCALVERSION and the strict identity check. Require identity exact-match PASS, ARM64 Image magic PASS, then proceed immediately to boot.img packaging/static validation.",
   "next_expected_evidence": [
-    "Direct-302 run 37488653736 pre-materialization C0059 compatibility step PASS",
-    "Direct-302 semantic closure remains raw=34 reviewed=34 unresolved=0 and source_identity=5.4.302",
-    "post-materialization compatibility step restores EXPORT_SYMBOL_GPL(irq_set_affinity_hint) while retaining __irq_apply_affinity_hint/new Stable affinity APIs",
-    "post-materialization compatibility step restores EXPORT_SYMBOL(qdisc_warn_nonwc) while retaining qdisc_peek_len and the Stable QFQ null-deref fix",
-    "integrated 5.4.302 Image/modules/dtbs/modpost remains PASS",
+    "Integrated run 37498709196 control build PASS",
+    "Direct-302 semantic closure remains raw=34 reviewed=34 unresolved=0",
+    "integrated 5.4.302 Image/modules/dtbs/modpost PASS",
     "C0061_INTEGRATED_ABI_KMI_GATE=PASS with removed_symbol_count=0",
-    "five xHCI CRC changes and remaining added symbols are recorded as Stable/reviewed provenance",
-    "kernel identity and boot.img packaging/static validation run immediately after ABI PASS"
+    "actual_kernelrelease exactly equals expected 5.4.302-qgki-lisa-c0061-r<short>-by-Tim0320 with no trailing '+'",
+    "C0061_INTEGRATED_ARM64_IMAGE_MAGIC=PASS",
+    "C0061_INTEGRATED_IDENTITY_GATE=PASS",
+    "C0061_INTEGRATED_BOOT_STATIC_GATE=PASS and boot.img uploaded"
   ],
   "forbidden": [
     "global frequency pin",
@@ -430,7 +430,11 @@
     "Candidate0061 compatibility commit bf74d0a restores the two legacy C0059 exports without reverting Stable __irq_apply_affinity_hint or qdisc_peek_len/QFQ semantics",
     "Direct and integrated workflows rebuilt from known-good versions at 6bc6335/fa7de6c after JS replacement-token corruption; both include one post-materialization C0059 KMI compatibility step",
     "Compatibility gate qcom/pkt_sched header variable shadowing fixed at 7221f75 and pre/post-Stable validation made stage-aware at 05a48c6",
-    "Direct-302 run 37488653736 / job 112355290151 and integrated run 37488653473 started from 05a48c6"
+    "Direct-302 run 37488653736 / job 112355290151 and integrated run 37488653473 started from 05a48c6",
+    "Run 37488653473 completed target Image/modules/dtbs/modpost PASS and ABI/KMI PASS with removed=0, changed=5, added=12",
+    "Run 37488653473 first failing gate moved to kernel identity only: expected release matched actual except for trailing dirty-SCM '+' suffix",
+    "Commit b109290793251d850e40361ce364b337dc54453b makes integrated control/target builds deterministic by passing LOCALVERSION= to make and kernelrelease without weakening the exact identity gate",
+    "Integrated rerun 37498709196 started from b109290"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
