@@ -993,6 +993,20 @@ def adapt_pid_h(root: Path):
     p.write_text(s)
 
 
+def adapt_usbnet_h(root: Path):
+    p = root / "include/linux/usb/usbnet.h"
+    s = p.read_text()
+    token = "#\t\tdefine EVENT_LINK_CARRIER_ON\t14\n"
+    if token not in s:
+        anchor = "#\t\tdefine EVENT_NO_IP_ALIGN\t13\n"
+        s = once(s, anchor, anchor + token, "Direct-302 usbnet carrier event")
+    if "ANDROID_KABI_USE2(1, u32 rx_speed, u32 tx_speed);" not in s:
+        raise RuntimeError("Direct-302 usbnet Android KABI layout missing")
+    if s.count("EVENT_LINK_CARRIER_ON") != 1:
+        raise RuntimeError("Direct-302 usbnet carrier event count invalid")
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1059,6 +1073,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "include/linux/pid.h":
         adapt_pid_h(root)
         return "DIRECT_302_PID_H_B"
+
+    if path == "include/linux/usb/usbnet.h":
+        adapt_usbnet_h(root)
+        return "DIRECT_302_USBNET_H_C"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
