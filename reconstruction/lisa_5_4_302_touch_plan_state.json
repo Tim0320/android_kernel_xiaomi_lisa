@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_5_DIRECT_302_SEMANTIC_CONFLICT_CLOSURE",
+  "current_phase": "PHASE_6_DIRECT_302_INTEGRATED_STATIC_ABI_GATE",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -54,8 +54,8 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "POSIX_TIMERS_B_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
-    "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
+    "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS",
+    "phase_6_direct_302_integrated_static_abi_gate": "INTEGRATED_302_RUN_IN_PROGRESS"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -106,18 +106,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "2185ace43aa48a681f3ec582c5527532e3682591",
-  "last_checked_run": 37457594973,
-  "blocker": "WAITING_DIRECT_302_LEGACY_REJECT_HYGIENE_RERUN",
-  "next_action": "Inspect Direct-302 run 37457594973. Run 37456272305 already proved all 33 reviewed semantic paths close and net/core/sock.c B+D passes; its only failure was two stale tracked .rej sidecars inherited from frozen Candidate0059 commit 6e568a. Commit 61a214c removes exactly those two verified legacy FTS Makefile.rej artifacts during C0061 source recreation without modifying frozen Candidate0059. Verify C0061_C0059_LEGACY_REJECT_CLEANUP=PASS count=2, semantic closure raw=33 reviewed=33 unresolved=0, no .rej remains, git diff --check PASS, and source_identity=5.4.302. If those pass, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Ignore legacy Batch B run 37457594895 as provenance-only; commit 2185ace makes the Batch B workflow manual-only so future Direct-302 shared-source changes cannot revive the obsolete 5.4.296 gate.",
+  "last_checked_commit": "aef18e99343dbd5109ac3dcd613f6f5df20c14d6",
+  "last_checked_run": 37461749144,
+  "blocker": "NONE_RUN_37461749144_IN_PROGRESS",
+  "next_action": "Inspect integrated Candidate0061 run 37461749144 / job 112262767364. Direct-302 run 37457594973 is PASS with C0061_C0059_LEGACY_REJECT_CLEANUP=PASS count=2, semantic closure raw=33 reviewed=33 unresolved=0, no reject hygiene blocker, git_diff_check=PASS and source_identity=5.4.302. Ignore legacy Batch B run 37457594895 failure because that workflow is retired/provenance-only and was made manual-only at 2185ace. The first generated integrated workflow run 37461485426 failed at parser time because JS replacement-token expansion corrupted the YAML; commit aef18e9 rebuilt the workflow cleanly from the validated Direct-302 workflow, and run 37461749144 is now executing. Verify in order: same-run C0059 control config/build, Direct-302 materialization, integrated 5.4.302 target config/build, ABI/KMI removed symbols=0, kernelrelease/ARM64 identity, then stock-layout boot.img packaging/static validation. Repair only the first actual failing gate.",
   "next_expected_evidence": [
-    "run 37457594973 C0061_C0059_LEGACY_REJECT_CLEANUP=PASS count=2",
-    "semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "Direct-302 materialization leaves no .rej files",
-    "git diff --check PASS",
-    "source_identity=5.4.302",
-    "then single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate starts",
-    "legacy Batch B remains provenance-only and future push auto-trigger is disabled"
+    "run 37461749144 Candidate0059 same-run control config/build PASS",
+    "Direct-302 scan/materialization remains PASS raw=33 reviewed=33 unresolved=0 source_identity=5.4.302",
+    "integrated 5.4.302 Image/modules/dtbs/modpost PASS",
+    "C0061_INTEGRATED_ABI_KMI_GATE=PASS removed=0",
+    "kernelrelease is 5.4.302-qgki-lisa-c0061-r<sha>-by-Tim0320 and ARM64 Image magic PASS",
+    "C0061_INTEGRATED_BOOT_STATIC_GATE=PASS and boot.img artifact is produced",
+    "then label Candidate0061 as static/ABI verified pending HyperOS 3.0.9 A16 device validation"
   ],
   "forbidden": [
     "global frequency pin",
@@ -406,7 +406,12 @@
     "Verified frozen Candidate0059 commit 6e568a contains exactly two tracked .rej files, both identical legacy FTS V521 Makefile reject artifacts",
     "C0061 source recreation now removes only those two verified inherited reject sidecars at commit 61a214c while leaving frozen Candidate0059 immutable",
     "Legacy Batch B workflow made manual-only at 2185ace so shared Direct-302 source-recreation changes no longer revive the obsolete 5.4.296 build gate",
-    "Direct-302 run 37457594973 is in progress from 61a214c"
+    "Direct-302 run 37457594973 is in progress from 61a214c",
+    "Direct-302 run 37457594973 completed SUCCESS: legacy reject cleanup PASS count=2, semantic closure 33/33 unresolved=0, materialization PASS, git diff check PASS, source identity 5.4.302",
+    "Legacy Batch B run 37457594895 failure explicitly ignored as retired provenance-only workflow; auto push trigger disabled at 2185ace",
+    "Initial integrated workflow commit 02f1651 created run 37461485426 but failed before jobs due generated YAML corruption from JavaScript replacement-token expansion",
+    "Integrated workflow rebuilt cleanly from validated Direct-302 base at aef18e9; structure sanity check found exactly one control config/build, target config/build, ABI, identity and boot packaging step",
+    "Integrated Candidate0061 5.4.302 run 37461749144 / job 112262767364 started successfully"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
