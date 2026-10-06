@@ -485,8 +485,8 @@ Phase 7A intervention:
 6. add a bounded donor-equivalent pause hook without a new userspace ABI;
 7. rebuild the same integrated static/ABI/identity/boot gates.
 
-Current validation run:
-- run 37508028472 from commit 60d45ea;
+Completed Phase7A evidence:
+- run 37508028472 completed SUCCESS through overlay apply, compile/modpost, ABI removed=0, identity and boot packaging, but its boot is retained as static evidence only because the first pause implementation was semantically coupled to Stage9 migt_boost_policy.\n\nCurrent validation run:\n- run 37513703360 from commit 55105aa;
 - prior run 37507943931 is ignored because it failed before runner allocation from workflow text-generation corruption, not from kernel source.
 
 If the Phase 7A static gate passes, produce a new Candidate0061 static-verified boot labelled device-validation-pending and move to HyperOS 3.0.9/A16 device A/B touch+jank validation. If Phase 7A has no runtime improvement, proceed to Phase 8 FREQ_QOS/touch-boost isolation without modifying Goodix firmware/driver.
