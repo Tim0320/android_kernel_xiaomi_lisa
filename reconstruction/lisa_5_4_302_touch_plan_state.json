@@ -108,13 +108,13 @@
   },
   "last_checked_commit": "c73acf77344c56e63a0c445ea1c78a5c0aa05a49",
   "last_checked_run": 37445457034,
-  "blocker": "NONE_RUN_37445457034_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37445457034 / job 112209052926. Prior run 37444847262 kept semantic closure raw=33 reviewed=33 unresolved=0, passed FunctionFS A+D, and advanced first materialization blocker to drivers/usb/gadget/function/f_ncm.c Segment D. Commit c73acf7 moves ncm_string_defs[STRING_MAC_IDX].s = ncm->ethaddr from ncm_alloc() to ncm_bind() after Lisa's bind-time gether_get_host_addr_cdc/ioport setup, matching the 5.4.302 stable endpoint and MiYume final-state while preserving Xiaomi gether_setup_default()/register lifecycle. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate.",
+  "blocker": "WAITING_DIRECT_302_FUNCTION_NCM_D_RERUN",
+  "next_action": "Inspect Direct-302 run 37445457034 triggered by commit c73acf77344c56e63a0c445ea1c78a5c0aa05a49. Prior run 37444847262 kept semantic closure raw=33 reviewed=33 unresolved=0, passed the FunctionFS A+D adapter, and advanced first materialization blocker to drivers/usb/gadget/function/f_ncm.c Segment D. Commit c73acf77 moves the NCM MAC string pointer from allocation time to bind time, matching the reviewed 5.4.302 endpoint while preserving Lisa/Xiaomi gether_setup_default(), gether_register_netdev(), bind-time host-address generation and ioport flow. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
   "next_expected_evidence": [
     "run 37445457034 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/usb/gadget/function/f_ncm.c Segment D materializes successfully",
-    "NCM MAC string assignment exists exactly once in ncm_bind and not ncm_alloc",
-    "Lisa/MiYume downstream gether_setup_default/register/address lifecycle remains intact",
+    "drivers/usb/gadget/function/f_ncm.c Segment-D adapter materializes successfully",
+    "exactly one NCM MAC string assignment remains and it is bind-time",
+    "Lisa/Xiaomi gether_setup_default/register_netdev/host-address/ioport flow remains intact",
     "next blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
     "source_identity=5.4.302 before integrated build starts"
@@ -339,7 +339,10 @@
     "Run 37444847262 advanced first materialization blocker to drivers/usb/gadget/function/f_ncm.c Segment D",
     "Official v5.4.299->v5.4.302 NCM delta verified as moving the shared MAC string assignment from alloc-time to bind-time; MiYume 5.4.302 confirms the same endpoint on Xiaomi downstream bind-time address generation",
     "Direct-302 NCM Segment-D endpoint adapter committed at c73acf7 preserving Lisa gether_setup_default/register lifecycle",
-    "Direct-302 run 37445457034 / job 112209052926 started"
+    "Direct-302 run 37445457034 / job 112209052926 started",
+    "Run 37444847262 confirmed Direct-302 semantic closure raw=33 reviewed=33 unresolved=0, FunctionFS A+D adapter PASS, and advanced first materialization blocker to drivers/usb/gadget/function/f_ncm.c Segment D",
+    "Reviewed Direct-302 Segment-D NCM bind-time MAC endpoint committed at c73acf77; upstream 5.4.302 and MiYume 5.4.302 confirm bind-time MAC string assignment while Lisa/Xiaomi gether lifecycle is preserved",
+    "Direct-302 run 37445457034 entered in-progress execution from c73acf77"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
