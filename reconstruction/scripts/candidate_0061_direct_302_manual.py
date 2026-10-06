@@ -1522,6 +1522,35 @@ def adapt_slub(root: Path):
     p.write_text(s)
 
 
+
+def adapt_zsmalloc(root: Path):
+    p = root / "mm/zsmalloc.c"
+    s = p.read_text()
+
+    start = s.find("static struct zspage *cache_alloc_zspage(struct zs_pool *pool, gfp_t flags)")
+    if start < 0:
+        raise RuntimeError("Direct-302 zsmalloc: cache_alloc_zspage start not found")
+    end = s.find("\n}", start)
+    if end < 0:
+        raise RuntimeError("Direct-302 zsmalloc: cache_alloc_zspage end not found")
+    end += 2
+    fn = s[start:end]
+
+    if "kmem_cache_zalloc(pool->zspage_cachep" not in fn:
+        old = "kmem_cache_alloc(pool->zspage_cachep"
+        if fn.count(old) != 1:
+            raise RuntimeError(
+                f"Direct-302 zsmalloc: kmem_cache_alloc anchor count={fn.count(old)}"
+            )
+        fn = fn.replace(old, "kmem_cache_zalloc(pool->zspage_cachep", 1)
+
+    if "kmem_cache_zalloc(pool->zspage_cachep" not in fn:
+        raise RuntimeError("Direct-302 zsmalloc endpoint missing kmem_cache_zalloc")
+
+    s = s[:start] + fn + s[end:]
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1576,6 +1605,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "mm/slub.c":
         adapt_slub(root)
         return "DIRECT_302_SLUB_C"
+
+    if path == "mm/zsmalloc.c":
+        adapt_zsmalloc(root)
+        return "DIRECT_302_ZSMALLOC_C"
 
     if path == "drivers/usb/gadget/function/f_fs.c":
         adapt_functionfs(root)
