@@ -48,7 +48,7 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "ACTIVE_PHASE7A_TOUCH_PERF_ONLY_STATIC_RERUN_IN_PROGRESS",
+    "phase_7_touch_jank_hotpath_correction": "ACTIVE_PHASE7A_PAUSE_DECOUPLED_RERUN_QUEUED",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
@@ -106,19 +106,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "60d45eaaec358d62ba17f5cd930b187ee6042dae",
-  "last_checked_run": 37508028472,
-  "blocker": "NONE_PHASE7A_RUN_37508028472_IN_PROGRESS",
-  "next_action": "Inspect Phase7A integrated run 37508028472 from commit 60d45ea. The prior baseline run 37498709196 completed Direct-302 static/ABI/identity/packaging PASS and produced static-verified boot artifact 11431741252. Phase7A is a Candidate0061-only TOUCH_PERF_ONLY overlay applied after Direct-302 materialization: retain task/MIGT accounting, remove shared user history-slot writes from the WALT hot path, roll user history via system_long_wq, and add a bounded donor-equivalent pause hook. Run 37507943931 is invalid evidence because workflow YAML was corrupted before runner allocation; workflow was rebuilt cleanly from b109290 at 60d45ea. Require Phase7 overlay apply PASS, compile/modpost PASS, ABI removed=0 with no unexpected delta beyond reviewed stable provenance, exact identity PASS, and boot static packaging PASS.",
+  "last_checked_commit": "55105aacd809e748de41230c3ad11ca98ef8cd05",
+  "last_checked_run": 37513703360,
+  "blocker": "NONE_PHASE7A_PAUSE_DECOUPLED_RUN_37513703360_QUEUED",
+  "next_action": "Inspect integrated run 37513703360 from commit 55105aa. Run 37508028472 already proved the Phase7A overlay can pass apply, compile/modpost, ABI removed=0, exact identity and boot packaging, but that boot is static evidence only because the first pause implementation called package_runtime_should_stop(), whose Stage9 strong implementation maps to migt_boost_policy==0 and could pause package-runtime accounting by default. Commit 55105aa replaces that with an internal weak c0061_pkg_runtime_should_pause() default false, fully decoupled from MIGT boost_policy, while preserving system_long_wq deferred user-history rolling, task history, and migt_hook accounting. Require the same full integrated gates to PASS again before labeling the boot device-validation-pending.",
   "next_expected_evidence": [
-    "Phase7A run 37508028472 reaches runner and Phase7 overlay apply step",
-    "C0061_TOUCH_JANK_HOTPATH=PASS CLASSIFICATION=TOUCH_PERF_ONLY",
-    "user_state history-slot hot-path writes absent while migt_hook/task history remain",
-    "system_long_wq deferred user-history roll present",
-    "integrated 5.4.302 Image/modules/dtbs/modpost PASS",
-    "C0061_INTEGRATED_ABI_KMI_GATE=PASS with removed_symbol_count=0",
-    "exact Candidate0061 kernel identity PASS",
-    "C0061_INTEGRATED_BOOT_STATIC_GATE=PASS with new Phase7A boot artifact"
+    "Run 37513703360 reaches runner and Phase7 overlay apply PASS",
+    "C0061_TOUCH_JANK_HOTPATH=PASS with pause_decoupled_from_migt_boost_policy=true",
+    "no reference from Phase7 overlay to package_runtime_should_stop or migt_boost_policy",
+    "integrated 5.4.302 compile/modpost PASS",
+    "ABI/KMI removed_symbol_count=0",
+    "exact identity PASS",
+    "boot static packaging PASS and new artifact uploaded"
   ],
   "forbidden": [
     "global frequency pin",
@@ -439,7 +438,11 @@
     "Static-verified Candidate0061 5.4.302 boot artifact 11431741252 produced from b109290; boot SHA256 7d459f77556006185a46129a1bae78a1c545e524cb517b089ad584626f3aa629",
     "Candidate0061 Phase7A TOUCH_PERF_ONLY overlay added at 164f93b to remove shared user history hot-path copies and defer user-history rolling to system_long_wq while preserving task/MIGT accounting",
     "Phase7 workflow first attempt 37507943931 invalidated by JS replacement-token YAML corruption before runner allocation",
-    "Phase7 workflow rebuilt cleanly from successful b109290 workflow at 60d45ea; run 37508028472 started"
+    "Phase7 workflow rebuilt cleanly from successful b109290 workflow at 60d45ea; run 37508028472 started",
+    "Run 37508028472 completed SUCCESS through Phase7A overlay apply, compile/modpost, ABI removed=0, identity and boot static packaging; artifact 11436515059 produced but held as static evidence only due pause/MIGT semantic coupling",
+    "Phase7A semantic audit found package_runtime_should_stop is strongly implemented by Stage9 as migt_boost_policy==0, which could pause package-runtime accounting at default boost_policy=0",
+    "Commit 55105aacd809e748de41230c3ad11ca98ef8cd05 decouples Phase7 pause using internal weak c0061_pkg_runtime_should_pause() default false while preserving deferred system_long_wq history roll and task/MIGT accounting",
+    "Integrated rerun 37513703360 queued from 55105aa"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
