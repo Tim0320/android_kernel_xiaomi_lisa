@@ -34,6 +34,35 @@ def main():
     ownership.apply(root,kernel)
     perf.apply_sources(root,kernel)
     bpf.apply(root,kernel)
+
+    # Frozen Candidate0059 commit 6e568a... intentionally remains immutable, but
+    # it contains two tracked legacy patch-reject sidecars from the old FTS
+    # driver import. They are not kernel source and are unrelated to the
+    # 5.4.289->5.4.302 stable delta. C0061 removes only these verified inherited
+    # artifacts so the Direct-302 no-.rej gate reflects newly-created rejects.
+    legacy_rejects = (
+        "drivers/input/touchscreen/fts_dual/secondary/fts_lib/Makefile.rej",
+        "drivers/input/touchscreen/fts_spi/fts_lib/Makefile.rej",
+    )
+    for rel in legacy_rejects:
+        p = kernel / rel
+        if not p.is_file():
+            raise RuntimeError("Expected frozen Candidate0059 legacy reject missing: " + rel)
+        data = p.read_text(errors="replace")
+        if (
+            "--- drivers/input/touchscreen/fts_521/fts_lib/Makefile" not in data
+            or "CONFIG_TOUCHSCREEN_ST_FTS_V521" not in data
+        ):
+            raise RuntimeError("Refusing to remove unexpected reject content: " + rel)
+        p.unlink()
+
+    leftovers = sorted(str(p.relative_to(kernel)) for p in kernel.rglob("*.rej"))
+    if leftovers:
+        raise RuntimeError(
+            "Unexpected reject sidecars remain after frozen C0059 hygiene cleanup: "
+            + ", ".join(leftovers)
+        )
+    print("C0061_C0059_LEGACY_REJECT_CLEANUP=PASS count=2")
     print("C0059_INHERITED_SOURCE_STACK_RECREATED=PASS")
 
 if __name__=="__main__":
