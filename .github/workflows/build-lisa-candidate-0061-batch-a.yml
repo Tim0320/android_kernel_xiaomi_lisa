@@ -2,34 +2,6 @@ name: Build Lisa Candidate0061 Batch A 5.4.292
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/build-lisa-candidate-0061-batch-a.yml
-      - reconstruction/scripts/candidate_0061_batch_a_apply.py
-      - reconstruction/scripts/candidate_0061_batch_a_manual.py
-      - reconstruction/scripts/candidate_0061_batch_a_review.py
-      - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
-      - reconstruction/scripts/extract_stock_ikheaders_from_boot.py
-      - reconstruction/scripts/candidate_0046_build.py
-      - reconstruction/scripts/candidate_0050_proc_abi_patch.py
-      - reconstruction/scripts/candidate_0059_factory.py
-      - reconstruction/scripts/candidate_0059_bpf_port.py
-      - reconstruction/scripts/candidate_0059_perf_port.py
-      - reconstruction/scripts/candidate_0057_ownership_patch.py
-      - reconstruction/scripts/candidate_0056_power_patch.py
-      - reconstruction/scripts/candidate_0055_ufs_patch.py
-      - reconstruction/scripts/candidate_0054_fault_patch.py
-      - reconstruction/scripts/candidate_0059_state_layer.py
-      - reconstruction/scripts/candidate_0059_stage2_hooks.py
-      - reconstruction/scripts/candidate_0059_stage3_accounting.py
-      - reconstruction/scripts/candidate_0059_stage4_migt_sched.py
-      - reconstruction/scripts/candidate_0059_stage5_game_load.py
-      - reconstruction/scripts/candidate_0059_stage6_render.py
-      - reconstruction/scripts/candidate_0059_stage7_migt_control.py
-      - reconstruction/scripts/candidate_0059_stage9_freq_qos.py
-      - reconstruction/scripts/candidate_0058_bpf_port.py
-      - reconstruction/stock/stock-Image/boot.img
 
 permissions:
   contents: read
