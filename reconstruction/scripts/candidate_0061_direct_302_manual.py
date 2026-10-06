@@ -255,6 +255,68 @@ def adapt_ivtv_streams(root: Path):
     p.write_text(s)
 
 
+
+def adapt_sdhci_msm(root: Path):
+    p = root / "drivers/mmc/host/sdhci-msm.c"
+    s = p.read_text()
+
+    # Segment D 5.4.299->5.4.302: add SDR50 tuning support. MiYume 5.4.302
+    # confirms the same endpoint integrated into the downstream Qualcomm flow.
+    macro = "#define CORE_HC_SELECT_IN_SDR50\t(4 << 19)\n"
+    if macro not in s:
+        anchor = "#define CORE_HC_SELECT_IN_EN\tBIT(18)\n"
+        s = once(s, anchor, anchor + macro, "Direct-302 SDR50 select macro")
+
+    tuning_gate = (
+        "\tif (ios->timing == MMC_TIMING_UHS_SDR50 &&\n"
+        "\t    host->flags & SDHCI_SDR50_NEEDS_TUNING)\n"
+        "\t\treturn true;\n\n"
+    )
+    if tuning_gate not in s:
+        anchor = (
+            "static bool sdhci_msm_is_tuning_needed(struct sdhci_host *host)\n"
+            "{\n"
+            "\tstruct mmc_ios *ios = &host->mmc->ios;\n\n"
+        )
+        s = once(
+            s, anchor, anchor + tuning_gate,
+            "Direct-302 SDR50 tuning-needed gate",
+        )
+
+    if "\tu32 config;\n" not in s[s.find("static int sdhci_msm_execute_tuning"):s.find("static int sdhci_msm_execute_tuning")+800]:
+        anchor = "\tu32 core_vendor_spec;\n"
+        s = once(
+            s, anchor, anchor + "\tu32 config;\n",
+            "Direct-302 SDR50 tuning config variable",
+        )
+
+    select = (
+        "\tif (ios.timing == MMC_TIMING_UHS_SDR50 &&\n"
+        "\t    host->flags & SDHCI_SDR50_NEEDS_TUNING) {\n"
+        "\t\tconfig = readl_relaxed(host->ioaddr + msm_offset->core_vendor_spec);\n"
+        "\t\tconfig &= ~CORE_HC_SELECT_IN_MASK;\n"
+        "\t\tconfig |= CORE_HC_SELECT_IN_EN | CORE_HC_SELECT_IN_SDR50;\n"
+        "\t\twritel_relaxed(config, host->ioaddr + msm_offset->core_vendor_spec);\n"
+        "\t}\n\n"
+    )
+    if select not in s:
+        anchor = "\tmsm_host->tuning_done = 0;\n\n"
+        s = once(
+            s, anchor, anchor + select,
+            "Direct-302 SDR50 tuning vendor-select",
+        )
+
+    for token in (
+        "CORE_HC_SELECT_IN_SDR50",
+        "SDHCI_SDR50_NEEDS_TUNING",
+        "CORE_HC_SELECT_IN_EN | CORE_HC_SELECT_IN_SDR50",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 sdhci-msm endpoint missing {token}")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -273,6 +335,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/media/pci/ivtv/ivtv-streams.c":
         adapt_ivtv_streams(root)
         return "DIRECT_302_IVTV_D"
+
+    if path == "drivers/mmc/host/sdhci-msm.c":
+        adapt_sdhci_msm(root)
+        return "DIRECT_302_SDHCI_MSM_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
