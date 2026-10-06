@@ -106,18 +106,17 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "8618087211aa717d62b276d3142eeec55577fd9d",
-  "last_checked_run": 37440803973,
-  "blocker": "WAITING_DIRECT_302_DWC3_QCOM_C_RERUN",
-  "next_action": "Inspect Direct-302 run 37440803973 triggered by commit 8618087211aa717d62b276d3142eeec55577fd9d. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the new Segment-C drivers/usb/dwc3/dwc3-qcom.c adapter materializes the stable BCR endpoint while preserving Lisa USB3_GDSC/per-clock integration. If materialization fails, fix only the first actual reviewed reject. If source materialization reaches all 1760 paths with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
+  "last_checked_commit": "98c67e538041b23d918022b5c9e9cc48e7ed426d",
+  "last_checked_run": 37443579391,
+  "blocker": "WAITING_DIRECT_302_DWC3_GADGET_A_B_C_RERUN",
+  "next_action": "Inspect Direct-302 run 37443579391 triggered by commit 98c67e538041b23d918022b5c9e9cc48e7ed426d. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the new drivers/usb/dwc3/gadget.c A+B+C adapter materializes the stable endpoint (run/stop timeout/PHY save-restore, event-count guard, late XferNotReady disconnect guard) while preserving Lisa downstream DWC3/GSI/controller semantics. If materialization fails, fix only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
   "next_expected_evidence": [
-    "run 37440803973 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/usb/dwc3/dwc3-qcom.c adapter passes with no reset_assert error label and no remove-time BCR assertion",
-    "Lisa USB3_GDSC and per-clock downstream integration remain present",
-    "next materialization blocker, if any, is exactly one subsequent reviewed semantic path",
-    "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
-    "no .rej files remain, git diff --check PASS, source_identity=5.4.302",
-    "no integrated build starts before source materialization PASS"
+    "run 37443579391 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "drivers/usb/dwc3/gadget.c adapter passes A+B+C endpoint checks",
+    "Lisa downstream DWC3/GSI/controller semantics remain intact",
+    "next blocker, if any, is exactly one subsequent reviewed semantic path",
+    "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
+    "source_identity=5.4.302 before integrated build starts"
   ],
   "forbidden": [
     "global frequency pin",
@@ -326,7 +325,10 @@
     "Run 37434391634 confirmed Direct-302 semantic closure raw=33 reviewed=33 unresolved=0 and advanced first materialization blocker to drivers/usb/dwc3/dwc3-qcom.c Segment C",
     "Reviewed dwc3-qcom stable BCR endpoint against frozen Lisa, MiYume final state, upstream 5.4.302 and stable fix ef8abc0ba49c; preserve Lisa USB3_GDSC while removing re-assert error/remove paths",
     "Reviewed Direct-302 Segment-C drivers/usb/dwc3/dwc3-qcom.c adapter committed at 86180872; enforces direct-return deassert/clock-init failures, removes stale reset_assert tail/remove-time BCR assertion, and preserves Lisa USB3_GDSC/per-clock downstream integration",
-    "Direct-302 run 37440803973 queued from 86180872"
+    "Direct-302 run 37440803973 queued from 86180872",
+    "Run 37440803973 confirmed Direct-302 semantic closure raw=33 reviewed=33 unresolved=0 and advanced first materialization blocker to drivers/usb/dwc3/gadget.c A+B+C",
+    "Reviewed Direct-302 dwc3 gadget A+B+C adapter committed at 98c67e53; preserves Lisa downstream controller/GSI semantics while applying run-stop PHY save/restore, event-count validation and late XferNotReady disconnect guard",
+    "Direct-302 run 37443579391 queued from 98c67e53"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
