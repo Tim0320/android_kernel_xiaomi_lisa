@@ -216,6 +216,45 @@ def adapt_hid_ids(root: Path):
     p.write_text(s)
 
 
+
+def adapt_ivtv_streams(root: Path):
+    p = root / "drivers/media/pci/ivtv/ivtv-streams.c"
+    s = p.read_text()
+
+    # Segment D 5.4.299->5.4.302 is exactly the PCI DMA direction enum
+    # API rename in this file. Preserve Lisa's downstream VFL_TYPE_GRABBER
+    # layout and apply only the stable DMA endpoint semantics.
+    replacements = (
+        ("PCI_DMA_FROMDEVICE", "DMA_FROM_DEVICE"),
+        ("PCI_DMA_TODEVICE", "DMA_TO_DEVICE"),
+        ("PCI_DMA_NONE", "DMA_NONE"),
+    )
+    for old, new in replacements:
+        s = s.replace(old, new)
+
+    for old, _ in replacements:
+        if old in s:
+            raise RuntimeError(f"Direct-302 ivtv endpoint retained {old}")
+
+    expected = {
+        "DMA_FROM_DEVICE": 4,
+        "DMA_TO_DEVICE": 2,
+        "DMA_NONE": 5,
+    }
+    for token, count in expected.items():
+        actual = s.count(token)
+        if actual != count:
+            raise RuntimeError(
+                f"Direct-302 ivtv endpoint {token} count={actual}, expected={count}"
+            )
+
+    # Lisa intentionally carries the downstream VFL_TYPE_GRABBER naming.
+    if s.count("VFL_TYPE_GRABBER") < 4:
+        raise RuntimeError("Direct-302 ivtv endpoint lost Lisa VFL_TYPE_GRABBER layout")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -230,6 +269,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/hid/hid-ids.h":
         adapt_hid_ids(root)
         return "DIRECT_302_HID_A_B_D"
+
+    if path == "drivers/media/pci/ivtv/ivtv-streams.c":
+        adapt_ivtv_streams(root)
+        return "DIRECT_302_IVTV_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
