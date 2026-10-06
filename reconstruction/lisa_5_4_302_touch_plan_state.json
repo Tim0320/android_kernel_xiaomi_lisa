@@ -106,14 +106,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "d60da53c3c65ab7676d0bd84aea26e19326e8bc9",
-  "last_checked_run": 37452775546,
-  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_OOM_KILL_A",
-  "next_action": "Retry the reviewed Direct-302 mm/oom_kill.c Segment-A idempotent adapter write. Run 37452775546 kept semantic closure raw=33 reviewed=33 unresolved=0, passed kernel/time/posix-timers.c Segment-B, and advanced first materialization blocker to mm/oom_kill.c with rejects #1 and #3 while hunks #2 and #4 applied cleanly. The reviewed endpoint must preserve Lisa/Xiaomi OOM policy and victim-marking plumbing while ensuring linux/cred.h + linux/nmi.h, dump_tasks softlockup watchdog servicing, and credential-aware trace_mark_victim lifetime. If write succeeds, rerun Direct-302 and repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate.",
+  "last_checked_commit": "5023614b965c99e35c6cc55cc0229cdeaf133645",
+  "last_checked_run": 37454969206,
+  "blocker": "WAITING_DIRECT_302_SLUB_C_RERUN",
+  "next_action": "Inspect Direct-302 run 37454969206 triggered by 5023614b965c99e35c6cc55cc0229cdeaf133645. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the new mm/slub.c Segment-C adapter passes the object_err invalid-pointer endpoint while preserving Lisa downstream SLUB behavior. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
   "next_expected_evidence": [
-    "GitHub write retry succeeds for reviewed mm/oom_kill.c Segment-A adapter",
-    "next Direct-302 run keeps semantic closure raw=33 reviewed=33 unresolved=0",
-    "mm/oom_kill.c materializes with no .rej while preserving Lisa/Xiaomi OOM policy and victim-marking plumbing",
+    "run 37454969206 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "mm/slub.c Segment-C adapter passes object_err invalid-pointer endpoint checks",
+    "no unintended Lisa downstream SLUB behavior replacement",
     "next blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
     "source_identity=5.4.302 before integrated build starts"
@@ -391,7 +391,10 @@
     "Direct-302 run 37453907986 queued from df8a7c59",
     "Run 37452775546 completed: semantic closure remained raw=33 reviewed=33 unresolved=0; kernel/time/posix-timers.c Segment-B adapter passed and first materialization blocker advanced to mm/oom_kill.c Segment A with rejected hunks #1 and #3 while #2/#4 applied cleanly",
     "Revalidated mm/oom_kill.c Segment-A endpoint against official Linux v5.4.302 and MiYume 5.4.302: credential/nmi includes, periodic touch_softlockup_watchdog during task dump, and credential-aware trace_mark_victim are common final-state semantics; Lisa/Xiaomi victim-marking core must remain intact",
-    "Prepared function-scoped idempotent Direct-302 OOM adapter, but GitHub code update was blocked by safety review; no source adapter commit was created"
+    "Prepared function-scoped idempotent Direct-302 OOM adapter, but GitHub code update was blocked by safety review; no source adapter commit was created",
+    "Run 37453907986 confirmed the Direct-302 OOM Segment-A adapter passed and advanced first materialization blocker to mm/slub.c Segment C",
+    "Direct-302 SLUB Segment-C adapter committed at 5023614b; object_err now validates object pointer before trailer printing while preserving Lisa downstream SLUB behavior",
+    "Direct-302 run 37454969206 queued from 5023614b"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
