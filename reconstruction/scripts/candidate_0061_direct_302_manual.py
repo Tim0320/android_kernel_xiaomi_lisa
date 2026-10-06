@@ -1110,6 +1110,114 @@ def adapt_net_sock_h(root: Path):
     p.write_text(s)
 
 
+
+def adapt_sched_fair(root: Path):
+    p = root / "kernel/sched/fair.c"
+    s = p.read_text()
+
+    # Segment D stable chain:
+    #   d8dd0400 / 7335a5a0 / ca51183e / d0936c8b
+    # finalizes newidle_balance() as static sched_balance_newidle() and makes
+    # lost-idle PELT accounting run even when pick_next_task_fair() has no
+    # rq_flags pointer. Preserve all Lisa WALT/force_lb/prefer_spread logic.
+    decl = "static int sched_balance_newidle(struct rq *this_rq, struct rq_flags *rf);\n\n"
+    if decl not in s:
+        anchor = (
+            "static inline unsigned long cfs_rq_load_avg(struct cfs_rq *cfs_rq)\n"
+            "{\n"
+            "\treturn cfs_rq->avg.load_avg;\n"
+            "}\n\n"
+        )
+        s = once(
+            s,
+            anchor,
+            anchor + decl,
+            "Direct-302 fair sched_balance_newidle declaration",
+        )
+
+    # Rename only the standalone scheduler helper references; do not touch
+    # nohz_newidle_balance().
+    replacements = (
+        ("return newidle_balance(rq, rf) != 0;",
+         "return sched_balance_newidle(rq, rf) != 0;"),
+        ("newidle_balance() disregards balance intervals",
+         "sched_balance_newidle() disregards balance intervals"),
+        (" * idle_balance is called by schedule() if this_cpu is about to become\n",
+         " * sched_balance_newidle is called by schedule() if this_cpu is about to become\n"),
+        ("int newidle_balance(struct rq *this_rq, struct rq_flags *rf)\n",
+         "static int sched_balance_newidle(struct rq *this_rq, struct rq_flags *rf)\n"),
+    )
+    for old, new in replacements:
+        if old in s:
+            s = s.replace(old, new, 1)
+
+    old_idle = (
+        "idle:\n"
+        "\tif (!rf)\n"
+        "\t\treturn NULL;\n\n"
+        "\tnew_tasks = newidle_balance(rq, rf);\n\n"
+        "\t/*\n"
+        "\t * Because newidle_balance() releases (and re-acquires) rq->lock, it is\n"
+        "\t * possible for any higher priority task to appear. In that case we\n"
+        "\t * must re-start the pick_next_entity() loop.\n"
+        "\t */\n"
+        "\tif (new_tasks < 0)\n"
+        "\t\treturn RETRY_TASK;\n\n"
+        "\tif (new_tasks > 0)\n"
+        "\t\tgoto again;\n"
+    )
+    new_idle = (
+        "idle:\n"
+        "\tif (rf) {\n"
+        "\t\tnew_tasks = sched_balance_newidle(rq, rf);\n\n"
+        "\t\t/*\n"
+        "\t\t * Because sched_balance_newidle() releases (and re-acquires)\n"
+        "\t\t * rq->lock, it is possible for any higher priority task to\n"
+        "\t\t * appear. In that case we must re-start the pick_next_entity()\n"
+        "\t\t * loop.\n"
+        "\t\t */\n"
+        "\t\tif (new_tasks < 0)\n"
+        "\t\t\treturn RETRY_TASK;\n\n"
+        "\t\tif (new_tasks > 0)\n"
+        "\t\t\tgoto again;\n"
+        "\t}\n"
+    )
+    if new_idle not in s:
+        s = once(
+            s,
+            old_idle,
+            new_idle,
+            "Direct-302 fair lost-idle PELT endpoint",
+        )
+
+    for token in (
+        "static int sched_balance_newidle(struct rq *this_rq, struct rq_flags *rf);",
+        "return sched_balance_newidle(rq, rf) != 0;",
+        "new_tasks = sched_balance_newidle(rq, rf);",
+        "Because sched_balance_newidle() releases",
+        "sched_balance_newidle() disregards balance intervals",
+        "static int sched_balance_newidle(struct rq *this_rq, struct rq_flags *rf)\n{",
+        "update_idle_rq_clock_pelt(rq);",
+        "bool prefer_spread = prefer_spread_on_idle(this_cpu, true);",
+        "sysctl_sched_force_lb_enable",
+        "nohz_newidle_balance(this_rq);",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 fair endpoint missing {token}")
+
+    for stale in (
+        "return newidle_balance(rq, rf) != 0;",
+        "new_tasks = newidle_balance(rq, rf);",
+        "Because newidle_balance() releases",
+        "newidle_balance() disregards balance intervals",
+        "int newidle_balance(struct rq *this_rq, struct rq_flags *rf)\n{",
+    ):
+        if stale in s:
+            raise RuntimeError(f"Direct-302 fair stale endpoint remains {stale}")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1184,6 +1292,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "include/net/sock.h":
         adapt_net_sock_h(root)
         return "DIRECT_302_NET_SOCK_H_D"
+
+    if path == "kernel/sched/fair.c":
+        adapt_sched_fair(root)
+        return "DIRECT_302_SCHED_FAIR_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
