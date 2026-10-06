@@ -87,8 +87,8 @@ def main():
     rows = scan.get("files", [])
     if len(rows) != 1760:
         raise RuntimeError(f"Direct-302 apply expected 1760 scan rows, got {len(rows)}")
-    if scan.get("reviewed_semantic_count") != 33 or scan.get("unresolved_semantic_count") != 0:
-        raise RuntimeError("Direct-302 apply requires reviewed=33 unresolved=0")
+    if scan.get("reviewed_semantic_count") != 34 or scan.get("unresolved_semantic_count") != 0:
+        raise RuntimeError("Direct-302 apply requires reviewed=34 unresolved=0")
 
     stats = {
         "ALREADY_PRESENT": 0,
@@ -140,7 +140,8 @@ def main():
             elif resolution == "ADAPT":
                 clean, stderr, reject = apply_upstream_hunks_with_reject(root, path)
                 adapter = None
-                if not clean:
+                always_adapt = bool(decision.get("always_adapt"))
+                if not clean or always_adapt:
                     try:
                         adapter = adapt(
                             root, path, UPSTREAM_TARGET,
