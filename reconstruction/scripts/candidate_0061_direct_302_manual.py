@@ -699,6 +699,83 @@ def adapt_dwc3_gadget(root: Path):
     p.write_text(s)
 
 
+
+def adapt_functionfs(root: Path):
+    p = root / "drivers/usb/gadget/function/f_fs.c"
+    s = p.read_text()
+
+    # Segment A: do not WARN on a userspace-visible bind-state race. Preserve
+    # Lisa/Xiaomi ffs_log instrumentation around the stable condition.
+    s = s.replace(
+        "\tif (WARN_ON(ffs->state != FFS_ACTIVE\n"
+        "\t\t || test_and_set_bit(FFS_FL_BOUND, &ffs->flags)))\n",
+        "\tif ((ffs->state != FFS_ACTIVE\n"
+        "\t\t || test_and_set_bit(FFS_FL_BOUND, &ffs->flags)))\n",
+        1,
+    )
+
+    if "WARN_ON(ffs->state != FFS_ACTIVE" in s:
+        raise RuntimeError("Direct-302 FunctionFS still WARNs on bind state")
+
+    bind_endpoint = (
+        "\tif ((ffs->state != FFS_ACTIVE\n"
+        "\t\t || test_and_set_bit(FFS_FL_BOUND, &ffs->flags)))\n"
+        "\t\treturn -EBADFD;\n"
+    )
+    if bind_endpoint not in s:
+        raise RuntimeError("Direct-302 FunctionFS Segment-A bind endpoint missing")
+
+    # Segment D: reject endpoint enable when epfiles allocation is absent.
+    # git apply may already have applied this hunk before the Segment-A reject,
+    # so make the endpoint adaptation idempotent.
+    ep_guard = (
+        "\tif (!epfile) {\n"
+        "\t\tret = -ENOMEM;\n"
+        "\t\tgoto done;\n"
+        "\t}\n\n"
+    )
+    if ep_guard not in s:
+        anchor = (
+            "\tepfile = ffs->epfiles;\n"
+            "\tcount = ffs->eps_count;\n"
+        )
+        s = once(
+            s,
+            anchor,
+            anchor + ep_guard,
+            "Direct-302 FunctionFS epfiles null guard",
+        )
+
+    s = s.replace("\twhile(count--) {\n", "\twhile (count--) {\n", 1)
+
+    done_anchor = "\twake_up_interruptible(&ffs->wait);\n"
+    done_endpoint = "\twake_up_interruptible(&ffs->wait);\ndone:\n"
+    if done_endpoint not in s:
+        s = once(
+            s,
+            done_anchor,
+            done_endpoint,
+            "Direct-302 FunctionFS done label",
+        )
+
+    for token in (
+        "if (!epfile)",
+        "goto done;",
+        "while (count--)",
+        "wake_up_interruptible(&ffs->wait);\ndone:",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 FunctionFS endpoint missing {token}")
+
+    # Preserve Lisa downstream debug instrumentation rather than replacing the
+    # whole file with upstream.
+    for token in ("ffs_log(", "setup_state", "FFS_FL_BOUND"):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 FunctionFS lost Lisa token {token}")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -745,6 +822,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/usb/dwc3/gadget.c":
         adapt_dwc3_gadget(root)
         return "DIRECT_302_DWC3_GADGET_A_B_C"
+
+    if path == "drivers/usb/gadget/function/f_fs.c":
+        adapt_functionfs(root)
+        return "DIRECT_302_FUNCTIONFS_A_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
