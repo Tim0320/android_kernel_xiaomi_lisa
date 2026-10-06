@@ -194,7 +194,7 @@ Important:
 - It remains a trusted reference for reconstruction, ABI policy, and provenance classification.
 
 ### Phase 4 - Direct Candidate0061 Linux 5.4.302 uplift
-Status: ACTIVE
+Status: DONE
 
 Target:
 - Candidate0059/Lisa 5.4.289 -> Linux 5.4.302 in one integrated source/build gate.
@@ -250,13 +250,13 @@ This supersedes the old requirement to compile separately at 5.4.296, 5.4.299 an
   - Cortex-A76AE CPU-ID adaptation;
   - HID identity additions;
   - QCOM pinctrl IRQ valid-mask adaptation.
-- Segment C 5.4.296 -> 5.4.299: pending review inside the direct-302 scan, not a separate build.
-- Segment D 5.4.299 -> 5.4.302: pending review inside the direct-302 scan, not a separate build.
+- Segment C 5.4.296 -> 5.4.299: provenance reviewed inside Direct-302; no separate build.
+- Segment D 5.4.299 -> 5.4.302: provenance reviewed inside Direct-302; no separate build.
 
 The in-flight legacy Batch B run may be retained only as evidence that already-reviewed Segment B adapters are valid. It must not cause the project to continue the retired 296 -> 299 -> 302 build loop.
 
 ### Phase 5 - Direct-302 semantic conflict closure
-Status: PENDING AFTER DIRECT SCAN
+Status: DONE
 
 Purpose:
 - close the full non-clean 5.4.289 -> 5.4.302 conflict set before the integrated build;
@@ -275,10 +275,12 @@ Priority review surfaces:
 
 Exit:
 - all direct-302 non-clean overlaps classified and adapted;
-- no unreviewed semantic conflict remains.
+- no unreviewed semantic conflict remains;
+- Direct-302 materialization passed with 1760 paths, no `.rej`, `git diff --check` PASS and source identity 5.4.302;
+- integrated compile exposed one textually-clean but semantically incompatible runtime-PM path; `drivers/base/power/runtime.c` is now the 34th reviewed path, classified MIXED_CONFLICT for Segments B+C: keep the Segment-B timer-expiry `<=` stable fix, but reject the Segment-C `needs_force_resume` reinit write because frozen Lisa intentionally retains `pm_runtime_need_not_resume()` and no `dev_pm_info.needs_force_resume` field.
 
 ### Phase 6 - Direct-302 integrated static/ABI gate
-Status: NOT STARTED
+Status: ACTIVE
 
 Run one target build after Phase 5 conflict closure.
 
