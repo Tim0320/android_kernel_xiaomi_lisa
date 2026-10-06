@@ -1479,6 +1479,49 @@ def adapt_oom_kill(root: Path):
     p.write_text(s)
 
 
+
+def adapt_slub(root: Path):
+    p = root / "mm/slub.c"
+    s = p.read_text()
+
+    start = s.find("void object_err(struct kmem_cache *s, struct page *page,")
+    if start < 0:
+        raise RuntimeError("Direct-302 slub: object_err start not found")
+    end = s.find("\nstatic __printf(3, 4) void slab_err", start)
+    if end < 0:
+        raise RuntimeError("Direct-302 slub: object_err end not found")
+
+    fn = s[start:end]
+    endpoint = (
+        "\tif (!object || !check_valid_pointer(s, page, object)) {\n"
+        "\t\tprint_page_info(page);\n"
+        "\t\tpr_err(\"Invalid pointer 0x%p\\n\", object);\n"
+        "\t} else {\n"
+        "\t\tprint_trailer(s, page, object);\n"
+        "\t}\n"
+    )
+
+    if "check_valid_pointer(s, page, object)" not in fn:
+        old = "\tprint_trailer(s, page, object);\n"
+        if fn.count(old) != 1:
+            raise RuntimeError(
+                f"Direct-302 slub: object_err trailer anchor count={fn.count(old)}"
+            )
+        fn = fn.replace(old, endpoint, 1)
+
+    for token in (
+        "check_valid_pointer(s, page, object)",
+        "print_page_info(page);",
+        "pr_err(\"Invalid pointer 0x%p\\n\", object);",
+        "print_trailer(s, page, object);",
+    ):
+        if token not in fn:
+            raise RuntimeError(f"Direct-302 slub endpoint missing {token}")
+
+    s = s[:start] + fn + s[end:]
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1529,6 +1572,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "mm/oom_kill.c":
         adapt_oom_kill(root)
         return "DIRECT_302_OOM_KILL_A"
+
+    if path == "mm/slub.c":
+        adapt_slub(root)
+        return "DIRECT_302_SLUB_C"
 
     if path == "drivers/usb/gadget/function/f_fs.c":
         adapt_functionfs(root)
