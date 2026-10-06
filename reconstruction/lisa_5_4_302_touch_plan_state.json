@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "WORKFLOW_SYNTAX_REPAIRED_RUN_37407283819_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "SEMANTIC_CLOSURE_PASS_SOURCE_MATERIALIZATION_CI_QUEUED",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,17 +106,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "bd27792d03a2e1948641cace4dd691d81d6c7c1d",
-  "last_checked_run": 37407283819,
-  "blocker": "DIRECT_302_REVIEW_GATE_CI_IN_PROGRESS",
-  "next_action": "Inspect run 37407283819 / job 112087534581. Require raw semantic_review_count=33, reviewed_semantic_count=33, unresolved_semantic_count=0 and semantic closure PASS. If it fails, fix the first actual workflow/registry/provenance blocker. If it passes, implement the one-shot Direct-302 source apply/materialization gate before any integrated build.",
+  "last_checked_commit": "f6a6af747864c5fdb065ffa06d635d51953099ad",
+  "last_checked_run": 37408588177,
+  "blocker": "DIRECT_302_SOURCE_MATERIALIZATION_CI_QUEUED",
+  "next_action": "Inspect Direct-302 run 37408588177. The semantic gate is already proven PASS at run 37407283819 with raw=33 reviewed=33 unresolved=0. This new run must execute candidate_0061_direct_302_apply.py and materialize all 1760 paths. If it fails, locate the first actual semantic adapter/reject blocker, implement only that reviewed Direct-302 endpoint adaptation, commit, and rerun. Do not start integrated build until source materialization reports changed_file_count=1760, no .rej files, git diff --check PASS, and Makefile SUBLEVEL=302.",
   "next_expected_evidence": [
-    "Run 37407283819 creates direct-302-scan job 112087534581 and progresses beyond workflow parsing",
-    "Candidate0059 reconstruction and ABI compatibility PASS",
-    "Direct-302 scan remains changed_file_count=1760, DIRECT=1489, AUTO_3WAY=238, raw semantic_review_count=33",
-    "review gate reports reviewed_semantic_count=33 and unresolved_semantic_count=0",
-    "semantic closure PASS uses unresolved_semantic_count",
-    "no integrated build starts before source materialization and SUBLEVEL=302 validation"
+    "Run 37408588177 creates a direct-302-scan job and reaches Materialize Direct-302 source tree",
+    "semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "all 1760 changed paths are accounted as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
+    "no .rej files remain",
+    "git diff --check PASS",
+    "source_identity=5.4.302 and Makefile SUBLEVEL=302",
+    "no integrated build starts before source materialization PASS"
   ],
   "forbidden": [
     "global frequency pin",
@@ -287,7 +288,11 @@
     "Complete Direct-302 reviewed semantic registry committed at deec2235 with 33/33 scan paths and exact A/B/C/D provenance coverage",
     "Direct-302 workflow review-gate wiring committed at 9fcfe604; trigger paths include reviewed registry and review gate, closure now gates on unresolved_semantic_count",
     "Direct-302 workflow syntax rebuilt from last known-good 2906dfb body and repaired at bd27792d",
-    "Run 37407283819 / job 112087534581 successfully created, proving workflow YAML parses again"
+    "Run 37407283819 / job 112087534581 successfully created, proving workflow YAML parses again",
+    "Direct-302 semantic closure PASS at run 37407283819 / job 112087534581: raw=33 reviewed=33 unresolved=0",
+    "Direct-302 semantic adapter router added at 04568313 with reviewed legacy adapter reuse and a dedicated 5.4.302 Makefile endpoint adapter",
+    "One-shot Direct-302 source materializer added at 73117bb7; it applies all 1760 paths and hard-gates rejects, git diff --check, and SUBLEVEL=302",
+    "Direct-302 workflow materialization gate added at f6a6af74 without adding an integrated kernel build"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
