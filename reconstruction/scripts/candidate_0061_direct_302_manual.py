@@ -79,12 +79,69 @@ def adapt_makefile(root: Path):
     p.write_text(s)
 
 
+
+def adapt_cputype(root: Path):
+    p = root / "arch/arm64/include/asm/cputype.h"
+    s = p.read_text()
+
+    # Segment B endpoint: Cortex-A76AE. Lisa already carries a downstream CPU-ID
+    # superset (including Kryo and later Arm parts), so only insert the stable IDs.
+    if "ARM_CPU_PART_CORTEX_A76AE" not in s:
+        anchor = "#define ARM_CPU_PART_CORTEX_A77\t\t0xD0D\n"
+        s = once(
+            s, anchor,
+            anchor + "#define ARM_CPU_PART_CORTEX_A76AE\t0xD0E\n",
+            "Direct-302 Cortex-A76AE part",
+        )
+    if "MIDR_CORTEX_A76AE" not in s:
+        anchor = "#define MIDR_CORTEX_A77\tMIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A77)\n"
+        s = once(
+            s, anchor,
+            anchor + "#define MIDR_CORTEX_A76AE\tMIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_CORTEX_A76AE)\n",
+            "Direct-302 Cortex-A76AE MIDR",
+        )
+
+    # Segment D endpoint: Neoverse-V3AE. These hunks currently apply cleanly in
+    # the one-shot patch, but enforce the final state in case downstream context
+    # changes so the Direct-302 adapter remains self-contained.
+    if "ARM_CPU_PART_NEOVERSE_V3AE" not in s:
+        anchor = "#define ARM_CPU_PART_NEOVERSE_V3\t0xD84\n"
+        if anchor not in s:
+            raise RuntimeError("Direct-302 Neoverse-V3AE part anchor missing")
+        s = s.replace(anchor, "#define ARM_CPU_PART_NEOVERSE_V3AE\t0xD83\n" + anchor, 1)
+    if "MIDR_NEOVERSE_V3AE" not in s:
+        anchor = "#define MIDR_NEOVERSE_V3 MIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_NEOVERSE_V3)\n"
+        if anchor not in s:
+            raise RuntimeError("Direct-302 Neoverse-V3AE MIDR anchor missing")
+        s = s.replace(
+            anchor,
+            "#define MIDR_NEOVERSE_V3AE\tMIDR_CPU_MODEL(ARM_CPU_IMP_ARM, ARM_CPU_PART_NEOVERSE_V3AE)\n" + anchor,
+            1,
+        )
+
+    # Preserve Lisa's downstream Qualcomm/Kryo IDs; only assert the stable
+    # endpoint additions required by B+D provenance.
+    for token in (
+        "ARM_CPU_PART_CORTEX_A76AE",
+        "MIDR_CORTEX_A76AE",
+        "ARM_CPU_PART_NEOVERSE_V3AE",
+        "MIDR_NEOVERSE_V3AE",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 cputype endpoint missing {token}")
+
+    p.write_text(s)
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
     if path == "Makefile":
         adapt_makefile(root)
         return "DIRECT_302_MAKEFILE"
+
+    if path == "arch/arm64/include/asm/cputype.h":
+        adapt_cputype(root)
+        return "DIRECT_302_CPUTYPE_B_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
