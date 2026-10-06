@@ -106,14 +106,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "7aca9130846b8c031dd2b2f1ec20ad3079b3a0e7",
+  "last_checked_commit": "1cbd917476a37fc165f087fc6d8a38d6e3a94feb",
   "last_checked_run": 37415920807,
-  "blocker": "NONE_RUN_37415920807_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37415920807. Prior run 37415317424 did not reveal a new kernel semantic blocker: sdhci-msm adapter failed because the generic '\\tu32 core_vendor_spec;' anchor appeared twice. Commit 7aca913 scopes the insertion to the unique sdhci_msm_execute_tuning declaration block; SDR50 stable semantics are unchanged. Verify sdhci-msm now materializes and continue only with the next first actual reviewed .rej/adapter blocker. Do not start integrated build before all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_PLATFORM_KCONFIG_B",
+  "next_action": "Retry the reviewed Direct-302 Segment-B adapter for drivers/platform/Kconfig. Run 37415920807 proves semantic closure raw=33 reviewed=33 unresolved=0 and the prior sdhci-msm scoped adapter now passes; the first materialization blocker is drivers/platform/Kconfig. The endpoint must add source \"drivers/platform/surface/Kconfig\" immediately before and while retaining source \"drivers/platform/msm/Kconfig\". MiYume 5.4.302 confirms Surface+MSM final state; upstream v5.4.302 confirms the Surface addition. After a successful write, let the Direct-302 workflow rerun and fix only the next first actual reviewed reject. Do not start integrated build before all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
   "next_expected_evidence": [
-    "Run 37415920807 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "sdhci-msm scoped adapter no longer fails on anchor count",
-    "drivers/mmc/host/sdhci-msm.c materializes successfully",
+    "Direct-302 platform Kconfig adapter write succeeds",
+    "new Direct-302 run semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "drivers/platform/Kconfig materializes with exactly one Surface source and one retained MSM source, ordered Surface then MSM",
     "Materialize Direct-302 source tree either PASS or identifies exactly the next first reviewed semantic blocker",
     "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
     "no .rej files remain, git diff --check PASS, source_identity=5.4.302"
@@ -308,7 +308,9 @@
     "Run 37415317424 confirmed semantic closure PASS raw=33 reviewed=33 unresolved=0 but sdhci-msm adapter failed internally because generic core_vendor_spec anchor count was 2",
     "No new kernel semantic decision was required; SDR50 endpoint semantics remained valid",
     "sdhci_msm execute_tuning variable insertion anchor scoped to its unique local declaration block at 7aca913",
-    "Direct-302 run 37415920807 started from 7aca913"
+    "Direct-302 run 37415920807 started from 7aca913",
+    "Run 37415920807 confirmed scoped sdhci-msm adapter passes and advanced source materialization to drivers/platform/Kconfig (Segment B)",
+    "Reviewed platform Kconfig endpoint established from upstream v5.4.302 plus MiYume Xiaomi oracle: add Surface source while retaining Lisa MSM source"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
