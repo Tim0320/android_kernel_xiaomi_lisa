@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "RPMH_RSC_D_ADAPTER_COMMITTED_RUN_37432881520_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "WRITE_PERMISSION_BLOCKED_DWC3_QCOM_C_REVIEW_COMPLETE",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,14 +106,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "006feca9f6690bc9951b286f0eee10d79084c170",
-  "last_checked_run": 37432881520,
-  "blocker": "DIRECT_302_SOURCE_MATERIALIZATION_CI_IN_PROGRESS_AFTER_RPMH_RSC_D_FIX",
-  "next_action": "Inspect Direct-302 run 37432881520 / job 112167644113. The reviewed Segment-D drivers/soc/qcom/rpmh-rsc.c adapter is committed at 006feca9 and must materialize the completed-TCS __tcs_trigger(drv, i, false) outside the retained !ACTIVE_TCS condition while enable_tcs_irq remains conditional. Require semantic closure to remain raw=33 reviewed=33 unresolved=0. If materialization fails, identify and fix only the next first actual reviewed reject. Do not start integrated build until all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
+  "last_checked_commit": "981a859a9afcf1035b5e46e2acd300d93ce5386e",
+  "last_checked_run": 37434391634,
+  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_DWC3_QCOM_C",
+  "next_action": "Retry the reviewed Direct-302 Segment-C adapter for drivers/usb/dwc3/dwc3-qcom.c. Run 37434391634 confirms semantic closure raw=33 reviewed=33 unresolved=0 and materialization applies hunks #1 and #3 cleanly but rejects only hunk #2 that removes the stale reset_assert label. The reviewed endpoint is the stable 'usb: dwc3: qcom: Don't leave BCR asserted' behavior: deassert/clock-init failures return directly, the stale reset_assert label is removed, and remove() must not assert the BCR. Preserve Lisa USB3_GDSC and per-clock downstream integration. The code write in this run was blocked by safety review before mutation. After the write succeeds, rerun Direct-302 and fix only the next first actual reviewed reject. Do not start integrated build until all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
   "next_expected_evidence": [
-    "Run 37432881520 reaches Materialize Direct-302 source tree",
-    "semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/soc/qcom/rpmh-rsc.c materializes with unconditional completed-TCS trigger clear and conditional IRQ disable",
+    "Direct-302 dwc3-qcom Segment-C adapter write succeeds",
+    "new Direct-302 run semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "drivers/usb/dwc3/dwc3-qcom.c materializes without reset_assert error label and without remove-time BCR assertion while retaining USB3_GDSC",
     "next materialization blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
     "no .rej files remain, git diff --check PASS, source_identity=5.4.302",
@@ -322,7 +322,9 @@
     "Verified frozen Lisa rpmh-rsc endpoint at ref 6e568aabc77a06fa787baec1d9e60e4b559874a3 and MiYume final-state oracle at 6f0290557329655f29c9b1bc52eec33e36f859ba; only completed-TCS trigger clear moves outside !ACTIVE_TCS, IRQ disable stays conditional",
     "Retried reviewed rpmh-rsc Direct-302 adapter write; mutation was blocked by safety review before repository change",
     "Reviewed Direct-302 Segment-D drivers/soc/qcom/rpmh-rsc.c adapter committed at 006feca9; completed-TCS trigger clear is unconditional while IRQ disable remains conditional",
-    "Direct-302 run 37432881520 / job 112167644113 triggered from 006feca9 and entered in-progress execution"
+    "Direct-302 run 37432881520 / job 112167644113 triggered from 006feca9 and entered in-progress execution",
+    "Run 37434391634 confirmed Direct-302 semantic closure raw=33 reviewed=33 unresolved=0 and advanced first materialization blocker to drivers/usb/dwc3/dwc3-qcom.c Segment C",
+    "Reviewed dwc3-qcom stable BCR endpoint against frozen Lisa, MiYume final state, upstream 5.4.302 and stable fix ef8abc0ba49c; preserve Lisa USB3_GDSC while removing re-assert error/remove paths"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
