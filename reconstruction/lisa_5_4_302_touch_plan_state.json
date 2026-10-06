@@ -55,7 +55,7 @@
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "TIMER_DELETE_COMPAT_RERUN_IN_PROGRESS"
+    "phase_6_direct_302_integrated_static_abi_gate": "ABI_REMOVED_2_COMPAT_RERUN_IN_PROGRESS"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -106,18 +106,19 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "4957e63282e42e1d34158a956fe3f21afe99ac97",
-  "last_checked_run": 37472578561,
-  "blocker": "NONE_RUN_37472578561_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37472578606 / job 112299616246 and integrated run 37472578561 / job 112299611136. Previous integrated run 37467257404 passed the runtime-PM mixed-conflict adaptation but failed the target compile at net/ipv4/inet_connection_sock.c because stable call-site timer_delete_sync() was unavailable in Lisa's downstream timer API/KMI. Commit 421d00a adds only a header-level timer_delete_sync() compatibility wrapper over Lisa's existing del_timer_sync(), intentionally preserving the old exported timer symbol and avoiding a timer subsystem/KMI rename. Require Direct-302 semantic closure to remain raw=34 reviewed=34 unresolved=0 and source_identity=5.4.302. Then require integrated compile to pass inet_connection_sock.c. If another compile error appears, repair only that first actual blocker. If compile passes, continue ABI/KMI with Candidate0059 removed symbols=0, then identity and boot.img packaging/static validation. Ignore run 37472578645 because Candidate0061 Batch A is retired provenance-only; commit 4957e63 makes that workflow manual-only for future pushes.",
+  "last_checked_commit": "05a48c6f6c0c1234b9581539cdc0a07c5dbf01a5",
+  "last_checked_run": 37488653473,
+  "blocker": "NONE_RUNS_37488653736_37488653473_IN_PROGRESS",
+  "next_action": "Inspect Direct-302 run 37488653736 / job 112355290151 and integrated run 37488653473. Prior integrated run 37472578561 proved the timer_delete_sync bridge works: integrated 5.4.302 Image/modules/dtbs/modpost all PASS, then ABI/KMI failed only because removed symbols were irq_set_affinity_hint and qdisc_warn_nonwc (removed=2, changed CRC=5 xHCI symbols, added=12). Stable provenance shows irq_set_affinity_hint export was removed by stable commit 7b2a6732 when it became an inline deprecated wrapper over __irq_apply_affinity_hint; qdisc_warn_nonwc export was removed by stable commit 71d84658 when it became header inline as part of the QFQ null-deref fix. Commit bf74d0a restores only these two Candidate0059 compatibility exports while preserving Stable __irq_apply_affinity_hint/new affinity APIs and qdisc_peek_len/QFQ fix. Workflows now rerun the compatibility layer after Direct-302 materialization. Parser corruption caused by JavaScript $' replacement expansion was removed by rebuilding from the last known-good workflows at 6bc6335/fa7de6c; compatibility gate variable shadowing was fixed at 7221f75 and pre/post-stable gate logic at 05a48c6. Require Direct-302 pre-compat, semantic closure 34/34/0, materialization, post-compat and git diff check all PASS. Then require integrated target build PASS and ABI removed symbols=0. If ABI passes, proceed immediately to identity and boot.img packaging/static validation; repair only the first actual failing gate.",
   "next_expected_evidence": [
-    "Direct-302 run 37472578606 remains semantic closure raw=34 reviewed=34 unresolved=0 and source_identity=5.4.302",
-    "Candidate0061 compatibility evidence records header-only timer_delete_sync -> del_timer_sync bridge",
-    "integrated run 37472578561 target compile passes net/ipv4/inet_connection_sock.c",
-    "no new exported timer_delete_sync symbol is introduced; Lisa del_timer_sync KMI remains",
-    "Candidate0059 removed ABI symbols = 0",
-    "changed/added ABI symbols receive stable or reviewed MIXED_CONFLICT provenance",
-    "kernel identity 5.4.302 Candidate0061 and boot.img static packaging pass"
+    "Direct-302 run 37488653736 pre-materialization C0059 compatibility step PASS",
+    "Direct-302 semantic closure remains raw=34 reviewed=34 unresolved=0 and source_identity=5.4.302",
+    "post-materialization compatibility step restores EXPORT_SYMBOL_GPL(irq_set_affinity_hint) while retaining __irq_apply_affinity_hint/new Stable affinity APIs",
+    "post-materialization compatibility step restores EXPORT_SYMBOL(qdisc_warn_nonwc) while retaining qdisc_peek_len and the Stable QFQ null-deref fix",
+    "integrated 5.4.302 Image/modules/dtbs/modpost remains PASS",
+    "C0061_INTEGRATED_ABI_KMI_GATE=PASS with removed_symbol_count=0",
+    "five xHCI CRC changes and remaining added symbols are recorded as Stable/reviewed provenance",
+    "kernel identity and boot.img packaging/static validation run immediately after ABI PASS"
   ],
   "forbidden": [
     "global frequency pin",
@@ -422,7 +423,14 @@
     "Compared upstream v5.4.299/v5.4.302 and MiYume: stable networking call-site correctly uses timer_delete_sync; frozen Lisa still exports del_timer_sync and lacks the renamed timer API",
     "Candidate0061 C0059 compatibility layer commit 421d00a adds a header-only timer_delete_sync wrapper over Lisa del_timer_sync, preserving existing exported timer KMI without adding a new exported timer symbol",
     "Direct-302 run 37472578606 / job 112299616246 and integrated run 37472578561 / job 112299611136 started from 421d00a",
-    "Retired Candidate0061 Batch A push trigger disabled at 4957e63 so future compatibility/source pushes do not revive the obsolete 5.4.292 build gate"
+    "Retired Candidate0061 Batch A push trigger disabled at 4957e63 so future compatibility/source pushes do not revive the obsolete 5.4.292 build gate",
+    "Integrated run 37472578561 confirmed timer_delete_sync compatibility is correct: 5.4.302 target Image/modules/dtbs/modpost PASS and first blocker moved to ABI/KMI",
+    "Run 37472578561 ABI evidence isolated exactly two removed Candidate0059 symbols: irq_set_affinity_hint and qdisc_warn_nonwc; changed CRC count=5 (xhci_dbg_trace, xhci_ext_cap_init, xhci_gen_setup, xhci_resume, xhci_suspend) and added symbol count=12",
+    "Stable commit 7b2a6732 identified as irq_set_affinity_hint export removal/new affinity-hint API provenance; Stable commit 71d84658 identified as qdisc_warn_nonwc inline/QFQ null-deref provenance",
+    "Candidate0061 compatibility commit bf74d0a restores the two legacy C0059 exports without reverting Stable __irq_apply_affinity_hint or qdisc_peek_len/QFQ semantics",
+    "Direct and integrated workflows rebuilt from known-good versions at 6bc6335/fa7de6c after JS replacement-token corruption; both include one post-materialization C0059 KMI compatibility step",
+    "Compatibility gate qcom/pkt_sched header variable shadowing fixed at 7221f75 and pre/post-Stable validation made stage-aware at 05a48c6",
+    "Direct-302 run 37488653736 / job 112355290151 and integrated run 37488653473 started from 05a48c6"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
