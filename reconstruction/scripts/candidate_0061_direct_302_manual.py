@@ -571,6 +571,134 @@ def adapt_dwc3_qcom(root: Path):
     p.write_text(s)
 
 
+
+def adapt_dwc3_gadget(root: Path):
+    p = root / "drivers/usb/dwc3/gadget.c"
+    s = p.read_text()
+
+    # Segment A endpoint: keep Lisa downstream controller/GSI flow while
+    # applying the reviewed stable run/stop timing and USB2 PHY save/restore.
+    if "\tu32\t\t\ttimeout = 2000;\n" not in s:
+        s = once(
+            s,
+            "\tu32\t\t\ttimeout = 1500;\n",
+            "\tu32\t\t\ttimeout = 2000;\n\tu32\t\t\tsaved_config = 0;\n",
+            "Direct-302 dwc3 gadget timeout",
+        )
+    elif "\tu32\t\t\tsaved_config = 0;\n" not in s:
+        s = once(
+            s,
+            "\tu32\t\t\ttimeout = 2000;\n",
+            "\tu32\t\t\ttimeout = 2000;\n\tu32\t\t\tsaved_config = 0;\n",
+            "Direct-302 dwc3 gadget saved_config",
+        )
+
+    phy_add = (
+        "\treg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));\n"
+        "\tif (reg & DWC3_GUSB2PHYCFG_SUSPHY) {\n"
+        "\t\tsaved_config |= DWC3_GUSB2PHYCFG_SUSPHY;\n"
+        "\t\treg &= ~DWC3_GUSB2PHYCFG_SUSPHY;\n"
+        "\t}\n"
+        "\tif (reg & DWC3_GUSB2PHYCFG_ENBLSLPM) {\n"
+        "\t\tsaved_config |= DWC3_GUSB2PHYCFG_ENBLSLPM;\n"
+        "\t\treg &= ~DWC3_GUSB2PHYCFG_ENBLSLPM;\n"
+        "\t}\n"
+        "\tif (saved_config)\n"
+        "\t\tdwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);\n\n"
+    )
+    if phy_add not in s:
+        anchor = '\tdbg_event(0xFF, "run_stop", is_on);\n'
+        s = once(s, anchor, anchor + phy_add, "Direct-302 dwc3 gadget PHY save")
+
+    if "\t\tusleep_range(1000, 2000);\n" not in s:
+        old = (
+            "\tdo {\n"
+            "\t\treg = dwc3_readl(dwc->regs, DWC3_DSTS);\n"
+            "\t\treg &= DWC3_DSTS_DEVCTRLHLT;\n"
+            "\t} while (--timeout && !(!is_on ^ !reg));\n\n"
+            "\tif (!timeout) {"
+        )
+        new = (
+            "\tdo {\n"
+            "\t\tusleep_range(1000, 2000);\n"
+            "\t\treg = dwc3_readl(dwc->regs, DWC3_DSTS);\n"
+            "\t\treg &= DWC3_DSTS_DEVCTRLHLT;\n"
+            "\t} while (--timeout && !(!is_on ^ !reg));\n\n"
+            "\tif (saved_config) {\n"
+            "\t\treg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));\n"
+            "\t\treg |= saved_config;\n"
+            "\t\tdwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);\n"
+            "\t}\n\n"
+            "\tif (!timeout) {"
+        )
+        s = once(s, old, new, "Direct-302 dwc3 gadget runstop poll")
+    elif "\t\treg |= saved_config;\n" not in s:
+        anchor = "\t} while (--timeout && !(!is_on ^ !reg));\n\n"
+        restore = (
+            "\tif (saved_config) {\n"
+            "\t\treg = dwc3_readl(dwc->regs, DWC3_GUSB2PHYCFG(0));\n"
+            "\t\treg |= saved_config;\n"
+            "\t\tdwc3_writel(dwc->regs, DWC3_GUSB2PHYCFG(0), reg);\n"
+            "\t}\n\n"
+        )
+        s = once(s, anchor, anchor + restore, "Direct-302 dwc3 gadget PHY restore")
+
+    # Segment B endpoint: reject a corrupt event count larger than the buffer.
+    count_guard = (
+        "\tif (count > evt->length) {\n"
+        "\t\tdev_err_ratelimited(dwc->dev, \"invalid count(%u) > evt->length(%u)\\n\",\n"
+        "\t\t\tcount, evt->length);\n"
+        "\t\treturn IRQ_NONE;\n"
+        "\t}\n\n"
+    )
+    if count_guard not in s:
+        anchor = (
+            "\tcount = dwc3_readl(dwc->regs, DWC3_GEVNTCOUNT(0));\n"
+            "\tcount &= DWC3_GEVNTCOUNT_MASK;\n"
+            "\tif (!count)\n"
+            "\t\treturn IRQ_NONE;\n\n"
+        )
+        s = once(s, anchor, anchor + count_guard, "Direct-302 dwc3 gadget event count guard")
+
+    # Segment C endpoint: ignore a late XferNotReady after device-initiated
+    # disconnect so no new transfer can start while the controller is halting.
+    xfer_guard = (
+        "\t/*\n"
+        "\t * During a device-initiated disconnect, a late xferNotReady event can\n"
+        "\t * be generated after the End Transfer command resets the event filter,\n"
+        "\t * but before the controller is halted. Ignore it to prevent a new\n"
+        "\t * transfer from starting.\n"
+        "\t */\n"
+        "\tif (!dep->dwc->connected)\n"
+        "\t\treturn;\n\n"
+    )
+    if xfer_guard not in s:
+        anchor = (
+            "static void dwc3_gadget_endpoint_transfer_not_ready(struct dwc3_ep *dep,\n"
+            "\t\tconst struct dwc3_event_depevt *event)\n"
+            "{\n"
+        )
+        s = once(s, anchor, anchor + xfer_guard, "Direct-302 dwc3 gadget late XferNotReady guard")
+
+    for token in (
+        "timeout = 2000",
+        "saved_config = 0",
+        "usleep_range(1000, 2000)",
+        "count > evt->length",
+        "if (!dep->dwc->connected)",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 dwc3 gadget endpoint missing {token}")
+
+    # Preserve Lisa downstream functionality; this is an endpoint adaptation,
+    # never an upstream whole-file replacement.
+    for token in ("dbg_event", "DWC3_DCTL_RUN_STOP", "dwc3_gadget_run_stop"):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 dwc3 gadget lost Lisa/downstream token {token}")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -613,6 +741,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/usb/dwc3/dwc3-qcom.c":
         adapt_dwc3_qcom(root)
         return "DIRECT_302_DWC3_QCOM_C"
+
+    if path == "drivers/usb/dwc3/gadget.c":
+        adapt_dwc3_gadget(root)
+        return "DIRECT_302_DWC3_GADGET_A_B_C"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
