@@ -17,6 +17,12 @@ MIYUME_TARGET = "miyume-sm8350-5.4.302"
 AOSP_TARGET = "aosp-android11-5.4.302"
 CLO_TARGET = "clo-msm-5.4-r1-rel"
 
+# Paths that are textually mergeable but semantically incompatible with the
+# frozen Lisa/C0059 downstream contract. They must enter reviewed resolution.
+FORCED_SEMANTIC_REVIEW = {
+    "drivers/base/power/runtime.c",
+}
+
 SOC_MARKERS = (
     "SM8350", "sm8350", "LAHAINA", "lahaina", "venus",
     "MACH_XIAOMI_SM8350", "ARCH_LAHAINA",
@@ -97,7 +103,9 @@ def main():
         target = blob(root, UPSTREAM_TARGET, path)
         ours = work(root, path)
 
-        if ours == target:
+        if path in FORCED_SEMANTIC_REVIEW and ours != target:
+            cls = "SEMANTIC_REVIEW"
+        elif ours == target:
             cls = "ALREADY_PRESENT"
         elif ours == base:
             cls = "DIRECT"
