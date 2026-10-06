@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "WRITE_PERMISSION_BLOCKED_HID_IDS_A_B_D_ADAPTER_READY",
+    "phase_5_direct_302_semantic_conflict_closure": "HID_A_B_D_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,14 +106,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "3818684d6d95db71ae3d3af49d2c9cbdec6716d2",
-  "last_checked_run": 37409777926,
-  "blocker": "WRITE_PERMISSION_BLOCKED: Direct-302 source materialization next blocker is drivers/hid/hid-ids.h (A+B+D); reviewed endpoint adapter is fully specified but code-file update was denied by write safety review.",
-  "next_action": "Retry writing the Direct-302 A+B+D drivers/hid/hid-ids.h adapter into reconstruction/scripts/candidate_0061_direct_302_manual.py. The adapter must preserve Lisa vendor/XR HID IDs, ensure Segment A Quanta HP 5MP ID, Segment B ADATA XPG and Chicony HP 5MP IDs, Segment D Cooler Master IDs, and resolve the final 0x4c4a/0x4155 endpoint to JIELI_SDK_DEFAULT/JIELI_SDK_4155. MiYume 5.4.302 confirms Lisa/Xiaomi downstream QVR/NREAL IDs remain before Jieli. After write succeeds, let Direct-302 workflow rerun; if it fails, inspect the next first actual .rej only.",
+  "last_checked_commit": "ebe56bc1200c1b460f4df2fb615bbd828ed76946",
+  "last_checked_run": 37414023413,
+  "blocker": "NONE_RUN_37414023413_IN_PROGRESS",
+  "next_action": "Inspect Direct-302 run 37414023413 / job 112108541779. The previously blocked HID A+B+D endpoint adapter is now committed at ebe56bc. Verify semantic closure remains raw=33 reviewed=33 unresolved=0, then verify Materialize Direct-302 source tree progresses past drivers/hid/hid-ids.h. If materialization fails, inspect only the first actual .rej/adapter error and implement that next reviewed endpoint adapter. Do not start integrated build until all 1760 paths materialize, no .rej files remain, git diff --check passes, and source identity is 5.4.302.",
   "next_expected_evidence": [
-    "Retry of Direct-302 HID A+B+D endpoint adapter write succeeds",
-    "new Direct-302 run preserves semantic closure raw=33 reviewed=33 unresolved=0",
-    "drivers/hid/hid-ids.h no longer blocks source materialization",
+    "Run 37414023413 reaches semantic closure raw=33 reviewed=33 unresolved=0",
+    "drivers/hid/hid-ids.h no longer blocks Direct-302 source materialization",
+    "Materialize Direct-302 source tree either PASS or reports exactly the next first reviewed semantic source blocker",
     "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
     "no .rej files remain, git diff --check PASS, source_identity=5.4.302",
     "no integrated build starts before source materialization PASS"
@@ -296,7 +296,10 @@
     "Direct-302 B+D arm64 CPU-ID endpoint adapter committed at 3698e393, adding Cortex-A76AE and enforcing Neoverse-V3AE while preserving Lisa downstream Qualcomm/Kryo IDs",
     "Run 37409777926 confirmed cputype B+D adapter fix progressed materialization to the next blocker drivers/hid/hid-ids.h (A+B+D); semantic closure remained raw=33 reviewed=33 unresolved=0 and changed_file_count remained 1760",
     "Direct-302 HID A+B+D semantic endpoint reviewed: Segment A adds Quanta HP 5MP 0x5473; Segment B adds ADATA XPG and Chicony HP 5MP IDs; Segment D adds Cooler Master IDs and finalizes 0x4c4a/0x4155 naming as JIELI_SDK_DEFAULT/JIELI_SDK_4155; MiYume final state retains downstream QVR/NREAL IDs before Jieli",
-    "WRITE_PERMISSION_BLOCKED while attempting to commit the Direct-302 HID A+B+D source adapter; no fallback or manual handoff requested"
+    "WRITE_PERMISSION_BLOCKED while attempting to commit the Direct-302 HID A+B+D source adapter; no fallback or manual handoff requested",
+    "Direct-302 HID A+B+D endpoint adapter write retried successfully at ebe56bc",
+    "HID endpoint adapter preserves Lisa QVR/NREAL IDs, adds Quanta HP 5MP, ADATA XPG, Chicony HP 5MP, Cooler Master, and final JIELI_SDK 0x4c4a:0x4155 naming",
+    "Direct-302 run 37414023413 / job 112108541779 started from ebe56bc"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
