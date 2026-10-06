@@ -154,7 +154,7 @@ jobs:
           mkdir -p kernel/out
           cp kernel/reconstruction/stock_ikconfig kernel/out/.config
           kernel/scripts/config --file kernel/out/.config --set-str LOCALVERSION "-qgki-lisa-c0059-r43da7c5-by-Tim0320" -d LOCALVERSION_AUTO -d COMPAT_VDSO -d ARM64_USE_LSE_ATOMICS -d RELR -e PERF_HELPER -e MILLET_CGROUP -e MILLET_SIG -e MILLET_BINDER -e MILLET_PKG -e MILLET_BINDER_GKI -e MILLET_CORE -e MILLET_HS -e BOARD_XIAOMI_LISA -e MIHW -e PACKAGE_RUNTIME_INFO -e MIGT
-          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts 2>&1 | tee candidate-0061-integrated-control-config.log
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LOCALVERSION= olddefconfig prepare scripts 2>&1 | tee candidate-0061-integrated-control-config.log
           grep -q '^CONFIG_MIHW=y$' kernel/out/.config
           grep -q '^CONFIG_MIGT=y$' kernel/out/.config
           grep -q '^CONFIG_PACKAGE_RUNTIME_INFO=y$' kernel/out/.config
@@ -174,7 +174,7 @@ jobs:
           CONFIG_USE_COMMON_CAMERA: y
         run: |
           set -euo pipefail
-          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- Image modules dtbs 2>&1 | tee candidate-0061-integrated-control-build.log
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LOCALVERSION= Image modules dtbs 2>&1 | tee candidate-0061-integrated-control-build.log
           test -s kernel/out/arch/arm64/boot/Image
           test -s kernel/out/Module.symvers
           test "$(find kernel/out -name '*.ko' -type f | wc -l)" -gt 0
@@ -285,7 +285,7 @@ jobs:
           cp candidate-0061-integrated-control.config kernel/out/.config
           short="${GITHUB_SHA:0:7}"
           kernel/scripts/config --file kernel/out/.config --set-str LOCALVERSION "-qgki-lisa-c0061-r${short}-by-Tim0320" -d LOCALVERSION_AUTO
-          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- olddefconfig prepare scripts 2>&1 | tee candidate-0061-integrated-target-config.log
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LOCALVERSION= olddefconfig prepare scripts 2>&1 | tee candidate-0061-integrated-target-config.log
           grep -q '^CONFIG_MIHW=y$' kernel/out/.config
           grep -q '^CONFIG_MIGT=y$' kernel/out/.config
           grep -q '^CONFIG_PACKAGE_RUNTIME_INFO=y$' kernel/out/.config
@@ -307,7 +307,7 @@ jobs:
           CONFIG_USE_COMMON_CAMERA: y
         run: |
           set -euo pipefail
-          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- Image modules dtbs 2>&1 | tee candidate-0061-integrated-build.log
+          make -C kernel -j"$(nproc)" O="$PWD/kernel/out" ARCH=arm64 CC=clang LLVM=1 LLVM_IAS=1 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CLANG_TRIPLE=aarch64-linux-gnu- LOCALVERSION= Image modules dtbs 2>&1 | tee candidate-0061-integrated-build.log
           test -s kernel/out/arch/arm64/boot/Image
           test -s kernel/out/Module.symvers
           test -s kernel/out/System.map
@@ -367,7 +367,7 @@ jobs:
           set -euo pipefail
           short="${GITHUB_SHA:0:7}"
           expected="5.4.302-qgki-lisa-c0061-r${short}-by-Tim0320"
-          actual="$(make -s -C kernel O="$PWD/kernel/out" ARCH=arm64 kernelrelease)"
+          actual="$(make -s -C kernel O="$PWD/kernel/out" ARCH=arm64 LOCALVERSION= kernelrelease)"
           echo "expected_kernelrelease=$expected" | tee candidate-0061-integrated-identity.txt
           echo "actual_kernelrelease=$actual" | tee -a candidate-0061-integrated-identity.txt
           test "$actual" = "$expected"
