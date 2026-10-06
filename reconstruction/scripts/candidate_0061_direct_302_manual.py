@@ -776,6 +776,72 @@ def adapt_functionfs(root: Path):
     p.write_text(s)
 
 
+
+def adapt_function_ncm(root: Path):
+    p = root / "drivers/usb/gadget/function/f_ncm.c"
+    s = p.read_text()
+
+    # Segment D 5.4.299->5.4.302 moves the shared MAC string pointer from
+    # allocation time to bind time. MiYume 5.4.302 confirms the same endpoint
+    # on top of Xiaomi's downstream gether_setup_default()/bind-time address
+    # generation flow. Preserve that downstream flow; only move the assignment.
+    alloc_line = "\tncm_string_defs[STRING_MAC_IDX].s = ncm->ethaddr;\n"
+    if alloc_line in s:
+        s = s.replace(alloc_line, "", 1)
+
+    bind_endpoint = (
+        "\tncm->port.ioport = netdev_priv(ncm_opts->net);\n\n"
+        "\tncm_string_defs[STRING_MAC_IDX].s = ncm->ethaddr;\n\n"
+        "\tus = usb_gstrings_attach(cdev, ncm_strings,\n"
+    )
+    if bind_endpoint not in s:
+        anchor = (
+            "\tncm->port.ioport = netdev_priv(ncm_opts->net);\n\n"
+            "\tus = usb_gstrings_attach(cdev, ncm_strings,\n"
+        )
+        replacement = (
+            "\tncm->port.ioport = netdev_priv(ncm_opts->net);\n\n"
+            "\tncm_string_defs[STRING_MAC_IDX].s = ncm->ethaddr;\n\n"
+            "\tus = usb_gstrings_attach(cdev, ncm_strings,\n"
+        )
+        s = once(
+            s,
+            anchor,
+            replacement,
+            "Direct-302 NCM bind-time MAC string endpoint",
+        )
+
+    if s.count("ncm_string_defs[STRING_MAC_IDX].s = ncm->ethaddr;") != 1:
+        raise RuntimeError(
+            "Direct-302 NCM expected exactly one bind-time MAC string assignment"
+        )
+
+    bind_start = s.find("static int ncm_bind(")
+    alloc_start = s.find("static struct usb_function *ncm_alloc(")
+    if bind_start < 0 or alloc_start < 0:
+        raise RuntimeError("Direct-302 NCM bind/alloc function missing")
+    bind_body = s[bind_start:alloc_start]
+    alloc_body = s[alloc_start:]
+
+    if "ncm_string_defs[STRING_MAC_IDX].s = ncm->ethaddr;" not in bind_body:
+        raise RuntimeError("Direct-302 NCM bind-time MAC assignment missing")
+    if "ncm_string_defs[STRING_MAC_IDX].s = ncm->ethaddr;" in alloc_body:
+        raise RuntimeError("Direct-302 NCM stale alloc-time MAC assignment remains")
+
+    # Preserve Lisa/Xiaomi downstream lifecycle rather than replacing the file
+    # wholesale with upstream.
+    for token in (
+        "gether_setup_default()",
+        "gether_register_netdev",
+        "gether_get_host_addr_cdc(ncm_opts->net, ncm->ethaddr",
+        "ncm->port.ioport = netdev_priv(ncm_opts->net)",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 NCM lost Lisa downstream token {token}")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -826,6 +892,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/usb/gadget/function/f_fs.c":
         adapt_functionfs(root)
         return "DIRECT_302_FUNCTIONFS_A_D"
+
+    if path == "drivers/usb/gadget/function/f_ncm.c":
+        adapt_function_ncm(root)
+        return "DIRECT_302_FUNCTION_NCM_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
