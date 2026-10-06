@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "USBNET_C_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "NET_SOCK_H_D_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,18 +106,17 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "e2c2bd8f0655e3bd1c7ded5e0af30faafbf7b8ae",
-  "last_checked_run": 37448232726,
-  "blocker": "NONE_RUN_37448232726_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37448232726 / job 112218139839. The previously write-blocked include/linux/usb/usbnet.h Segment-C adapter is now committed at e2c2bd8. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and usbnet.h materializes with EVENT_LINK_CARRIER_ON=14 while preserving Android KABI rx_speed/tx_speed layout. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate.",
+  "last_checked_commit": "cf03309e04c31bffa66d0cb71d56e03da91c0063",
+  "last_checked_run": 37449002601,
+  "blocker": "NONE_RUN_37449002601_IN_PROGRESS",
+  "next_action": "Inspect Direct-302 run 37449002601 / job 112220682422. Prior run 37448232726 kept semantic closure raw=33 reviewed=33 unresolved=0, passed usbnet Segment-C, and advanced first materialization blocker to include/net/sock.h Segment D. Commit cf03309 adds the stable backport 83083c5f socket module-owner lifetime endpoint: sk_owner field, sk_owner_set/clear/put helpers, and sk_owner_set(sk, THIS_MODULE) in sock_lock_init_class_and_name(), while preserving Lisa Android KABI reserve/vendor slots. If materialization fails, repair only the next first actual reviewed reject. The matching net/core/sock.c clear/put half is expected later if/when that path becomes the first blocker. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate.",
   "next_expected_evidence": [
-    "run 37448232726 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "include/linux/usb/usbnet.h Segment-C materializes successfully",
-    "EVENT_LINK_CARRIER_ON=14 exists exactly once",
-    "ANDROID_KABI_USE2 rx_speed/tx_speed layout remains intact",
-    "next blocker, if any, is exactly one subsequent reviewed semantic path",
-    "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
-    "source_identity=5.4.302 before integrated build starts"
+    "run 37449002601 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "include/net/sock.h Segment-D materializes successfully",
+    "sk_owner field and set/clear/put helpers exist exactly once",
+    "sock_lock_init_class_and_name acquires THIS_MODULE ownership",
+    "Lisa Android KABI reserve/vendor slots remain intact",
+    "next blocker, if any, is exactly one subsequent reviewed semantic path"
   ],
   "forbidden": [
     "global frequency pin",
@@ -366,7 +365,12 @@
     "Attempted minimal Direct-302 usbnet adapter write, but repository mutation was blocked by OpenAI safety checks; source tree unchanged",
     "Previously blocked Direct-302 usbnet Segment-C adapter write retried successfully at e2c2bd8",
     "usbnet adapter adds only EVENT_LINK_CARRIER_ON=14 and preserves Lisa Android KABI rx_speed/tx_speed layout",
-    "Direct-302 run 37448232726 / job 112218139839 started from e2c2bd8"
+    "Direct-302 run 37448232726 / job 112218139839 started from e2c2bd8",
+    "Run 37448232726 kept Direct-302 semantic closure PASS raw=33 reviewed=33 unresolved=0 and confirmed usbnet Segment-C adapter passes",
+    "Run 37448232726 advanced first materialization blocker to include/net/sock.h Segment D",
+    "Stable backport commit 83083c5f identified as the exact Segment-D sock.h semantic source; MiYume 5.4.302 carries the same owner-lifetime endpoint atop Android KABI layout",
+    "Direct-302 include/net/sock.h Segment-D owner-lifetime adapter committed at cf03309",
+    "Direct-302 run 37449002601 / job 112220682422 started"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
