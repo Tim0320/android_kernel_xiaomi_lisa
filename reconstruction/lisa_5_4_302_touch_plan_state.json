@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "SOURCE_MATERIALIZATION_ITERATION_CPUTYPE_B_D_FIXED_CI_QUEUED",
+    "phase_5_direct_302_semantic_conflict_closure": "WRITE_PERMISSION_BLOCKED_HID_IDS_A_B_D_ADAPTER_READY",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,15 +106,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "3698e393d4f63ce98d6af94f435f140c326784c8",
+  "last_checked_commit": "3818684d6d95db71ae3d3af49d2c9cbdec6716d2",
   "last_checked_run": 37409777926,
-  "blocker": "DIRECT_302_SOURCE_MATERIALIZATION_CI_QUEUED_AFTER_CPUTYPE_B_D_FIX",
-  "next_action": "Inspect Direct-302 run 37409777926. Run 37408588177 proved semantic closure PASS but failed at the first source-materialization blocker arch/arm64/include/asm/cputype.h (B+D). Commit 3698e393 adds the reviewed Cortex-A76AE and Neoverse-V3AE endpoint adapter while preserving Lisa/Kryo downstream IDs. If run 37409777926 fails, locate the next first actual .rej/semantic adapter blocker, implement only that reviewed endpoint adaptation, commit, and rerun. Do not start integrated build until all 1760 paths are materialized, no .rej files remain, git diff --check passes, and Makefile SUBLEVEL=302.",
+  "blocker": "WRITE_PERMISSION_BLOCKED: Direct-302 source materialization next blocker is drivers/hid/hid-ids.h (A+B+D); reviewed endpoint adapter is fully specified but code-file update was denied by write safety review.",
+  "next_action": "Retry writing the Direct-302 A+B+D drivers/hid/hid-ids.h adapter into reconstruction/scripts/candidate_0061_direct_302_manual.py. The adapter must preserve Lisa vendor/XR HID IDs, ensure Segment A Quanta HP 5MP ID, Segment B ADATA XPG and Chicony HP 5MP IDs, Segment D Cooler Master IDs, and resolve the final 0x4c4a/0x4155 endpoint to JIELI_SDK_DEFAULT/JIELI_SDK_4155. MiYume 5.4.302 confirms Lisa/Xiaomi downstream QVR/NREAL IDs remain before Jieli. After write succeeds, let Direct-302 workflow rerun; if it fails, inspect the next first actual .rej only.",
   "next_expected_evidence": [
-    "Run 37409777926 creates direct-302-scan job and reaches Materialize Direct-302 source tree",
-    "semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "arch/arm64/include/asm/cputype.h no longer blocks B+D endpoint materialization",
-    "the next failure, if any, identifies exactly one subsequent reviewed semantic adapter/reject blocker",
+    "Retry of Direct-302 HID A+B+D endpoint adapter write succeeds",
+    "new Direct-302 run preserves semantic closure raw=33 reviewed=33 unresolved=0",
+    "drivers/hid/hid-ids.h no longer blocks source materialization",
     "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
     "no .rej files remain, git diff --check PASS, source_identity=5.4.302",
     "no integrated build starts before source materialization PASS"
@@ -294,7 +293,10 @@
     "One-shot Direct-302 source materializer added at 73117bb7; it applies all 1760 paths and hard-gates rejects, git diff --check, and SUBLEVEL=302",
     "Direct-302 workflow materialization gate added at f6a6af74 without adding an integrated kernel build",
     "Run 37408588177 reached Direct-302 source materialization and failed at the first real semantic source blocker: arch/arm64/include/asm/cputype.h (B+D), with rejected Cortex-A76AE hunks while Neoverse-V3AE hunks applied cleanly",
-    "Direct-302 B+D arm64 CPU-ID endpoint adapter committed at 3698e393, adding Cortex-A76AE and enforcing Neoverse-V3AE while preserving Lisa downstream Qualcomm/Kryo IDs"
+    "Direct-302 B+D arm64 CPU-ID endpoint adapter committed at 3698e393, adding Cortex-A76AE and enforcing Neoverse-V3AE while preserving Lisa downstream Qualcomm/Kryo IDs",
+    "Run 37409777926 confirmed cputype B+D adapter fix progressed materialization to the next blocker drivers/hid/hid-ids.h (A+B+D); semantic closure remained raw=33 reviewed=33 unresolved=0 and changed_file_count remained 1760",
+    "Direct-302 HID A+B+D semantic endpoint reviewed: Segment A adds Quanta HP 5MP 0x5473; Segment B adds ADATA XPG and Chicony HP 5MP IDs; Segment D adds Cooler Master IDs and finalizes 0x4c4a/0x4155 naming as JIELI_SDK_DEFAULT/JIELI_SDK_4155; MiYume final state retains downstream QVR/NREAL IDs before Jieli",
+    "WRITE_PERMISSION_BLOCKED while attempting to commit the Direct-302 HID A+B+D source adapter; no fallback or manual handoff requested"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
