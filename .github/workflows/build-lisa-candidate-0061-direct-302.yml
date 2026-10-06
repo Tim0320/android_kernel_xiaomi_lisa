@@ -180,7 +180,32 @@ jobs:
             2>&1 | tee candidate-0061-direct-302-apply.log
           grep -q '^C0061_DIRECT_302_APPLY=PASS$' candidate-0061-direct-302-apply.log
           grep -q '^source_identity=5.4.302$' candidate-0061-direct-302-apply.log
-          grep -q '^git_diff_check=PASS        if: ${{ always() }}
+          grep -q '^git_diff_check=PASS$' candidate-0061-direct-302-apply.log
+
+      - name: Restore C0059 KMI exports after Direct-302 materialization
+        id: post_compat
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 - <<'PY' 2>&1 | tee candidate-0061-direct-302-post-compat.log
+          from pathlib import Path
+          import candidate_0061_c0059_abi_compat as compat
+          compat.apply(Path("package").resolve(), Path("kernel").resolve())
+          print("C0061_DIRECT_302_POST_COMPAT=PASS")
+          PY
+          grep -q '^C0061_DIRECT_302_POST_COMPAT=PASS$' candidate-0061-direct-302-post-compat.log
+          grep -q 'irq_set_affinity_hint' package/candidate-0061-c0059-abi-compat.txt
+          grep -q 'qdisc_warn_nonwc' package/candidate-0061-c0059-abi-compat.txt
+          grep -q 'EXPORT_SYMBOL_GPL(irq_set_affinity_hint);' kernel/kernel/irq/manage.c
+          grep -q 'EXPORT_SYMBOL(qdisc_warn_nonwc);' kernel/net/sched/sch_api.c
+          grep -q 'static inline unsigned int qdisc_peek_len' kernel/include/net/pkt_sched.h
+          grep -q '__irq_apply_affinity_hint' kernel/include/linux/interrupt.h
+          grep -q '^SUBLEVEL = 302$' kernel/Makefile
+          git -C kernel diff --check
+
+      - name: Report Direct-302 scan evidence
+        if: ${{ always() }}
         env:
           GH_TOKEN: ${{ github.token }}
           STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
@@ -206,181 +231,6 @@ jobs:
             echo "- semantic_closure: $CLOSURE_OUTCOME"
             echo "- source_materialization: $APPLY_OUTCOME"
             echo "- post_materialization_c0059_kmi_compat: $POST_COMPAT_OUTCOME"
-            if test -s candidate-0061-direct-302-scan.json; then
-              python3 - <<'PY'
-          import json
-          p=json.load(open("candidate-0061-direct-302-scan.json"))
-          print("- changed_file_count:", len(p.get("files", [])))
-          print("- counts:", p.get("counts", {}))
-          print("- semantic_review_count:", p.get("semantic_review_count"))
-          print("- reviewed_semantic_count:", p.get("reviewed_semantic_count"))
-          print("- unresolved_semantic_count:", p.get("unresolved_semantic_count"))
-          print("- semantic_paths:", [x.get("path") for x in p.get("semantic_review", [])])
-          print("- unresolved_paths:", [x.get("path") for x in p.get("unresolved_semantic", [])])
-          PY
-            fi
-          } > candidate-0061-direct-302-issue.md
-          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-direct-302-issue.md
-
-      - name: Upload Direct-302 scan evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: lisa-c0061-direct-302-scan-a${{ github.run_attempt }}
-          retention-days: 14
-          include-hidden-files: true
-          if-no-files-found: warn
-          path: |
-            candidate-0061-direct-302-*
- candidate-0061-direct-302-apply.log
-
-      - name: Restore C0059 KMI exports after Direct-302 materialization
-        id: post_compat
-        env:
-          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
-        run: |
-          set -euo pipefail
-          python3 - <<'PY' 2>&1 | tee candidate-0061-direct-302-post-compat.log
-          from pathlib import Path
-          import candidate_0061_c0059_abi_compat as compat
-          compat.apply(Path("package").resolve(), Path("kernel").resolve())
-          print("C0061_DIRECT_302_POST_COMPAT=PASS")
-          PY
-          grep -q '^C0061_DIRECT_302_POST_COMPAT=PASS        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
-          C0059_OUTCOME: ${{ steps.c0059.outcome }}
-          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
-          SCAN_OUTCOME: ${{ steps.scan.outcome }}
-          REVIEW_OUTCOME: ${{ steps.review.outcome }}
-          CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
-          APPLY_OUTCOME: ${{ steps.apply.outcome }}
-        run: |
-          set -u
-          {
-            echo "Candidate0061 Direct 5.4.302 semantic scan"
-            echo
-            echo "- source_sha: ${GITHUB_SHA}"
-            echo "- run_id: ${GITHUB_RUN_ID}"
-            echo "- stock_abi: $STOCK_ABI_OUTCOME"
-            echo "- c0059_source: $C0059_OUTCOME"
-            echo "- compat: $COMPAT_OUTCOME"
-            echo "- direct_302_scan: $SCAN_OUTCOME"
-            echo "- semantic_review_gate: $REVIEW_OUTCOME"
-            echo "- semantic_closure: $CLOSURE_OUTCOME"
-            echo "- source_materialization: $APPLY_OUTCOME"
-            if test -s candidate-0061-direct-302-scan.json; then
-              python3 - <<'PY'
-          import json
-          p=json.load(open("candidate-0061-direct-302-scan.json"))
-          print("- changed_file_count:", len(p.get("files", [])))
-          print("- counts:", p.get("counts", {}))
-          print("- semantic_review_count:", p.get("semantic_review_count"))
-          print("- reviewed_semantic_count:", p.get("reviewed_semantic_count"))
-          print("- unresolved_semantic_count:", p.get("unresolved_semantic_count"))
-          print("- semantic_paths:", [x.get("path") for x in p.get("semantic_review", [])])
-          print("- unresolved_paths:", [x.get("path") for x in p.get("unresolved_semantic", [])])
-          PY
-            fi
-          } > candidate-0061-direct-302-issue.md
-          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-direct-302-issue.md
-
-      - name: Upload Direct-302 scan evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: lisa-c0061-direct-302-scan-a${{ github.run_attempt }}
-          retention-days: 14
-          include-hidden-files: true
-          if-no-files-found: warn
-          path: |
-            candidate-0061-direct-302-*
- candidate-0061-direct-302-post-compat.log
-          grep -q 'irq_set_affinity_hint' package/candidate-0061-c0059-abi-compat.txt
-          grep -q 'qdisc_warn_nonwc' package/candidate-0061-c0059-abi-compat.txt
-          grep -q 'EXPORT_SYMBOL_GPL(irq_set_affinity_hint);' kernel/kernel/irq/manage.c
-          grep -q 'EXPORT_SYMBOL(qdisc_warn_nonwc);' kernel/net/sched/sch_api.c
-          grep -q 'static inline unsigned int qdisc_peek_len' kernel/include/net/pkt_sched.h
-          grep -q '__irq_apply_affinity_hint' kernel/include/linux/interrupt.h
-          grep -q '^SUBLEVEL = 302        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
-          C0059_OUTCOME: ${{ steps.c0059.outcome }}
-          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
-          SCAN_OUTCOME: ${{ steps.scan.outcome }}
-          REVIEW_OUTCOME: ${{ steps.review.outcome }}
-          CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
-          APPLY_OUTCOME: ${{ steps.apply.outcome }}
-        run: |
-          set -u
-          {
-            echo "Candidate0061 Direct 5.4.302 semantic scan"
-            echo
-            echo "- source_sha: ${GITHUB_SHA}"
-            echo "- run_id: ${GITHUB_RUN_ID}"
-            echo "- stock_abi: $STOCK_ABI_OUTCOME"
-            echo "- c0059_source: $C0059_OUTCOME"
-            echo "- compat: $COMPAT_OUTCOME"
-            echo "- direct_302_scan: $SCAN_OUTCOME"
-            echo "- semantic_review_gate: $REVIEW_OUTCOME"
-            echo "- semantic_closure: $CLOSURE_OUTCOME"
-            echo "- source_materialization: $APPLY_OUTCOME"
-            if test -s candidate-0061-direct-302-scan.json; then
-              python3 - <<'PY'
-          import json
-          p=json.load(open("candidate-0061-direct-302-scan.json"))
-          print("- changed_file_count:", len(p.get("files", [])))
-          print("- counts:", p.get("counts", {}))
-          print("- semantic_review_count:", p.get("semantic_review_count"))
-          print("- reviewed_semantic_count:", p.get("reviewed_semantic_count"))
-          print("- unresolved_semantic_count:", p.get("unresolved_semantic_count"))
-          print("- semantic_paths:", [x.get("path") for x in p.get("semantic_review", [])])
-          print("- unresolved_paths:", [x.get("path") for x in p.get("unresolved_semantic", [])])
-          PY
-            fi
-          } > candidate-0061-direct-302-issue.md
-          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-direct-302-issue.md
-
-      - name: Upload Direct-302 scan evidence
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: lisa-c0061-direct-302-scan-a${{ github.run_attempt }}
-          retention-days: 14
-          include-hidden-files: true
-          if-no-files-found: warn
-          path: |
-            candidate-0061-direct-302-*
- kernel/Makefile
-          git -C kernel diff --check
-
-      - name: Report Direct-302 scan evidence
-        if: ${{ always() }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
-          C0059_OUTCOME: ${{ steps.c0059.outcome }}
-          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
-          SCAN_OUTCOME: ${{ steps.scan.outcome }}
-          REVIEW_OUTCOME: ${{ steps.review.outcome }}
-          CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
-          APPLY_OUTCOME: ${{ steps.apply.outcome }}
-        run: |
-          set -u
-          {
-            echo "Candidate0061 Direct 5.4.302 semantic scan"
-            echo
-            echo "- source_sha: ${GITHUB_SHA}"
-            echo "- run_id: ${GITHUB_RUN_ID}"
-            echo "- stock_abi: $STOCK_ABI_OUTCOME"
-            echo "- c0059_source: $C0059_OUTCOME"
-            echo "- compat: $COMPAT_OUTCOME"
-            echo "- direct_302_scan: $SCAN_OUTCOME"
-            echo "- semantic_review_gate: $REVIEW_OUTCOME"
-            echo "- semantic_closure: $CLOSURE_OUTCOME"
-            echo "- source_materialization: $APPLY_OUTCOME"
             if test -s candidate-0061-direct-302-scan.json; then
               python3 - <<'PY'
           import json
