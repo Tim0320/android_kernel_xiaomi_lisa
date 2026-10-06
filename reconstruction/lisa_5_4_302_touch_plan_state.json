@@ -106,14 +106,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "981a859a9afcf1035b5e46e2acd300d93ce5386e",
-  "last_checked_run": 37434391634,
-  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_DWC3_QCOM_C",
-  "next_action": "Retry the reviewed Direct-302 Segment-C adapter for drivers/usb/dwc3/dwc3-qcom.c. Run 37434391634 confirms semantic closure raw=33 reviewed=33 unresolved=0 and materialization applies hunks #1 and #3 cleanly but rejects only hunk #2 that removes the stale reset_assert label. The reviewed endpoint is the stable 'usb: dwc3: qcom: Don't leave BCR asserted' behavior: deassert/clock-init failures return directly, the stale reset_assert label is removed, and remove() must not assert the BCR. Preserve Lisa USB3_GDSC and per-clock downstream integration. The code write in this run was blocked by safety review before mutation. After the write succeeds, rerun Direct-302 and fix only the next first actual reviewed reject. Do not start integrated build until all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
+  "last_checked_commit": "8618087211aa717d62b276d3142eeec55577fd9d",
+  "last_checked_run": 37440803973,
+  "blocker": "WAITING_DIRECT_302_DWC3_QCOM_C_RERUN",
+  "next_action": "Inspect Direct-302 run 37440803973 triggered by commit 8618087211aa717d62b276d3142eeec55577fd9d. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the new Segment-C drivers/usb/dwc3/dwc3-qcom.c adapter materializes the stable BCR endpoint while preserving Lisa USB3_GDSC/per-clock integration. If materialization fails, fix only the first actual reviewed reject. If source materialization reaches all 1760 paths with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
   "next_expected_evidence": [
-    "Direct-302 dwc3-qcom Segment-C adapter write succeeds",
-    "new Direct-302 run semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/usb/dwc3/dwc3-qcom.c materializes without reset_assert error label and without remove-time BCR assertion while retaining USB3_GDSC",
+    "run 37440803973 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "drivers/usb/dwc3/dwc3-qcom.c adapter passes with no reset_assert error label and no remove-time BCR assertion",
+    "Lisa USB3_GDSC and per-clock downstream integration remain present",
     "next materialization blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
     "no .rej files remain, git diff --check PASS, source_identity=5.4.302",
@@ -324,7 +324,9 @@
     "Reviewed Direct-302 Segment-D drivers/soc/qcom/rpmh-rsc.c adapter committed at 006feca9; completed-TCS trigger clear is unconditional while IRQ disable remains conditional",
     "Direct-302 run 37432881520 / job 112167644113 triggered from 006feca9 and entered in-progress execution",
     "Run 37434391634 confirmed Direct-302 semantic closure raw=33 reviewed=33 unresolved=0 and advanced first materialization blocker to drivers/usb/dwc3/dwc3-qcom.c Segment C",
-    "Reviewed dwc3-qcom stable BCR endpoint against frozen Lisa, MiYume final state, upstream 5.4.302 and stable fix ef8abc0ba49c; preserve Lisa USB3_GDSC while removing re-assert error/remove paths"
+    "Reviewed dwc3-qcom stable BCR endpoint against frozen Lisa, MiYume final state, upstream 5.4.302 and stable fix ef8abc0ba49c; preserve Lisa USB3_GDSC while removing re-assert error/remove paths",
+    "Reviewed Direct-302 Segment-C drivers/usb/dwc3/dwc3-qcom.c adapter committed at 86180872; enforces direct-return deassert/clock-init failures, removes stale reset_assert tail/remove-time BCR assertion, and preserves Lisa USB3_GDSC/per-clock downstream integration",
+    "Direct-302 run 37440803973 queued from 86180872"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
