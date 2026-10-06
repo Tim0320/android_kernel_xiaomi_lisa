@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Restore two Candidate0059 ABI/runtime compatibility exports.
+"""Restore Candidate0059 ABI/runtime compatibility surface.
 
 This is intentionally side-effect-free: callers pass the package root and
 kernel source root.  It preserves the frozen Candidate0059 ABI while leaving
@@ -148,15 +148,126 @@ static inline int timer_delete_sync(struct timer_list *timer)
 
 
 
+
+def _patch_irq_affinity_hint_compat(kernel: Path) -> None:
+    """Restore the Candidate0059 irq_set_affinity_hint export after Stable.
+
+    Stable commit 7b2a6732 keeps the deprecated API as a header inline wrapper
+    over __irq_apply_affinity_hint(), which is correct upstream behaviour but
+    removes the exported Candidate0059 KMI symbol.  Preserve the new Stable
+    interfaces and semantics, while restoring only the legacy out-of-line
+    wrapper/export.
+    """
+    hp = kernel / "include/linux/interrupt.h"
+    cp = kernel / "kernel/irq/manage.c"
+    h = hp.read_text()
+    c = cp.read_text()
+
+    if "EXPORT_SYMBOL_GPL(irq_set_affinity_hint);" in c:
+        return
+
+    inline = """static inline int irq_set_affinity_hint(unsigned int irq, const struct cpumask *m)
+{
+\treturn irq_set_affinity_and_hint(irq, m);
+}
+"""
+    extern = """extern int irq_set_affinity_hint(unsigned int irq,
+\t\t\t\t const struct cpumask *m);
+"""
+    if inline in h:
+        h = h.replace(inline, extern, 1)
+    elif extern not in h:
+        raise RuntimeError("irq_set_affinity_hint Stable inline/compat extern anchor missing")
+
+    anchor = """EXPORT_SYMBOL_GPL(__irq_apply_affinity_hint);
+
+"""
+    if c.count(anchor) != 1:
+        raise RuntimeError(
+            f"irq_set_affinity_hint implementation anchor count={c.count(anchor)}"
+        )
+    compat = anchor + """/*
+ * Candidate0061 KMI compatibility: keep Stable's new affinity-hint core,
+ * but retain the Candidate0059 exported deprecated wrapper.
+ */
+int irq_set_affinity_hint(unsigned int irq, const struct cpumask *m)
+{
+\treturn irq_set_affinity_and_hint(irq, m);
+}
+EXPORT_SYMBOL_GPL(irq_set_affinity_hint);
+
+"""
+    cp.write_text(c.replace(anchor, compat, 1))
+    hp.write_text(h)
+
+
+def _patch_qdisc_warn_nonwc_compat(kernel: Path) -> None:
+    """Restore qdisc_warn_nonwc export without reverting the QFQ Stable fix.
+
+    Stable commit 71d84658 moved qdisc_warn_nonwc() into pkt_sched.h so the
+    new shared qdisc_peek_len() helper can be used by QFQ.  Keep qdisc_peek_len
+    and the QFQ null-deref fix, but make qdisc_warn_nonwc out-of-line again so
+    the frozen Candidate0059 KMI export remains available.
+    """
+    hp = kernel / "include/net/pkt_sched.h"
+    cp = kernel / "net/sched/sch_api.c"
+    h = hp.read_text()
+    c = cp.read_text()
+
+    if "EXPORT_SYMBOL(qdisc_warn_nonwc);" in c:
+        return
+
+    inline = """static inline void qdisc_warn_nonwc(const char *txt, struct Qdisc *qdisc)
+{
+\tif (!(qdisc->flags & TCQ_F_WARN_NONWC)) {
+\t\tpr_warn("%s: %s qdisc %X: is non-work-conserving?\\n",
+\t\t\ttxt, qdisc->ops->id, qdisc->handle >> 16);
+\t\tqdisc->flags |= TCQ_F_WARN_NONWC;
+\t}
+}
+"""
+    extern = "void qdisc_warn_nonwc(const char *txt, struct Qdisc *qdisc);\n"
+    if inline in h:
+        h = h.replace(inline, extern, 1)
+    elif extern not in h:
+        raise RuntimeError("qdisc_warn_nonwc Stable inline/compat extern anchor missing")
+
+    anchor = "static enum hrtimer_restart qdisc_watchdog(struct hrtimer *timer)\n"
+    if c.count(anchor) != 1:
+        raise RuntimeError(
+            f"qdisc_warn_nonwc implementation anchor count={c.count(anchor)}"
+        )
+    compat = """void qdisc_warn_nonwc(const char *txt, struct Qdisc *qdisc)
+{
+\tif (!(qdisc->flags & TCQ_F_WARN_NONWC)) {
+\t\tpr_warn("%s: %s qdisc %X: is non-work-conserving?\\n",
+\t\t\ttxt, qdisc->ops->id, qdisc->handle >> 16);
+\t\tqdisc->flags |= TCQ_F_WARN_NONWC;
+\t}
+}
+EXPORT_SYMBOL(qdisc_warn_nonwc);
+
+"""
+    cp.write_text(c.replace(anchor, compat + anchor, 1))
+    hp.write_text(h)
+
+
+
 def apply(root: Path, kernel: Path) -> None:
     _patch_mtdoops(kernel)
     _patch_qcom_download_mode(kernel)
     _patch_timer_delete_sync_compat(kernel)
+    _patch_irq_affinity_hint_compat(kernel)
+    _patch_qdisc_warn_nonwc_compat(kernel)
 
     m = (kernel / "drivers/mtd/mtdoops.c").read_text()
     qh = (kernel / "include/linux/qcom_scm.h").read_text()
     qc = (kernel / "drivers/firmware/qcom_scm.c").read_text()
     th = (kernel / "include/linux/timer.h").read_text()
+    irqh = (kernel / "include/linux/interrupt.h").read_text()
+    irqc = (kernel / "kernel/irq/manage.c").read_text()
+    qh = (kernel / "include/net/pkt_sched.h").read_text()
+    qcdisc = (kernel / "net/sched/sch_api.c").read_text()
     gates = [
         ("mtd checkpoint export", "EXPORT_SYMBOL_GPL(lisa_mtdoops_checkpoint);", m),
         ("mtd checkpoint persistence", "mtdoops_write(cxt, 0);", m),
@@ -165,6 +276,12 @@ def apply(root: Path, kernel: Path) -> None:
         ("download-mode export", "EXPORT_SYMBOL(qcom_scm_get_download_mode);", qc),
         ("timer-delete compatibility wrapper", "static inline int timer_delete_sync(struct timer_list *timer)", th),
         ("timer-delete preserves Lisa implementation", "return del_timer_sync(timer);", th),
+        ("irq affinity legacy prototype", "extern int irq_set_affinity_hint(unsigned int irq,", irqh),
+        ("irq affinity Stable core retained", "__irq_apply_affinity_hint(unsigned int irq", irqh),
+        ("irq affinity legacy export", "EXPORT_SYMBOL_GPL(irq_set_affinity_hint);", irqc),
+        ("qdisc legacy prototype", "void qdisc_warn_nonwc(const char *txt, struct Qdisc *qdisc);", qh),
+        ("qdisc Stable peek helper retained", "static inline unsigned int qdisc_peek_len", qh),
+        ("qdisc legacy export", "EXPORT_SYMBOL(qdisc_warn_nonwc);", qcdisc),
     ]
     for label, needle, body in gates:
         if needle not in body:
@@ -173,10 +290,12 @@ def apply(root: Path, kernel: Path) -> None:
     (root / "candidate-0061-c0059-abi-compat.txt").write_text(
         "classification=MIXED_CONFLICT\n"
         "baseline=Candidate0059 r43da7c5 Module.symvers\n"
-        "restored_exports=lisa_mtdoops_checkpoint,qcom_scm_get_download_mode\n"
+        "restored_exports=lisa_mtdoops_checkpoint,qcom_scm_get_download_mode,irq_set_affinity_hint,qdisc_warn_nonwc\n"
         "mtd_semantics=synchronous printk-ring persistence through normal mtdoops write path\n"
         "download_mode_semantics=read TCSR/dload-mode address through __qcom_scm_io_readl\n"
         "stable_policy=do not revert official Batch A xHCI/fs/softirq/flow-offload ABI changes\n"
         "timer_api_compat=header-only timer_delete_sync wrapper over Lisa del_timer_sync; no new exported timer symbol\n"
+        "irq_affinity_compat=Stable __irq_apply_affinity_hint retained; deprecated Candidate0059 irq_set_affinity_hint export restored\n"
+        "qdisc_compat=Stable qdisc_peek_len/QFQ fix retained; Candidate0059 qdisc_warn_nonwc export restored out-of-line\n"
         "C0061_C0059_ABI_COMPAT_GATE=PASS\n"
     )
