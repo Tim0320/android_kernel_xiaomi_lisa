@@ -900,6 +900,50 @@ def adapt_xhci_plat(root: Path):
     p.write_text(s)
 
 
+
+def adapt_ext4_dir(root: Path):
+    p = root / "fs/ext4/dir.c"
+    s = p.read_text()
+
+    # Lisa/Xiaomi already carries a stronger downstream directory-entry
+    # validator: next_offset bounds, fake-dir awareness, metadata-csum-aware
+    # ext4_dir_rec_len(), and fake-entry diagnostics. Segment B only needs the
+    # stable endpoint which rejects "." as the final entry of a data block.
+    dot_guard = (
+        "\telse if (unlikely(next_offset == size && de->name_len == 1 &&\n"
+        "\t\t\t  de->name[0] == '.'))\n"
+        "\t\terror_msg = \"'.' directory cannot be the last in data block\";\n"
+    )
+    if dot_guard not in s:
+        anchor = (
+            "\telse if (unlikely(le32_to_cpu(de->inode) >\n"
+            "\t\t\tle32_to_cpu(EXT4_SB(dir->i_sb)->s_es->s_inodes_count)))\n"
+            "\t\terror_msg = \"inode out of bounds\";\n"
+        )
+        s = once(
+            s,
+            anchor,
+            anchor + dot_guard,
+            "Direct-302 ext4 final-dot directory entry guard",
+        )
+
+    for token in (
+        "const int next_offset = ((char *) de - buf) + rlen;",
+        "bool fake = is_fake_dir_entry(de);",
+        "bool has_csum = ext4_has_metadata_csum(dir->i_sb);",
+        "ext4_dir_rec_len(1, fake ? NULL : dir)",
+        "next_offset > size - ext4_dir_rec_len(1,",
+        "'.' directory cannot be the last in data block",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 ext4 endpoint missing {token}")
+
+    if s.count("'.' directory cannot be the last in data block") != 1:
+        raise RuntimeError("Direct-302 ext4 final-dot guard count is not exactly one")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -958,6 +1002,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/usb/host/xhci-plat.c":
         adapt_xhci_plat(root)
         return "DIRECT_302_XHCI_PLAT_C_D"
+
+    if path == "fs/ext4/dir.c":
+        adapt_ext4_dir(root)
+        return "DIRECT_302_EXT4_DIR_B"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
