@@ -1,15 +1,10 @@
 name: Build Lisa Candidate0061 Batch B 5.4.296
 
+# Legacy Batch B is provenance evidence only. Direct-302 is the active C0061
+# path, so keep this workflow manual-only to prevent shared source recreation
+# changes from reviving the obsolete 5.4.296 build gate.
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/build-lisa-candidate-0061-batch-b.yml
-      - reconstruction/scripts/candidate_0061_batch_b_apply.py
-      - reconstruction/scripts/candidate_0061_batch_b_manual.py
-      - reconstruction/scripts/candidate_0061_batch_b_oracle.py
-      - reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py
 
 permissions:
   contents: read
