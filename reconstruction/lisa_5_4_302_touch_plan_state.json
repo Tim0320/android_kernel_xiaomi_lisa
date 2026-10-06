@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "FUNCTION_NCM_D_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "XHCI_PLAT_C_D_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,15 +106,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "c73acf77344c56e63a0c445ea1c78a5c0aa05a49",
-  "last_checked_run": 37445457034,
-  "blocker": "WAITING_DIRECT_302_FUNCTION_NCM_D_RERUN",
-  "next_action": "Inspect Direct-302 run 37445457034 triggered by commit c73acf77344c56e63a0c445ea1c78a5c0aa05a49. Prior run 37444847262 kept semantic closure raw=33 reviewed=33 unresolved=0, passed the FunctionFS A+D adapter, and advanced first materialization blocker to drivers/usb/gadget/function/f_ncm.c Segment D. Commit c73acf77 moves the NCM MAC string pointer from allocation time to bind time, matching the reviewed 5.4.302 endpoint while preserving Lisa/Xiaomi gether_setup_default(), gether_register_netdev(), bind-time host-address generation and ioport flow. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
+  "last_checked_commit": "62bdf48e52244d143096c2b57ffc7d92c2f7daae",
+  "last_checked_run": 37445984087,
+  "blocker": "NONE_RUN_37445984087_IN_PROGRESS",
+  "next_action": "Inspect Direct-302 run 37445984087 / job 112210803400. Prior run 37445457034 kept semantic closure raw=33 reviewed=33 unresolved=0, passed the NCM Segment-D adapter, and advanced first materialization blocker to drivers/usb/host/xhci-plat.c C+D. Commit 62bdf48 applies the Segment-C XHCI_BROKEN_STREAMS guard and preserves Lisa/MiYume's already-present Segment-D autosuspend endpoint (pm_runtime_use_autosuspend plus 1000ms delay, runtime-PM/wakeup flow) instead of duplicating/reordering upstream code. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate.",
   "next_expected_evidence": [
-    "run 37445457034 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/usb/gadget/function/f_ncm.c Segment-D adapter materializes successfully",
-    "exactly one NCM MAC string assignment remains and it is bind-time",
-    "Lisa/Xiaomi gether_setup_default/register_netdev/host-address/ioport flow remains intact",
+    "run 37445984087 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "drivers/usb/host/xhci-plat.c C+D materializes successfully",
+    "XHCI_BROKEN_STREAMS suppresses streams advertisement",
+    "Lisa/MiYume autosuspend 1000ms and runtime-PM/wakeup flow remains intact",
     "next blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
     "source_identity=5.4.302 before integrated build starts"
@@ -342,7 +342,12 @@
     "Direct-302 run 37445457034 / job 112209052926 started",
     "Run 37444847262 confirmed Direct-302 semantic closure raw=33 reviewed=33 unresolved=0, FunctionFS A+D adapter PASS, and advanced first materialization blocker to drivers/usb/gadget/function/f_ncm.c Segment D",
     "Reviewed Direct-302 Segment-D NCM bind-time MAC endpoint committed at c73acf77; upstream 5.4.302 and MiYume 5.4.302 confirm bind-time MAC string assignment while Lisa/Xiaomi gether lifecycle is preserved",
-    "Direct-302 run 37445457034 entered in-progress execution from c73acf77"
+    "Direct-302 run 37445457034 entered in-progress execution from c73acf77",
+    "Run 37445457034 kept Direct-302 semantic closure PASS raw=33 reviewed=33 unresolved=0 and confirmed NCM Segment-D adapter passes",
+    "Run 37445457034 advanced first materialization blocker to drivers/usb/host/xhci-plat.c C+D",
+    "Official Segment C xhci-plat delta verified as XHCI_BROKEN_STREAMS guard; Segment D adds autosuspend use, which Lisa/MiYume already carry with a stronger 1000ms downstream autosuspend configuration",
+    "Direct-302 xhci-plat C+D endpoint adapter committed at 62bdf48 preserving Lisa runtime-PM/wakeup semantics",
+    "Direct-302 run 37445984087 / job 112210803400 started"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
