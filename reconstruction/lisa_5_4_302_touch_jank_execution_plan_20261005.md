@@ -280,7 +280,7 @@ Exit:
 - integrated compile exposed one textually-clean but semantically incompatible runtime-PM path; `drivers/base/power/runtime.c` is now the 34th reviewed path, classified MIXED_CONFLICT for Segments B+C: keep the Segment-B timer-expiry `<=` stable fix, but reject the Segment-C `needs_force_resume` reinit write because frozen Lisa intentionally retains `pm_runtime_need_not_resume()` and no `dev_pm_info.needs_force_resume` field.
 
 ### Phase 6 - Direct-302 integrated static/ABI gate
-Status: ACTIVE
+Status: DONE
 
 Run one target build after Phase 5 conflict closure.
 
@@ -293,7 +293,7 @@ Exit:
 - then proceed to Phase 7 touch/jank correction.
 
 ### Phase 7 - Touch/jank hot-path correction on 5.4.302
-Status: NOT STARTED
+Status: ACTIVE
 
 Do this on top of the established 5.4.302 semantic base.
 
@@ -465,22 +465,28 @@ At the end of every execution:
 ## Current next action
 
 NEXT_ACTION:
-Migrate Candidate0061 from the retired per-Batch build loop to a Direct-302 workflow.
+Validate the Phase 7A TOUCH_PERF_ONLY package-runtime/WALT hot-path correction on top of the already static/ABI/identity/packaging-verified Direct-302 base.
 
-1. Do not create Batch C or Batch D build workflows.
-2. Treat run 37360064366 and earlier Batch B runs only as semantic/provenance evidence.
-3. Build a new direct 5.4.289 -> 5.4.302 scanner/apply workflow that:
-   - reconstructs frozen Candidate0059;
-   - fetches linux-stable v5.4.289 and v5.4.302;
-   - pins MiYume 5.4.302 final-state oracle;
-   - uses AOSP android11-5.4.302_r00 for GKI/Android endpoint semantics;
-   - uses CLO only as fallback;
-   - scans the complete non-clean overlap set before target build;
-   - reuses already-reviewed Segment A/B adapters where still valid;
-   - labels each applied change with provenance segment A/B/C/D without compiling at each segment.
-4. Resolve all remaining non-clean overlaps toward the 5.4.302 final state while preserving Lisa SM7325/Yupik-specific semantics.
-5. Run one integrated 5.4.302 compile/modpost/ABI gate.
-6. Only after the direct 5.4.302 static/ABI gate passes, begin the package-runtime/WALT touch/jank correction.
+Completed prerequisite evidence:
+- integrated run 37498709196: SUCCESS;
+- Direct-302 semantic closure: 34/34/0;
+- 5.4.302 Image/modules/dtbs/modpost: PASS;
+- ABI/KMI: removed=0, changed=5, added=12;
+- exact kernel identity: PASS;
+- boot static packaging: PASS;
+- static-verified boot artifact 11431741252.
 
-Strategic rule:
-"MiYume 5.4.302 alignment is primary for common Xiaomi/Qualcomm final-state semantics; Lisa SM7325/Yupik difference exclusion is secondary. Linux-stable remains canonical provenance."
+Phase 7A intervention:
+1. keep frozen Candidate0059 unchanged;
+2. apply Candidate0061-only TOUCH_PERF_ONLY overlay after Direct-302 materialization;
+3. remove per-WALT-update shared user history-slot copies;
+4. retain task history and MIGT accounting;
+5. queue user-history rolling on system_long_wq;
+6. add a bounded donor-equivalent pause hook without a new userspace ABI;
+7. rebuild the same integrated static/ABI/identity/boot gates.
+
+Current validation run:
+- run 37508028472 from commit 60d45ea;
+- prior run 37507943931 is ignored because it failed before runner allocation from workflow text-generation corruption, not from kernel source.
+
+If the Phase 7A static gate passes, produce a new Candidate0061 static-verified boot labelled device-validation-pending and move to HyperOS 3.0.9/A16 device A/B touch+jank validation. If Phase 7A has no runtime improvement, proceed to Phase 8 FREQ_QOS/touch-boost isolation without modifying Goodix firmware/driver.
