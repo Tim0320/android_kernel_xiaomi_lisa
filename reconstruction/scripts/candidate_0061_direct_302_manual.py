@@ -1218,6 +1218,95 @@ def adapt_sched_fair(root: Path):
     p.write_text(s)
 
 
+
+def adapt_softirq(root: Path):
+    p = root / "kernel/softirq.c"
+    s = p.read_text()
+
+    # Segment A tasklet callback compatibility. In the Direct-302 materializer
+    # the setup/init hunk can apply cleanly before the Lisa trace-instrumented
+    # dispatch hunk rejects, so this adapter must be idempotent.
+    dispatch = (
+        "\t\t\t\ttrace_tasklet_entry(t->func);\n"
+        "\t\t\t\tif (t->use_callback)\n"
+        "\t\t\t\t\tt->callback(t);\n"
+        "\t\t\t\telse\n"
+        "\t\t\t\t\tt->func(t->data);\n"
+        "\t\t\t\ttrace_tasklet_exit(t->func);\n"
+    )
+    if dispatch not in s:
+        old = (
+            "\t\t\t\ttrace_tasklet_entry(t->func);\n"
+            "\t\t\t\tt->func(t->data);\n"
+            "\t\t\t\ttrace_tasklet_exit(t->func);\n"
+        )
+        s = once(
+            s,
+            old,
+            dispatch,
+            "Direct-302 tasklet callback dispatch",
+        )
+
+    setup = (
+        "void tasklet_setup(struct tasklet_struct *t,\n"
+        "\t\t   void (*callback)(struct tasklet_struct *))\n"
+        "{\n"
+        "\tt->next = NULL;\n"
+        "\tt->state = 0;\n"
+        "\tatomic_set(&t->count, 0);\n"
+        "\tt->callback = callback;\n"
+        "\tt->use_callback = true;\n"
+        "\tt->data = 0;\n"
+        "}\n"
+        "EXPORT_SYMBOL(tasklet_setup);\n\n"
+    )
+    if "void tasklet_setup(struct tasklet_struct *t," not in s:
+        anchor = "void tasklet_init(struct tasklet_struct *t,\n"
+        s = once(
+            s,
+            anchor,
+            setup + anchor,
+            "Direct-302 tasklet setup endpoint",
+        )
+
+    init_endpoint = (
+        "\tt->func = func;\n"
+        "\tt->use_callback = false;\n"
+        "\tt->data = data;\n"
+    )
+    if init_endpoint not in s:
+        old = (
+            "\tt->func = func;\n"
+            "\tt->data = data;\n"
+        )
+        s = once(
+            s,
+            old,
+            init_endpoint,
+            "Direct-302 tasklet init callback mode",
+        )
+
+    for token in (
+        "if (t->use_callback)",
+        "t->callback(t);",
+        "void tasklet_setup(struct tasklet_struct *t,",
+        "t->callback = callback;",
+        "t->use_callback = true;",
+        "t->use_callback = false;",
+        "trace_tasklet_entry(t->func);",
+        "trace_tasklet_exit(t->func);",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 softirq endpoint missing {token}")
+
+    if s.count("void tasklet_setup(struct tasklet_struct *t,") != 1:
+        raise RuntimeError("Direct-302 softirq tasklet_setup count invalid")
+    if s.count("t->use_callback = false;") != 1:
+        raise RuntimeError("Direct-302 softirq legacy init mode count invalid")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1296,6 +1385,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "kernel/sched/fair.c":
         adapt_sched_fair(root)
         return "DIRECT_302_SCHED_FAIR_D"
+
+    if path == "kernel/softirq.c":
+        adapt_softirq(root)
+        return "DIRECT_302_SOFTIRQ_A"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
