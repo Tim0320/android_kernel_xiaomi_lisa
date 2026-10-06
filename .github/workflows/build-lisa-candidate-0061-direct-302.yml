@@ -9,6 +9,8 @@ on:
       - reconstruction/scripts/candidate_0061_direct_302_scan.py
       - reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py
       - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
+      - reconstruction/scripts/candidate_0061_direct_302_reviewed.py
+      - reconstruction/scripts/candidate_0061_direct_302_review_gate.py
 
 permissions:
   contents: read
@@ -137,16 +139,81 @@ jobs:
           count="$(python3 -c "import json;print(json.load(open('candidate-0061-direct-302-scan.json'))['semantic_review_count'])")"
           echo "semantic_review_count=$count" >> "$GITHUB_OUTPUT"
 
+      - name: Apply Direct-302 semantic review decisions
+        id: review
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0061_direct_302_review_gate.py \
+            --scan candidate-0061-direct-302-scan.json \
+            2>&1 | tee candidate-0061-direct-302-review.log
+          grep -q '^C0061_DIRECT_302_REVIEW_GATE=PASS
+      - name: Report Direct-302 scan evidence
+        if: ${{ always() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOCK_ABI_OUTCOME: ${{ steps.stock_abi.outcome }}
+          C0059_OUTCOME: ${{ steps.c0059.outcome }}
+          COMPAT_OUTCOME: ${{ steps.compat.outcome }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
+          CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
+        run: |
+          set -u
+          {
+            echo "Candidate0061 Direct 5.4.302 semantic scan"
+            echo
+            echo "- source_sha: ${GITHUB_SHA}"
+            echo "- run_id: ${GITHUB_RUN_ID}"
+            echo "- stock_abi: $STOCK_ABI_OUTCOME"
+            echo "- c0059_source: $C0059_OUTCOME"
+            echo "- compat: $COMPAT_OUTCOME"
+            echo "- direct_302_scan: $SCAN_OUTCOME"
+            echo "- semantic_review_gate: $REVIEW_OUTCOME"
+            echo "- semantic_closure: $CLOSURE_OUTCOME"
+            if test -s candidate-0061-direct-302-scan.json; then
+              python3 - <<'PY'
+          import json
+          p=json.load(open("candidate-0061-direct-302-scan.json"))
+          print("- changed_file_count:", len(p.get("files", [])))
+          print("- counts:", p.get("counts", {}))
+          print("- semantic_review_count:", p.get("semantic_review_count"))
+          print("- reviewed_semantic_count:", p.get("reviewed_semantic_count"))
+          print("- unresolved_semantic_count:", p.get("unresolved_semantic_count"))
+          print("- semantic_paths:", [x.get("path") for x in p.get("semantic_review", [])])
+          print("- unresolved_paths:", [x.get("path") for x in p.get("unresolved_semantic", [])])
+          PY
+            fi
+          } > candidate-0061-direct-302-issue.md
+          gh issue comment 1 --repo "$GITHUB_REPOSITORY" --body-file candidate-0061-direct-302-issue.md
+
+      - name: Upload Direct-302 scan evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-direct-302-scan-a${{ github.run_attempt }}
+          retention-days: 14
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            candidate-0061-direct-302-*
+ candidate-0061-direct-302-review.log
+          raw="$(python3 -c "import json;print(json.load(open('candidate-0061-direct-302-scan.json'))['semantic_review_count'])")"
+          reviewed="$(python3 -c "import json;print(json.load(open('candidate-0061-direct-302-scan.json'))['reviewed_semantic_count'])")"
+          unresolved="$(python3 -c "import json;print(json.load(open('candidate-0061-direct-302-scan.json'))['unresolved_semantic_count'])")"
+          echo "semantic_review_count=$raw" >> "$GITHUB_OUTPUT"
+          echo "reviewed_semantic_count=$reviewed" >> "$GITHUB_OUTPUT"
+          echo "unresolved_semantic_count=$unresolved" >> "$GITHUB_OUTPUT"
+
       - name: Gate Direct-302 semantic closure
         id: closure
         run: |
           set -euo pipefail
-          count="${{ steps.scan.outputs.semantic_review_count }}"
+          count="${{ steps.review.outputs.unresolved_semantic_count }}"
           if [ "$count" -ne 0 ]; then
-            echo "C0061_DIRECT_302_SEMANTIC_CLOSURE=BLOCKED count=$count"
+            echo "C0061_DIRECT_302_SEMANTIC_CLOSURE=BLOCKED unresolved=$count"
             exit 1
           fi
-          echo "C0061_DIRECT_302_SEMANTIC_CLOSURE=PASS"
+          echo "C0061_DIRECT_302_SEMANTIC_CLOSURE=PASS raw=${{ steps.review.outputs.semantic_review_count }} reviewed=${{ steps.review.outputs.reviewed_semantic_count }} unresolved=$count"
 
       - name: Report Direct-302 scan evidence
         if: ${{ always() }}
