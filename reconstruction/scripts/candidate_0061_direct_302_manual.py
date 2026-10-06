@@ -1007,6 +1007,109 @@ def adapt_usbnet_h(root: Path):
     p.write_text(s)
 
 
+
+def adapt_net_sock_h(root: Path):
+    p = root / "include/net/sock.h"
+    s = p.read_text()
+
+    # Segment D stable backport 83083c5f holds the module which owns a
+    # socket-specific lockdep class until the socket is actually freed.
+    # MiYume 5.4.302 carries the same endpoint on top of the Android KABI
+    # layout. Preserve all Lisa KABI reserve/vendor slots.
+    doc = (
+        "  *\t@sk_owner: reference to the real owner of the socket that calls\n"
+        "  *\t\t   sock_lock_init_class_and_name().\n"
+    )
+    if doc not in s:
+        anchor = "  *\t@sk_txtime_unused: unused txtime flags\n"
+        s = once(s, anchor, anchor + doc, "Direct-302 sock owner documentation")
+
+    owner_field = (
+        "#if IS_ENABLED(CONFIG_PROVE_LOCKING) && IS_ENABLED(CONFIG_MODULES)\n"
+        "\tstruct module\t\t*sk_owner;\n"
+        "#endif\n\n"
+    )
+    if owner_field not in s:
+        anchor = "\tstruct rcu_head\t\tsk_rcu;\n\n"
+        s = once(s, anchor, anchor + owner_field, "Direct-302 sock owner field")
+
+    owner_helpers = (
+        "#if IS_ENABLED(CONFIG_PROVE_LOCKING) && IS_ENABLED(CONFIG_MODULES)\n"
+        "static inline void sk_owner_set(struct sock *sk, struct module *owner)\n"
+        "{\n"
+        "\t__module_get(owner);\n"
+        "\tsk->sk_owner = owner;\n"
+        "}\n\n"
+        "static inline void sk_owner_clear(struct sock *sk)\n"
+        "{\n"
+        "\tsk->sk_owner = NULL;\n"
+        "}\n\n"
+        "static inline void sk_owner_put(struct sock *sk)\n"
+        "{\n"
+        "\tmodule_put(sk->sk_owner);\n"
+        "}\n"
+        "#else\n"
+        "static inline void sk_owner_set(struct sock *sk, struct module *owner)\n"
+        "{\n"
+        "}\n\n"
+        "static inline void sk_owner_clear(struct sock *sk)\n"
+        "{\n"
+        "}\n\n"
+        "static inline void sk_owner_put(struct sock *sk)\n"
+        "{\n"
+        "}\n"
+        "#endif\n\n"
+    )
+    if "static inline void sk_owner_set(" not in s:
+        anchor = (
+            "static inline void sock_release_ownership(struct sock *sk)\n"
+            "{\n"
+            "\tif (sk->sk_lock.owned) {\n"
+            "\t\tsk->sk_lock.owned = 0;\n\n"
+            "\t\t/* The sk_lock has mutex_unlock() semantics: */\n"
+            "\t\tmutex_release(&sk->sk_lock.dep_map, 1, _RET_IP_);\n"
+            "\t}\n"
+            "}\n\n"
+        )
+        s = once(
+            s,
+            anchor,
+            anchor + owner_helpers,
+            "Direct-302 sock owner helper functions",
+        )
+
+    macro_head = (
+        "#define sock_lock_init_class_and_name(sk, sname, skey, name, key)\t\\\n"
+        "do {\t\t\t\t\t\t\t\t\t\\\n"
+    )
+    macro_endpoint = macro_head + "\tsk_owner_set(sk, THIS_MODULE);\t\t\t\t\t\\\n"
+    if macro_endpoint not in s:
+        s = once(
+            s,
+            macro_head,
+            macro_endpoint,
+            "Direct-302 sock lock owner acquisition",
+        )
+
+    for token in (
+        "struct module\t\t*sk_owner;",
+        "static inline void sk_owner_set(",
+        "static inline void sk_owner_clear(",
+        "static inline void sk_owner_put(",
+        "sk_owner_set(sk, THIS_MODULE);",
+        "ANDROID_KABI_RESERVE(1);",
+        "ANDROID_KABI_RESERVE(8);",
+        "ANDROID_VENDOR_DATA(1);",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 sock.h endpoint missing {token}")
+
+    if s.count("sk_owner_set(sk, THIS_MODULE);") != 1:
+        raise RuntimeError("Direct-302 sock.h owner acquisition count invalid")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1077,6 +1180,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "include/linux/usb/usbnet.h":
         adapt_usbnet_h(root)
         return "DIRECT_302_USBNET_H_C"
+
+    if path == "include/net/sock.h":
+        adapt_net_sock_h(root)
+        return "DIRECT_302_NET_SOCK_H_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
