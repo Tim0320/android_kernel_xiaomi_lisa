@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "WRITE_PERMISSION_BLOCKED_DWC3_QCOM_C_REVIEW_COMPLETE",
+    "phase_5_direct_302_semantic_conflict_closure": "FUNCTIONFS_A_D_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,14 +106,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "98c67e538041b23d918022b5c9e9cc48e7ed426d",
-  "last_checked_run": 37443579391,
-  "blocker": "WAITING_DIRECT_302_DWC3_GADGET_A_B_C_RERUN",
-  "next_action": "Inspect Direct-302 run 37443579391 triggered by commit 98c67e538041b23d918022b5c9e9cc48e7ed426d. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the new drivers/usb/dwc3/gadget.c A+B+C adapter materializes the stable endpoint (run/stop timeout/PHY save-restore, event-count guard, late XferNotReady disconnect guard) while preserving Lisa downstream DWC3/GSI/controller semantics. If materialization fails, fix only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
+  "last_checked_commit": "10110b00989e5a6dc8fca1b5e54a0b4fd162d619",
+  "last_checked_run": 37444847262,
+  "blocker": "NONE_RUN_37444847262_IN_PROGRESS",
+  "next_action": "Inspect Direct-302 run 37444847262 / job 112207085879. Prior run 37443579391 kept semantic closure raw=33 reviewed=33 unresolved=0, passed the dwc3 gadget A+B+C endpoint adapter, and advanced first materialization blocker to drivers/usb/gadget/function/f_fs.c A+D. Commit 10110b0 applies only the reviewed FunctionFS endpoints: Segment A removes WARN_ON from the bind-state check while preserving Lisa ffs_log/setup_state instrumentation; Segment D adds the epfiles NULL guard, normalized while (count--) loop, and done label before eps_lock release. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
   "next_expected_evidence": [
-    "run 37443579391 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/usb/dwc3/gadget.c adapter passes A+B+C endpoint checks",
-    "Lisa downstream DWC3/GSI/controller semantics remain intact",
+    "run 37444847262 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "drivers/usb/gadget/function/f_fs.c A+D adapter materializes successfully",
+    "Lisa FunctionFS ffs_log/setup_state instrumentation remains intact",
     "next blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
     "source_identity=5.4.302 before integrated build starts"
@@ -328,7 +328,12 @@
     "Direct-302 run 37440803973 queued from 86180872",
     "Run 37440803973 confirmed Direct-302 semantic closure raw=33 reviewed=33 unresolved=0 and advanced first materialization blocker to drivers/usb/dwc3/gadget.c A+B+C",
     "Reviewed Direct-302 dwc3 gadget A+B+C adapter committed at 98c67e53; preserves Lisa downstream controller/GSI semantics while applying run-stop PHY save/restore, event-count validation and late XferNotReady disconnect guard",
-    "Direct-302 run 37443579391 queued from 98c67e53"
+    "Direct-302 run 37443579391 queued from 98c67e53",
+    "Run 37443579391 kept Direct-302 semantic closure PASS raw=33 reviewed=33 unresolved=0 and confirmed dwc3 gadget A+B+C adapter passes",
+    "Run 37443579391 advanced first materialization blocker to drivers/usb/gadget/function/f_fs.c A+D",
+    "Official FunctionFS A delta verified as bind-state WARN_ON removal; D delta verified as epfiles NULL guard plus done label/loop cleanup; MiYume 5.4.302 confirms both endpoints while retaining Xiaomi logging",
+    "Direct-302 FunctionFS A+D endpoint adapter committed at 10110b0 preserving Lisa ffs_log/setup_state instrumentation",
+    "Direct-302 run 37444847262 / job 112207085879 started from 10110b0"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
