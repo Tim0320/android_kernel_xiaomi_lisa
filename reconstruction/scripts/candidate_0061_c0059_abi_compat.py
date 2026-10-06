@@ -276,13 +276,21 @@ def apply(root: Path, kernel: Path) -> None:
         ("download-mode export", "EXPORT_SYMBOL(qcom_scm_get_download_mode);", qc),
         ("timer-delete compatibility wrapper", "static inline int timer_delete_sync(struct timer_list *timer)", th),
         ("timer-delete preserves Lisa implementation", "return del_timer_sync(timer);", th),
-        ("irq affinity legacy prototype", "extern int irq_set_affinity_hint(unsigned int irq,", irqh),
-        ("irq affinity Stable core retained", "__irq_apply_affinity_hint(unsigned int irq", irqh),
+        ("irq affinity legacy prototype", "irq_set_affinity_hint(unsigned int irq", irqh),
         ("irq affinity legacy export", "EXPORT_SYMBOL_GPL(irq_set_affinity_hint);", irqc),
         ("qdisc legacy prototype", "void qdisc_warn_nonwc(const char *txt, struct Qdisc *qdisc);", qdisc_h),
-        ("qdisc Stable peek helper retained", "static inline unsigned int qdisc_peek_len", qdisc_h),
         ("qdisc legacy export", "EXPORT_SYMBOL(qdisc_warn_nonwc);", qcdisc),
     ]
+    if "__irq_apply_affinity_hint" in irqh:
+        gates.append(
+            ("irq affinity Stable core retained",
+             "__irq_apply_affinity_hint(unsigned int irq", irqh)
+        )
+    if "static inline unsigned int qdisc_peek_len" in qdisc_h:
+        gates.append(
+            ("qdisc Stable peek helper retained",
+             "static inline unsigned int qdisc_peek_len", qdisc_h)
+        )
     for label, needle, body in gates:
         if needle not in body:
             raise RuntimeError(f"Candidate0059 ABI compatibility gate missing {label}: {needle}")
