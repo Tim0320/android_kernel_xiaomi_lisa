@@ -266,7 +266,7 @@ def apply(root: Path, kernel: Path) -> None:
     th = (kernel / "include/linux/timer.h").read_text()
     irqh = (kernel / "include/linux/interrupt.h").read_text()
     irqc = (kernel / "kernel/irq/manage.c").read_text()
-    qh = (kernel / "include/net/pkt_sched.h").read_text()
+    qdisc_h = (kernel / "include/net/pkt_sched.h").read_text()
     qcdisc = (kernel / "net/sched/sch_api.c").read_text()
     gates = [
         ("mtd checkpoint export", "EXPORT_SYMBOL_GPL(lisa_mtdoops_checkpoint);", m),
@@ -279,8 +279,8 @@ def apply(root: Path, kernel: Path) -> None:
         ("irq affinity legacy prototype", "extern int irq_set_affinity_hint(unsigned int irq,", irqh),
         ("irq affinity Stable core retained", "__irq_apply_affinity_hint(unsigned int irq", irqh),
         ("irq affinity legacy export", "EXPORT_SYMBOL_GPL(irq_set_affinity_hint);", irqc),
-        ("qdisc legacy prototype", "void qdisc_warn_nonwc(const char *txt, struct Qdisc *qdisc);", qh),
-        ("qdisc Stable peek helper retained", "static inline unsigned int qdisc_peek_len", qh),
+        ("qdisc legacy prototype", "void qdisc_warn_nonwc(const char *txt, struct Qdisc *qdisc);", qdisc_h),
+        ("qdisc Stable peek helper retained", "static inline unsigned int qdisc_peek_len", qdisc_h),
         ("qdisc legacy export", "EXPORT_SYMBOL(qdisc_warn_nonwc);", qcdisc),
     ]
     for label, needle, body in gates:
