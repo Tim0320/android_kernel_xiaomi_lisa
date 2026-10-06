@@ -106,14 +106,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "5023614b965c99e35c6cc55cc0229cdeaf133645",
-  "last_checked_run": 37454969206,
-  "blocker": "WAITING_DIRECT_302_SLUB_C_RERUN",
-  "next_action": "Inspect Direct-302 run 37454969206 triggered by 5023614b965c99e35c6cc55cc0229cdeaf133645. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the new mm/slub.c Segment-C adapter passes the object_err invalid-pointer endpoint while preserving Lisa downstream SLUB behavior. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
+  "last_checked_commit": "4ee9b3912553d03d85f958c275fdd26cb3497078",
+  "last_checked_run": 37455743354,
+  "blocker": "WAITING_DIRECT_302_ZSMALLOC_C_RERUN",
+  "next_action": "Inspect Direct-302 run 37455743354 triggered by 4ee9b3912553d03d85f958c275fdd26cb3497078. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the mm/zsmalloc.c Segment-C adapter passes the cache_alloc_zspage kmem_cache_zalloc endpoint while preserving Lisa downstream zsmalloc behavior. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
   "next_expected_evidence": [
-    "run 37454969206 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "mm/slub.c Segment-C adapter passes object_err invalid-pointer endpoint checks",
-    "no unintended Lisa downstream SLUB behavior replacement",
+    "run 37455743354 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "mm/zsmalloc.c Segment-C adapter passes cache_alloc_zspage zeroed allocation endpoint",
+    "no unintended Lisa downstream zsmalloc behavior replacement",
     "next blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
     "source_identity=5.4.302 before integrated build starts"
@@ -394,7 +394,10 @@
     "Prepared function-scoped idempotent Direct-302 OOM adapter, but GitHub code update was blocked by safety review; no source adapter commit was created",
     "Run 37453907986 confirmed the Direct-302 OOM Segment-A adapter passed and advanced first materialization blocker to mm/slub.c Segment C",
     "Direct-302 SLUB Segment-C adapter committed at 5023614b; object_err now validates object pointer before trailer printing while preserving Lisa downstream SLUB behavior",
-    "Direct-302 run 37454969206 queued from 5023614b"
+    "Direct-302 run 37454969206 queued from 5023614b",
+    "Run 37454969206 confirmed the Direct-302 SLUB Segment-C adapter passed and advanced first materialization blocker to mm/zsmalloc.c Segment C",
+    "Direct-302 zsmalloc Segment-C adapter committed at 4ee9b391; cache_alloc_zspage now uses kmem_cache_zalloc while preserving Lisa downstream zsmalloc behavior",
+    "Direct-302 run 37455743354 queued from 4ee9b391"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
