@@ -1584,6 +1584,52 @@ def adapt_net_core_sock(root: Path):
     p.write_text(s)
 
 
+
+def adapt_runtime_pm(root: Path):
+    p = root / "drivers/base/power/runtime.c"
+    s = p.read_text()
+
+    # Segment B is applicable to Lisa and must remain in the endpoint.
+    if "expires <= ktime_get_mono_fast_ns()" not in s:
+        if "expires < ktime_get_mono_fast_ns()" not in s:
+            raise RuntimeError("Direct-302 runtime PM: timer-expiry anchor missing")
+        s = s.replace(
+            "expires < ktime_get_mono_fast_ns()",
+            "expires <= ktime_get_mono_fast_ns()",
+            1,
+        )
+
+    # Segment C assumes dev_pm_info.needs_force_resume, but frozen Lisa
+    # intentionally uses pm_runtime_need_not_resume() and has no such field.
+    # Remove only the stable reinit write/comment if clean application added it.
+    comment = (
+        "\t/*\n"
+        "\t * Clear power.needs_force_resume in case it has been set by\n"
+        "\t * pm_runtime_force_suspend() invoked from a driver remove callback.\n"
+        "\t */\n"
+        "\tdev->power.needs_force_resume = false;\n"
+    )
+    if comment in s:
+        s = s.replace(comment, "", 1)
+    else:
+        s = s.replace("\tdev->power.needs_force_resume = false;\n", "", 1)
+
+    if "needs_force_resume" in s:
+        raise RuntimeError(
+            "Direct-302 runtime PM: needs_force_resume leaked into Lisa endpoint"
+        )
+    if "pm_runtime_need_not_resume(dev)" not in s:
+        raise RuntimeError(
+            "Direct-302 runtime PM: Lisa pm_runtime_need_not_resume contract missing"
+        )
+    if "expires <= ktime_get_mono_fast_ns()" not in s:
+        raise RuntimeError(
+            "Direct-302 runtime PM: Segment-B timer expiry endpoint missing"
+        )
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1598,6 +1644,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/platform/Kconfig":
         adapt_platform_kconfig(root)
         return "DIRECT_302_PLATFORM_KCONFIG_B"
+
+    if path == "drivers/base/power/runtime.c":
+        adapt_runtime_pm(root)
+        return "DIRECT_302_RUNTIME_PM_B_C_MIXED"
 
     if path == "drivers/platform/Makefile":
         adapt_platform_makefile(root)
