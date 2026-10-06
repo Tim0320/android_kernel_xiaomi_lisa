@@ -387,6 +387,57 @@ def adapt_platform_makefile(root: Path):
 
     p.write_text(s)
 
+
+def adapt_rpmh_rsc(root: Path):
+    p = root / "drivers/soc/qcom/rpmh-rsc.c"
+    s = p.read_text()
+
+    old = (
+        "\t\t/*\n"
+        "\t\t * if wake tcs was re-purposed for sending active\n"
+        "\t\t * votes, clear AMC trigger & enable modes and\n"
+        "\t\t * disable interrupt for this TCS\n"
+        "\t\t */\n"
+        "\t\tif (!drv->tcs[ACTIVE_TCS].num_tcs) {\n"
+        "\t\t\t__tcs_trigger(drv, i, false);\n"
+        "\t\t\t/*\n"
+        "\t\t\t * Disable interrupt for this TCS to avoid being\n"
+        "\t\t\t * spammed with interrupts coming when the solver\n"
+        "\t\t\t * sends its wake votes.\n"
+        "\t\t\t */\n"
+        "\t\t\tenable_tcs_irq(drv, i, false);\n"
+        "\t\t}\n"
+    )
+    endpoint = (
+        "\t\t/*\n"
+        "\t\t * Clear AMC trigger & enable modes for this TCS. If wake TCS\n"
+        "\t\t * was re-purposed for active votes, also disable its IRQ.\n"
+        "\t\t */\n"
+        "\t\t__tcs_trigger(drv, i, false);\n"
+        "\t\tif (!drv->tcs[ACTIVE_TCS].num_tcs) {\n"
+        "\t\t\t/*\n"
+        "\t\t\t * Disable interrupt for this TCS to avoid being\n"
+        "\t\t\t * spammed with interrupts coming when the solver\n"
+        "\t\t\t * sends its wake votes.\n"
+        "\t\t\t */\n"
+        "\t\t\tenable_tcs_irq(drv, i, false);\n"
+        "\t\t}\n"
+    )
+
+    if endpoint not in s:
+        if old not in s:
+            raise RuntimeError(
+                "Direct-302 rpmh-rsc: neither frozen Lisa nor reviewed 5.4.302 endpoint block found"
+            )
+        s = once(s, old, endpoint, "Direct-302 rpmh-rsc completed-TCS trigger cleanup")
+
+    if s.count("\t\t__tcs_trigger(drv, i, false);\n") != 1:
+        raise RuntimeError("Direct-302 rpmh-rsc: expected exactly one completed-TCS trigger clear")
+    if endpoint not in s:
+        raise RuntimeError("Direct-302 rpmh-rsc: reviewed endpoint not materialized")
+
+    p.write_text(s)
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -417,6 +468,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/mmc/host/sdhci-msm.c":
         adapt_sdhci_msm(root)
         return "DIRECT_302_SDHCI_MSM_D"
+
+    if path == "drivers/soc/qcom/rpmh-rsc.c":
+        adapt_rpmh_rsc(root)
+        return "DIRECT_302_RPMH_RSC_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
