@@ -283,10 +283,24 @@ def adapt_sdhci_msm(root: Path):
             "Direct-302 SDR50 tuning-needed gate",
         )
 
-    if "\tu32 config;\n" not in s[s.find("static int sdhci_msm_execute_tuning"):s.find("static int sdhci_msm_execute_tuning")+800]:
-        anchor = "\tu32 core_vendor_spec;\n"
+    start = s.find("static int sdhci_msm_execute_tuning")
+    if start < 0:
+        raise RuntimeError("Direct-302 sdhci-msm execute_tuning function missing")
+    head = s[start:start + 1000]
+    if "\tu32 config;\n" not in head:
+        anchor = (
+            "\tstruct mmc_ios ios = host->mmc->ios;\n"
+            "\tu32 core_vendor_spec;\n"
+            "\tstruct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);\n"
+        )
+        replacement = (
+            "\tstruct mmc_ios ios = host->mmc->ios;\n"
+            "\tu32 core_vendor_spec;\n"
+            "\tu32 config;\n"
+            "\tstruct sdhci_pltfm_host *pltfm_host = sdhci_priv(host);\n"
+        )
         s = once(
-            s, anchor, anchor + "\tu32 config;\n",
+            s, anchor, replacement,
             "Direct-302 SDR50 tuning config variable",
         )
 
