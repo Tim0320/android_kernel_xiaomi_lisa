@@ -1,8 +1,8 @@
 # Reviewed Direct-302 semantic decisions.
 #
 # A decision is reusable only when all provenance segments affecting the path
-# are contained in reviewed_segments. This registry covers the 33 semantic
-# paths reported by Direct-302 run 37363542334 attempt 3.
+# are contained in reviewed_segments. This registry covers the original 33 semantic paths plus the runtime-PM
+# mixed conflict discovered by the integrated 5.4.302 compile gate.
 
 REVIEWED_SEMANTICS = {
     "Documentation/devicetree/bindings/mmc/mmc-controller.yaml": {
@@ -32,6 +32,16 @@ REVIEWED_SEMANTICS = {
             "D"
         ],
         "reason": "Add stable Cortex-A76AE and Neoverse-V3AE identifiers while preserving Lisa downstream Qualcomm/Kryo CPU IDs."
+    },
+    "drivers/base/power/runtime.c": {
+        "classification": "MIXED_CONFLICT",
+        "resolution": "ADAPT",
+        "reviewed_segments": [
+            "B",
+            "C"
+        ],
+        "always_adapt": True,
+        "reason": "Keep the Segment-B timer-expiry <= stable fix, but drop the Segment-C needs_force_resume reinit write because frozen Lisa intentionally uses pm_runtime_need_not_resume() and has no dev_pm_info.needs_force_resume field; preserve Lisa PM/KMI layout."
     },
     "drivers/base/regmap/regmap.c": {
         "classification": "NOT_APPLICABLE",
