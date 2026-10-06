@@ -359,6 +359,34 @@ def adapt_platform_kconfig(root: Path):
 
     p.write_text(s)
 
+
+def adapt_platform_makefile(root: Path):
+    p = root / "drivers/platform/Makefile"
+    s = p.read_text()
+    surface = "obj-$(CONFIG_SURFACE_PLATFORMS)\t+= surface/\n"
+    msm = "obj-$(CONFIG_ARCH_QCOM)\t\t+= msm/\n"
+
+    if msm not in s:
+        raise RuntimeError("Direct-302 platform Makefile: Lisa QCOM msm entry missing")
+
+    if surface not in s:
+        s = once(
+            s,
+            msm,
+            surface + msm,
+            "Direct-302 platform Makefile Surface before QCOM msm",
+        )
+
+    if s.count(surface) != 1 or s.count(msm) != 1:
+        raise RuntimeError(
+            f"Direct-302 platform Makefile: expected one Surface and one QCOM msm entry "
+            f"(surface={s.count(surface)}, msm={s.count(msm)})"
+        )
+    if s.index(surface) > s.index(msm):
+        raise RuntimeError("Direct-302 platform Makefile: Surface must precede QCOM msm")
+
+    p.write_text(s)
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -373,6 +401,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/platform/Kconfig":
         adapt_platform_kconfig(root)
         return "DIRECT_302_PLATFORM_KCONFIG_B"
+
+    if path == "drivers/platform/Makefile":
+        adapt_platform_makefile(root)
+        return "DIRECT_302_PLATFORM_MAKEFILE_B"
 
     if path == "drivers/hid/hid-ids.h":
         adapt_hid_ids(root)
