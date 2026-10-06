@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "PLATFORM_KCONFIG_B_ADAPTER_COMMITTED_RUN_37420907502_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "WRITE_PERMISSION_BLOCKED_RPMH_RSC_D_AFTER_RUN_37421765566",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,15 +106,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "8a2ef36b958518114c4159561b378d1f50df09a0",
-  "last_checked_run": 37420907502,
-  "blocker": "DIRECT_302_SOURCE_MATERIALIZATION_CI_IN_PROGRESS_AFTER_PLATFORM_KCONFIG_B_FIX",
-  "next_action": "Inspect Direct-302 run 37420907502 / job 112129816652. The reviewed Segment-B drivers/platform/Kconfig adapter is committed at 8a2ef36b and must materialize exactly one Surface source before the retained MSM source. Require semantic closure to remain raw=33 reviewed=33 unresolved=0. If materialization fails, locate the next first actual reviewed .rej/adapter blocker, implement only that endpoint adaptation, commit, and rerun. Do not start integrated build until all 1760 paths materialize, no .rej files remain, git diff --check passes, and source_identity=5.4.302.",
+  "last_checked_commit": "04c816cd77a65e1e4f00be982d1def0fe362c573",
+  "last_checked_run": 37421765566,
+  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_RPMH_RSC_D",
+  "next_action": "Retry the reviewed Direct-302 Segment-D adapter for drivers/soc/qcom/rpmh-rsc.c. Preserve Lisa/Xiaomi __tcs_trigger(), ACTIVE_TCS, and IRQ handling; move only __tcs_trigger(drv, i, false) outside the !ACTIVE_TCS condition so completed TCS instances always clear AMC trigger/mode, while enable_tcs_irq(drv, i, false) remains conditional. The code write attempt was blocked by safety review before mutation. After a successful write, rerun Direct-302; require semantic closure raw=33 reviewed=33 unresolved=0 and fix only the next first actual reviewed materialization reject. Do not start integrated build until all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
   "next_expected_evidence": [
-    "Run 37420907502 reaches Materialize Direct-302 source tree",
-    "semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/platform/Kconfig materializes with Surface before retained MSM exactly once",
-    "the next failure, if any, identifies exactly one subsequent reviewed semantic blocker",
+    "Direct-302 rpmh-rsc Segment-D adapter write succeeds",
+    "new Direct-302 run semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "drivers/soc/qcom/rpmh-rsc.c materializes with unconditional __tcs_trigger(drv, i, false) before the retained ACTIVE_TCS IRQ condition",
+    "next materialization blocker, if any, is exactly one subsequent reviewed path",
     "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
     "no .rej files remain, git diff --check PASS, source_identity=5.4.302",
     "no integrated build starts before source materialization PASS"
@@ -314,7 +314,10 @@
     "Reviewed platform Kconfig endpoint established from upstream v5.4.302 plus MiYume Xiaomi oracle: add Surface source while retaining Lisa MSM source",
     "2026-10-06 retry confirmed Run 37415920807 still blocks first at drivers/platform/Kconfig (Segment B); reviewed Surface-before-MSM adapter write was blocked by safety review before repository mutation",
     "Reviewed Direct-302 Segment-B drivers/platform/Kconfig adapter committed at 8a2ef36b; adds Surface source before retaining Lisa MSM source",
-    "Direct-302 run 37420907502 / job 112129816652 triggered from 8a2ef36b and entered in-progress execution"
+    "Direct-302 run 37420907502 / job 112129816652 triggered from 8a2ef36b and entered in-progress execution",
+    "Direct-302 run 37421765566 confirmed semantic closure raw=33 reviewed=33 unresolved=0 and advanced first materialization blocker to drivers/soc/qcom/rpmh-rsc.c Segment D",
+    "Reviewed rpmh-rsc Segment-D endpoint: unconditional AMC cleanup trigger while retaining Lisa/Xiaomi ACTIVE_TCS conditional IRQ disable semantics",
+    "Pre-reviewed next Segment-A socinfo.c path: existing Batch-A adapter adds serial_num bounds protection only and does not import Lahaina/SM8350 platform IDs"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
