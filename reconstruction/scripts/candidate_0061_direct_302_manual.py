@@ -1551,6 +1551,39 @@ def adapt_zsmalloc(root: Path):
     p.write_text(s)
 
 
+
+def adapt_net_core_sock(root: Path):
+    p = root / "net/core/sock.c"
+    s = p.read_text()
+
+    start = s.find("static void sk_prot_free(struct proto *prot, struct sock *sk)")
+    if start < 0:
+        raise RuntimeError("Direct-302 sock: sk_prot_free start not found")
+    end = s.find("\n}\n", start)
+    if end < 0:
+        raise RuntimeError("Direct-302 sock: sk_prot_free end not found")
+    end += 3
+    fn = s[start:end]
+
+    if "sk_owner_put(sk);" not in fn:
+        anchor = "\tsecurity_sk_free(sk);\n"
+        if fn.count(anchor) != 1:
+            raise RuntimeError(
+                f"Direct-302 sock: security_sk_free anchor count={fn.count(anchor)}"
+            )
+        fn = fn.replace(
+            anchor,
+            anchor + "\n\tsk_owner_put(sk);\n",
+            1,
+        )
+
+    if "sk_owner_put(sk);" not in fn:
+        raise RuntimeError("Direct-302 sock endpoint missing sk_owner_put")
+
+    s = s[:start] + fn + s[end:]
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1609,6 +1642,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "mm/zsmalloc.c":
         adapt_zsmalloc(root)
         return "DIRECT_302_ZSMALLOC_C"
+
+    if path == "net/core/sock.c":
+        adapt_net_core_sock(root)
+        return "DIRECT_302_NET_CORE_SOCK_B_D"
 
     if path == "drivers/usb/gadget/function/f_fs.c":
         adapt_functionfs(root)
