@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "SDHCI_MSM_D_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "SDHCI_ADAPTER_ANCHOR_SCOPED_RUN_IN_PROGRESS",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,17 +106,17 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "c9a3658448fcdaf4166499789c6a1df60660d7ba",
-  "last_checked_run": 37415317424,
-  "blocker": "NONE_RUN_37415317424_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37415317424 / job 112112534262. Prior run 37414648790 passed HID and ivtv endpoint adapters, kept semantic closure raw=33 reviewed=33 unresolved=0, then failed at drivers/mmc/host/sdhci-msm.c Segment D. Commit c9a3658 adds only the official 5.4.299->5.4.302 SDR50 tuning endpoint (CORE_HC_SELECT_IN_SDR50, SDHCI_SDR50_NEEDS_TUNING gate, and vendor select) while preserving Lisa SM7325/Yupik downstream logic. If materialization fails again, repair only the next first reviewed .rej/adapter blocker. Do not start integrated build before all 1760 paths materialize, no .rej remains, git diff --check passes, and source identity is 5.4.302.",
+  "last_checked_commit": "7aca9130846b8c031dd2b2f1ec20ad3079b3a0e7",
+  "last_checked_run": 37415920807,
+  "blocker": "NONE_RUN_37415920807_IN_PROGRESS",
+  "next_action": "Inspect Direct-302 run 37415920807. Prior run 37415317424 did not reveal a new kernel semantic blocker: sdhci-msm adapter failed because the generic '\\tu32 core_vendor_spec;' anchor appeared twice. Commit 7aca913 scopes the insertion to the unique sdhci_msm_execute_tuning declaration block; SDR50 stable semantics are unchanged. Verify sdhci-msm now materializes and continue only with the next first actual reviewed .rej/adapter blocker. Do not start integrated build before all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
   "next_expected_evidence": [
-    "Run 37415317424 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/mmc/host/sdhci-msm.c no longer blocks materialization",
+    "Run 37415920807 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "sdhci-msm scoped adapter no longer fails on anchor count",
+    "drivers/mmc/host/sdhci-msm.c materializes successfully",
     "Materialize Direct-302 source tree either PASS or identifies exactly the next first reviewed semantic blocker",
     "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
-    "no .rej files remain, git diff --check PASS, source_identity=5.4.302",
-    "integrated build begins only after source materialization PASS"
+    "no .rej files remain, git diff --check PASS, source_identity=5.4.302"
   ],
   "forbidden": [
     "global frequency pin",
@@ -304,7 +304,11 @@
     "Run 37414648790 next materialization blocker identified as drivers/mmc/host/sdhci-msm.c Segment D",
     "Official v5.4.299->v5.4.302 sdhci-msm delta isolated to SDR50 tuning support; MiYume 5.4.302 confirms the same endpoint in downstream Qualcomm flow",
     "Direct-302 sdhci-msm Segment D adapter committed at c9a3658 preserving Lisa SM7325/Yupik downstream behavior",
-    "Direct-302 run 37415317424 / job 112112534262 started"
+    "Direct-302 run 37415317424 / job 112112534262 started",
+    "Run 37415317424 confirmed semantic closure PASS raw=33 reviewed=33 unresolved=0 but sdhci-msm adapter failed internally because generic core_vendor_spec anchor count was 2",
+    "No new kernel semantic decision was required; SDR50 endpoint semantics remained valid",
+    "sdhci_msm execute_tuning variable insertion anchor scoped to its unique local declaration block at 7aca913",
+    "Direct-302 run 37415920807 started from 7aca913"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
