@@ -331,6 +331,34 @@ def adapt_sdhci_msm(root: Path):
     p.write_text(s)
 
 
+
+def adapt_platform_kconfig(root: Path):
+    p = root / "drivers/platform/Kconfig"
+    s = p.read_text()
+    surface = 'source "drivers/platform/surface/Kconfig"\n'
+    msm = 'source "drivers/platform/msm/Kconfig"\n'
+
+    if msm not in s:
+        raise RuntimeError("Direct-302 platform Kconfig: Lisa MSM source missing")
+
+    if surface not in s:
+        s = once(
+            s,
+            msm,
+            surface + "\n" + msm,
+            "Direct-302 platform Kconfig Surface before MSM",
+        )
+
+    if s.count(surface) != 1 or s.count(msm) != 1:
+        raise RuntimeError(
+            f"Direct-302 platform Kconfig: expected one Surface and one MSM source "
+            f"(surface={s.count(surface)}, msm={s.count(msm)})"
+        )
+    if s.index(surface) > s.index(msm):
+        raise RuntimeError("Direct-302 platform Kconfig: Surface must precede MSM")
+
+    p.write_text(s)
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -341,6 +369,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "arch/arm64/include/asm/cputype.h":
         adapt_cputype(root)
         return "DIRECT_302_CPUTYPE_B_D"
+
+    if path == "drivers/platform/Kconfig":
+        adapt_platform_kconfig(root)
+        return "DIRECT_302_PLATFORM_KCONFIG_B"
 
     if path == "drivers/hid/hid-ids.h":
         adapt_hid_ids(root)
