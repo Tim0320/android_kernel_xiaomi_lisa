@@ -1307,6 +1307,68 @@ def adapt_softirq(root: Path):
     p.write_text(s)
 
 
+
+def adapt_posix_timers(root: Path):
+    p = root / "kernel/time/posix-timers.c"
+    s = p.read_text()
+
+    # Segment B adds a reschedule point to the timer-ID collision retry loop.
+    # Lisa retains the older posix_timer_id do/while allocator rather than the
+    # upstream next_posix_timer_id for-loop, so preserve that downstream ABI/
+    # CRIU-visible allocation scheme and add only the retry reschedule semantic.
+    func_start = s.find("static int posix_timer_add(struct k_itimer *timer)")
+    func_end = s.find("static inline void unlock_timer", func_start)
+    if func_start < 0 or func_end < 0:
+        raise RuntimeError("Direct-302 posix timer allocator boundaries missing")
+
+    body = s[func_start:func_end]
+    if "cond_resched();" not in body:
+        lisa_anchor = (
+            "\t\tspin_unlock(&hash_lock);\n"
+            "\t} while (ret == -ENOENT);\n"
+        )
+        lisa_endpoint = (
+            "\t\tspin_unlock(&hash_lock);\n"
+            "\t\tif (ret == -ENOENT)\n"
+            "\t\t\tcond_resched();\n"
+            "\t} while (ret == -ENOENT);\n"
+        )
+        if lisa_anchor in body:
+            body = body.replace(lisa_anchor, lisa_endpoint, 1)
+        else:
+            upstream_anchor = (
+                "\t\tspin_unlock(&hash_lock);\n"
+                "\t}\n"
+                "\t/* POSIX return code when no timer ID could be allocated */\n"
+            )
+            upstream_endpoint = (
+                "\t\tspin_unlock(&hash_lock);\n"
+                "\t\tcond_resched();\n"
+                "\t}\n"
+                "\t/* POSIX return code when no timer ID could be allocated */\n"
+            )
+            if upstream_anchor not in body:
+                raise RuntimeError("Direct-302 posix timer retry anchor missing")
+            body = body.replace(upstream_anchor, upstream_endpoint, 1)
+        s = s[:func_start] + body + s[func_end:]
+
+    body = s[func_start:s.find("static inline void unlock_timer", func_start)]
+    if "cond_resched();" not in body:
+        raise RuntimeError("Direct-302 posix timer cond_resched endpoint missing")
+
+    # Preserve whichever allocator layout Lisa carries; do not force the newer
+    # upstream next_posix_timer_id field onto the downstream signal ABI.
+    if "sig->posix_timer_id" in body:
+        for token in (
+            "int first_free_id = sig->posix_timer_id;",
+            "} while (ret == -ENOENT);",
+        ):
+            if token not in body:
+                raise RuntimeError(f"Direct-302 posix Lisa allocator lost {token}")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1389,6 +1451,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "kernel/softirq.c":
         adapt_softirq(root)
         return "DIRECT_302_SOFTIRQ_A"
+
+    if path == "kernel/time/posix-timers.c":
+        adapt_posix_timers(root)
+        return "DIRECT_302_POSIX_TIMERS_B"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
