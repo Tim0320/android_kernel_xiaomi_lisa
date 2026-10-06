@@ -106,10 +106,10 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "1cbd917476a37fc165f087fc6d8a38d6e3a94feb",
+  "last_checked_commit": "a7366b9067f691c3cbbd1dae9e20e6a4fc6bc58d",
   "last_checked_run": 37415920807,
   "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_PLATFORM_KCONFIG_B",
-  "next_action": "Retry the reviewed Direct-302 Segment-B adapter for drivers/platform/Kconfig. Run 37415920807 proves semantic closure raw=33 reviewed=33 unresolved=0 and the prior sdhci-msm scoped adapter now passes; the first materialization blocker is drivers/platform/Kconfig. The endpoint must add source \"drivers/platform/surface/Kconfig\" immediately before and while retaining source \"drivers/platform/msm/Kconfig\". MiYume 5.4.302 confirms Surface+MSM final state; upstream v5.4.302 confirms the Surface addition. After a successful write, let the Direct-302 workflow rerun and fix only the next first actual reviewed reject. Do not start integrated build before all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
+  "next_action": "Retry the reviewed Direct-302 Segment-B adapter for drivers/platform/Kconfig. The intended endpoint is unchanged: add source \"drivers/platform/surface/Kconfig\" exactly once immediately before and while retaining source \"drivers/platform/msm/Kconfig\". The write attempt in this run was blocked by safety review before GitHub mutation. After a successful write, let the Direct-302 workflow rerun; if materialization fails, fix only the next first actual reviewed reject. Do not start integrated build before all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
   "next_expected_evidence": [
     "Direct-302 platform Kconfig adapter write succeeds",
     "new Direct-302 run semantic closure remains raw=33 reviewed=33 unresolved=0",
@@ -310,7 +310,8 @@
     "sdhci_msm execute_tuning variable insertion anchor scoped to its unique local declaration block at 7aca913",
     "Direct-302 run 37415920807 started from 7aca913",
     "Run 37415920807 confirmed scoped sdhci-msm adapter passes and advanced source materialization to drivers/platform/Kconfig (Segment B)",
-    "Reviewed platform Kconfig endpoint established from upstream v5.4.302 plus MiYume Xiaomi oracle: add Surface source while retaining Lisa MSM source"
+    "Reviewed platform Kconfig endpoint established from upstream v5.4.302 plus MiYume Xiaomi oracle: add Surface source while retaining Lisa MSM source",
+    "2026-10-06 retry confirmed Run 37415920807 still blocks first at drivers/platform/Kconfig (Segment B); reviewed Surface-before-MSM adapter write was blocked by safety review before repository mutation"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
