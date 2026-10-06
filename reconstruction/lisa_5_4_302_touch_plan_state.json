@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "XHCI_PLAT_C_D_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "EXT4_DIR_B_ADAPTER_COMMITTED_RUN_QUEUED",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,15 +106,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "62bdf48e52244d143096c2b57ffc7d92c2f7daae",
-  "last_checked_run": 37445984087,
-  "blocker": "NONE_RUN_37445984087_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37445984087 / job 112210803400. Prior run 37445457034 kept semantic closure raw=33 reviewed=33 unresolved=0, passed the NCM Segment-D adapter, and advanced first materialization blocker to drivers/usb/host/xhci-plat.c C+D. Commit 62bdf48 applies the Segment-C XHCI_BROKEN_STREAMS guard and preserves Lisa/MiYume's already-present Segment-D autosuspend endpoint (pm_runtime_use_autosuspend plus 1000ms delay, runtime-PM/wakeup flow) instead of duplicating/reordering upstream code. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate.",
+  "last_checked_commit": "a6e20032b85f0096fc4a784e4e93b32404cb7e47",
+  "last_checked_run": 37446884780,
+  "blocker": "NONE_RUN_37446884780_QUEUED",
+  "next_action": "Inspect Direct-302 run 37446884780. Prior run 37445984087 kept semantic closure raw=33 reviewed=33 unresolved=0, passed xhci-plat C+D, and advanced first materialization blocker to fs/ext4/dir.c Segment B. Commit a6e2003 preserves Lisa/MiYume downstream fake-dir, metadata-csum and ext4_dir_rec_len() semantics and adds only the official stable final-dot data-block guard. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate.",
   "next_expected_evidence": [
-    "run 37445984087 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/usb/host/xhci-plat.c C+D materializes successfully",
-    "XHCI_BROKEN_STREAMS suppresses streams advertisement",
-    "Lisa/MiYume autosuspend 1000ms and runtime-PM/wakeup flow remains intact",
+    "run 37446884780 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "fs/ext4/dir.c Segment-B materializes successfully",
+    "Lisa fake-dir and metadata-csum-aware ext4_dir_rec_len() semantics remain intact",
+    "final-dot data-block guard exists exactly once",
     "next blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
     "source_identity=5.4.302 before integrated build starts"
@@ -347,7 +347,12 @@
     "Run 37445457034 advanced first materialization blocker to drivers/usb/host/xhci-plat.c C+D",
     "Official Segment C xhci-plat delta verified as XHCI_BROKEN_STREAMS guard; Segment D adds autosuspend use, which Lisa/MiYume already carry with a stronger 1000ms downstream autosuspend configuration",
     "Direct-302 xhci-plat C+D endpoint adapter committed at 62bdf48 preserving Lisa runtime-PM/wakeup semantics",
-    "Direct-302 run 37445984087 / job 112210803400 started"
+    "Direct-302 run 37445984087 / job 112210803400 started",
+    "Run 37445984087 kept Direct-302 semantic closure PASS raw=33 reviewed=33 unresolved=0 and confirmed xhci-plat C+D adapter passes",
+    "Run 37445984087 advanced first materialization blocker to fs/ext4/dir.c Segment B",
+    "Lisa/MiYume ext4 endpoint confirmed to already carry next_offset, fake-dir, metadata-csum and ext4_dir_rec_len() downstream checks; only stable final-dot guard was missing",
+    "Direct-302 ext4 Segment-B final-dot adapter committed at a6e2003",
+    "Direct-302 run 37446884780 queued"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
