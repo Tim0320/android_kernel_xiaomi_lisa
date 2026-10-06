@@ -944,6 +944,55 @@ def adapt_ext4_dir(root: Path):
     p.write_text(s)
 
 
+
+def adapt_pid_h(root: Path):
+    p = root / "include/linux/pid.h"
+    s = p.read_text()
+
+    # Segment B 5.4.292->5.4.296 adds pidfd_prepare() and pid_has_task().
+    # Preserve Lisa/MiYume's downstream pidfd_get_pid() declaration.
+    prepare = "int pidfd_prepare(struct pid *pid, unsigned int flags, struct file **ret);\n"
+    if prepare not in s:
+        anchor = "extern struct pid *pidfd_pid(const struct file *file);\n"
+        s = once(
+            s,
+            anchor,
+            anchor + prepare,
+            "Direct-302 pidfd_prepare declaration",
+        )
+
+    helper = (
+        "static inline bool pid_has_task(struct pid *pid, enum pid_type type)\n"
+        "{\n"
+        "\treturn !hlist_empty(&pid->tasks[type]);\n"
+        "}\n"
+    )
+    if helper not in s:
+        anchor = "extern struct task_struct *pid_task(struct pid *pid, enum pid_type);\n"
+        s = once(
+            s,
+            anchor,
+            anchor + helper,
+            "Direct-302 pid_has_task helper",
+        )
+
+    for token in (
+        "int pidfd_prepare(struct pid *pid, unsigned int flags, struct file **ret);",
+        "struct pid *pidfd_get_pid(unsigned int fd);",
+        "static inline bool pid_has_task(struct pid *pid, enum pid_type type)",
+        "return !hlist_empty(&pid->tasks[type]);",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 pid.h endpoint missing {token}")
+
+    if s.count("pidfd_prepare(struct pid *pid") != 1:
+        raise RuntimeError("Direct-302 pid.h pidfd_prepare count is not exactly one")
+    if s.count("static inline bool pid_has_task(") != 1:
+        raise RuntimeError("Direct-302 pid.h pid_has_task count is not exactly one")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1006,6 +1055,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "fs/ext4/dir.c":
         adapt_ext4_dir(root)
         return "DIRECT_302_EXT4_DIR_B"
+
+    if path == "include/linux/pid.h":
+        adapt_pid_h(root)
+        return "DIRECT_302_PID_H_B"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
