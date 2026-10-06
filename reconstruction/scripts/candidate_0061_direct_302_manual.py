@@ -132,6 +132,90 @@ def adapt_cputype(root: Path):
 
     p.write_text(s)
 
+
+def adapt_hid_ids(root: Path):
+    p = root / "drivers/hid/hid-ids.h"
+    s = p.read_text()
+
+    # Segment A: Quanta HP 5MP identity.
+    token = "#define USB_DEVICE_ID_QUANTA_HP_5MP_CAMERA_5473\t\t0x5473\n"
+    if token not in s:
+        anchor = "#define USB_DEVICE_ID_QUANTA_OPTICAL_TOUCH_3008\t\t0x3008\n"
+        s = once(s, anchor, anchor + token, "Direct-302 Quanta HP 5MP HID ID")
+
+    # Segment B: ADATA XPG wireless gaming mouse identities.
+    adata = (
+        "#define USB_VENDOR_ID_ADATA_XPG 0x125f\n"
+        "#define USB_DEVICE_ID_ADATA_XPG_WL_GAMING_MOUSE 0x7505\n"
+        "#define USB_DEVICE_ID_ADATA_XPG_WL_GAMING_MOUSE_DONGLE 0x7506\n"
+    )
+    if "#define USB_VENDOR_ID_ADATA_XPG 0x125f\n" not in s:
+        anchor = "#define USB_VENDOR_ID_ACTIONSTAR\t0x2101\n#define USB_DEVICE_ID_ACTIONSTAR_1011\t0x1011\n"
+        s = once(s, anchor, anchor + "\n" + adata, "Direct-302 ADATA XPG HID IDs")
+
+    # Segment B: Chicony HP 5MP camera identities.
+    chicony = (
+        "#define USB_DEVICE_ID_CHICONY_HP_5MP_CAMERA\t0xb824\n"
+        "#define USB_DEVICE_ID_CHICONY_HP_5MP_CAMERA2\t0xb82c\n"
+    )
+    if "#define USB_DEVICE_ID_CHICONY_HP_5MP_CAMERA\t0xb824\n" not in s:
+        anchor = "#define USB_DEVICE_ID_CHICONY_ACER_SWITCH12\t0x1421\n"
+        s = once(s, anchor, anchor + chicony, "Direct-302 Chicony HP 5MP HID IDs")
+
+    # Segment D: Cooler Master wireless mouse dongle.
+    cooler = (
+        "#define USB_VENDOR_ID_COOLER_MASTER\t0x2516\n"
+        "#define USB_DEVICE_ID_COOLER_MASTER_MICE_DONGLE\t0x01b7\n"
+    )
+    if "#define USB_VENDOR_ID_COOLER_MASTER\t0x2516\n" not in s:
+        anchor = "#define USB_VENDOR_ID_CODEMERCS\t\t0x07c0\n#define USB_DEVICE_ID_CODEMERCS_IOW_FIRST\t0x1500\n#define USB_DEVICE_ID_CODEMERCS_IOW_LAST\t0x15ff\n"
+        s = once(s, anchor, anchor + "\n" + cooler, "Direct-302 Cooler Master HID IDs")
+
+    # Final 5.4.302 endpoint names 0x4c4a:0x4155 as Jieli SDK. If an
+    # intermediate Segment-B SMARTLINKTECHNOLOGY spelling is present, rename it
+    # instead of keeping duplicate IDs.
+    s = s.replace(
+        "#define USB_VENDOR_ID_SMARTLINKTECHNOLOGY              0x4c4a\n"
+        "#define USB_DEVICE_ID_SMARTLINKTECHNOLOGY_4155         0x4155\n",
+        "#define USB_VENDOR_ID_JIELI_SDK_DEFAULT\t\t0x4c4a\n"
+        "#define USB_DEVICE_ID_JIELI_SDK_4155\t\t0x4155\n",
+    )
+    if "#define USB_VENDOR_ID_JIELI_SDK_DEFAULT\t\t0x4c4a\n" not in s:
+        # Lisa/Xiaomi carries QVR/NREAL downstream IDs here. MiYume 5.4.302
+        # confirms they remain and Jieli follows them before Qualcomm-local IDs.
+        anchor = (
+            "#define USB_VENDOR_ID_QVR5\t0x045e\n"
+            "#define USB_VENDOR_ID_QVR32A\t0x04b4\n"
+            "#define USB_VENDOR_ID_NREAL\t0x05a9\n"
+            "#define USB_DEVICE_ID_QVR5\t0x0659\n"
+            "#define USB_DEVICE_ID_QVR32A\t0x00c3\n"
+            "#define USB_DEVICE_ID_NREAL\t0x0680\n"
+        )
+        jieli = (
+            "\n#define USB_VENDOR_ID_JIELI_SDK_DEFAULT\t\t0x4c4a\n"
+            "#define USB_DEVICE_ID_JIELI_SDK_4155\t\t0x4155\n"
+        )
+        s = once(s, anchor, anchor + jieli, "Direct-302 Jieli SDK HID IDs")
+
+    for token in (
+        "USB_DEVICE_ID_QUANTA_HP_5MP_CAMERA_5473",
+        "USB_VENDOR_ID_ADATA_XPG",
+        "USB_DEVICE_ID_CHICONY_HP_5MP_CAMERA",
+        "USB_VENDOR_ID_COOLER_MASTER",
+        "USB_VENDOR_ID_JIELI_SDK_DEFAULT",
+        "USB_DEVICE_ID_JIELI_SDK_4155",
+        "USB_VENDOR_ID_QVR5",
+        "USB_VENDOR_ID_NREAL",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 HID endpoint missing {token}")
+
+    if "USB_VENDOR_ID_SMARTLINKTECHNOLOGY" in s or "USB_DEVICE_ID_SMARTLINKTECHNOLOGY_4155" in s:
+        raise RuntimeError("Direct-302 HID endpoint retained intermediate Smartlink naming")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -142,6 +226,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "arch/arm64/include/asm/cputype.h":
         adapt_cputype(root)
         return "DIRECT_302_CPUTYPE_B_D"
+
+    if path == "drivers/hid/hid-ids.h":
+        adapt_hid_ids(root)
+        return "DIRECT_302_HID_A_B_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
