@@ -438,6 +438,56 @@ def adapt_rpmh_rsc(root: Path):
 
     p.write_text(s)
 
+
+def adapt_usb_core_quirks(root: Path):
+    p = root / "drivers/usb/core/quirks.c"
+    s = p.read_text()
+
+    lisa_silicon = (
+        "\t/* Silicon Motion Flash drive */\n"
+        "\t{ USB_DEVICE(0x090c, 0x1000), .driver_info = USB_QUIRK_NO_LPM },\n"
+    )
+    endpoint_silicon = (
+        "\t/* Silicon Motion Flash Drive */\n"
+        "\t{ USB_DEVICE(0x090c, 0x1000), .driver_info =\n"
+        "\t\t\tUSB_QUIRK_DELAY_INIT | USB_QUIRK_NO_LPM },\n"
+    )
+
+    if endpoint_silicon not in s:
+        if lisa_silicon not in s:
+            raise RuntimeError(
+                "Direct-302 usb quirks: Silicon Motion Lisa downstream endpoint not found"
+            )
+        s = once(
+            s,
+            lisa_silicon,
+            endpoint_silicon,
+            "Direct-302 USB Silicon Motion combined delay-init + NO_LPM",
+        )
+
+    required = (
+        "USB_DEVICE(0x046d, 0x0825), .driver_info = USB_QUIRK_RESET_RESUME |",
+        "USB_DEVICE(0x067b, 0x2731), .driver_info = USB_QUIRK_DELAY_INIT |",
+        "USB_DEVICE(0x0781, 0x5596), .driver_info = USB_QUIRK_DELAY_INIT",
+        "USB_DEVICE(0x0781, 0x55a3), .driver_info = USB_QUIRK_DELAY_INIT",
+        "USB_DEVICE(0x0781, 0x55ae), .driver_info = USB_QUIRK_NO_LPM",
+        "USB_DEVICE(0x0fce, 0x0dde), .driver_info = USB_QUIRK_NO_LPM",
+        "USB_DEVICE(0x12d1, 0x15c1), .driver_info =",
+        "USB_DEVICE(0x1f75, 0x0917), .driver_info = USB_QUIRK_NO_LPM",
+        "USB_DEVICE(0x2109, 0x0711), .driver_info = USB_QUIRK_NO_LPM",
+        'dev_dbg(&udev->dev, "USB quirks for this device: 0x%x\\n",',
+    )
+    for token in required:
+        if token not in s:
+            raise RuntimeError(f"Direct-302 usb quirks endpoint missing: {token}")
+
+    if s.count("USB_DEVICE(0x090c, 0x1000)") != 1:
+        raise RuntimeError("Direct-302 usb quirks: expected exactly one Silicon Motion device entry")
+    if "USB_QUIRK_DELAY_INIT | USB_QUIRK_NO_LPM" not in s:
+        raise RuntimeError("Direct-302 usb quirks: Silicon Motion combined flags missing")
+
+    p.write_text(s)
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -472,6 +522,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/soc/qcom/rpmh-rsc.c":
         adapt_rpmh_rsc(root)
         return "DIRECT_302_RPMH_RSC_D"
+
+    if path == "drivers/usb/core/quirks.c":
+        adapt_usb_core_quirks(root)
+        return "DIRECT_302_USB_CORE_QUIRKS_A_B_C_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
