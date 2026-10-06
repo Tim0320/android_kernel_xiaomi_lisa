@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "PID_H_B_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "USBNET_C_WRITE_PERMISSION_BLOCKED",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,18 +106,17 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "ee9dd39c02b73507a5f40d1b5fca1ed9ea828c53",
+  "last_checked_commit": "4091e9ba5c2e9fb2ebc42a185cbf2b50b7d08076",
   "last_checked_run": 37447448879,
-  "blocker": "NONE_RUN_37447448879_IN_PROGRESS",
-  "next_action": "Re-read Direct-302 run 37447448879 / job 112215585414. At this check the provenance/oracle fetch passed and durable stock ABI materialization was still running; no kernel/materialization failure existed yet, so do not modify source preemptively. When the run reaches source materialization, verify semantic closure remains raw=33 reviewed=33 unresolved=0 and include/linux/pid.h Segment-B passes. If it fails, repair only the first actual reviewed reject. The next reviewed scan-order candidate after pid.h is include/linux/usb/usbnet.h Segment C; its official 5.4.296->5.4.299 endpoint is EVENT_LINK_CARRIER_ON=14 while preserving Lisa Android KABI/downstream speed layout, but do not write that adapter unless it becomes the first actual blocker. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, immediately advance to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_USBNET_H_C",
+  "next_action": "Retry the already-reviewed minimal Direct-302 adapter for include/linux/usb/usbnet.h Segment C after the write-safety block. Run 37447448879 kept semantic closure raw=33 reviewed=33 unresolved=0, confirmed include/linux/pid.h Segment-B passes, and advanced the first real blocker to usbnet.h. The required endpoint is only EVENT_LINK_CARRIER_ON=14 inserted after EVENT_NO_IP_ALIGN=13; preserve Lisa/MiYume #include <linux/android_kabi.h>, ANDROID_KABI_USE2(1, u32 rx_speed, u32 tx_speed), and KABI reserves. Do not alter any other source while this remains the first blocker. If write succeeds, let the new Direct-302 run start and schedule +2 minutes. If write is blocked again, keep this same automation enabled and retry +10 minutes.",
   "next_expected_evidence": [
-    "run 37447448879 progresses past stock ABI/source recreation without orchestration failure",
+    "minimal usbnet.h Segment-C adapter write succeeds without changing Android KABI layout",
+    "new Direct-302 run starts from the usbnet adapter commit",
     "semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "include/linux/pid.h Segment-B materializes successfully with pidfd_prepare and pid_has_task exactly once",
-    "Lisa/MiYume pidfd_get_pid declaration remains intact",
-    "if a next reject occurs, it is exactly one subsequent reviewed semantic path",
-    "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
-    "source_identity=5.4.302 before integrated build starts"
+    "include/linux/usb/usbnet.h materializes with EVENT_LINK_CARRIER_ON=14 exactly once",
+    "ANDROID_KABI_USE2 rx_speed/tx_speed and reserves remain intact",
+    "next blocker, if any, is exactly one subsequent reviewed semantic path"
   ],
   "forbidden": [
     "global frequency pin",
@@ -359,7 +358,11 @@
     "Direct-302 pid.h Segment-B adapter committed at 85e631c",
     "Direct-302 run 37447448879 / job 112215585414 started",
     "Automation re-read canonical plan/state, latest main ee9dd39 and Direct-302 run 37447448879 / job 112215585414; run remained in progress with provenance/oracle fetch PASS and durable stock ABI materialization running, so no source repair was justified yet",
-    "Pre-reviewed next scan-order candidate include/linux/usb/usbnet.h Segment C against official 5.4.296/299/302: endpoint adds EVENT_LINK_CARRIER_ON=14; retain Lisa Android KABI/downstream speed fields and do not write unless it becomes the first actual blocker"
+    "Pre-reviewed next scan-order candidate include/linux/usb/usbnet.h Segment C against official 5.4.296/299/302: endpoint adds EVENT_LINK_CARRIER_ON=14; retain Lisa Android KABI/downstream speed fields and do not write unless it becomes the first actual blocker",
+    "Run 37447448879 kept Direct-302 semantic closure PASS raw=33 reviewed=33 unresolved=0 and confirmed include/linux/pid.h Segment-B adapter passes",
+    "Run 37447448879 advanced first materialization blocker to include/linux/usb/usbnet.h Segment C",
+    "Official usbnet Segment-C endpoint revalidated against v5.4.296/v5.4.299/v5.4.302 and MiYume: add EVENT_LINK_CARRIER_ON=14 while retaining Lisa Android KABI rx_speed/tx_speed layout",
+    "Attempted minimal Direct-302 usbnet adapter write, but repository mutation was blocked by OpenAI safety checks; source tree unchanged"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
