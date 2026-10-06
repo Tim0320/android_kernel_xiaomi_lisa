@@ -106,18 +106,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "8e9a9ca64f9cb2b8ed0d2b39cfb9ebe3004ea295",
-  "last_checked_run": 37456272305,
-  "blocker": "WAITING_DIRECT_302_NET_CORE_SOCK_B_D_RERUN",
-  "next_action": "Inspect Direct-302 run 37456272305 triggered by 8e9a9ca64f9cb2b8ed0d2b39cfb9ebe3004ea295. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the net/core/sock.c B+D adapter passes by adding only sk_owner_put(sk) in sk_prot_free while preserving all five clean-applied stable hunks and Lisa downstream networking behavior. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
+  "last_checked_commit": "2185ace43aa48a681f3ec582c5527532e3682591",
+  "last_checked_run": 37457594973,
+  "blocker": "WAITING_DIRECT_302_LEGACY_REJECT_HYGIENE_RERUN",
+  "next_action": "Inspect Direct-302 run 37457594973. Run 37456272305 already proved all 33 reviewed semantic paths close and net/core/sock.c B+D passes; its only failure was two stale tracked .rej sidecars inherited from frozen Candidate0059 commit 6e568a. Commit 61a214c removes exactly those two verified legacy FTS Makefile.rej artifacts during C0061 source recreation without modifying frozen Candidate0059. Verify C0061_C0059_LEGACY_REJECT_CLEANUP=PASS count=2, semantic closure raw=33 reviewed=33 unresolved=0, no .rej remains, git diff --check PASS, and source_identity=5.4.302. If those pass, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Ignore legacy Batch B run 37457594895 as provenance-only; commit 2185ace makes the Batch B workflow manual-only so future Direct-302 shared-source changes cannot revive the obsolete 5.4.296 gate.",
   "next_expected_evidence": [
-    "run 37456272305 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "net/core/sock.c B+D adapter passes sk_owner_put(sk) lifetime endpoint",
-    "five other net/core/sock.c hunks remain clean-applied",
-    "no unintended Lisa downstream networking behavior replacement",
-    "next blocker, if any, is exactly one subsequent reviewed semantic path",
-    "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
-    "source_identity=5.4.302 before integrated build starts"
+    "run 37457594973 C0061_C0059_LEGACY_REJECT_CLEANUP=PASS count=2",
+    "semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "Direct-302 materialization leaves no .rej files",
+    "git diff --check PASS",
+    "source_identity=5.4.302",
+    "then single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate starts",
+    "legacy Batch B remains provenance-only and future push auto-trigger is disabled"
   ],
   "forbidden": [
     "global frequency pin",
@@ -401,7 +401,12 @@
     "Direct-302 run 37455743354 queued from 4ee9b391",
     "Run 37455743354 confirmed Direct-302 zsmalloc Segment-C adapter passed and advanced first materialization blocker to net/core/sock.c Segments B+D",
     "Direct-302 net/core/sock.c B+D adapter committed at 8e9a9ca6; sk_prot_free now adds sk_owner_put(sk) before object memory release while preserving the five clean-applied stable hunks",
-    "Direct-302 run 37456272305 queued from 8e9a9ca6"
+    "Direct-302 run 37456272305 queued from 8e9a9ca6",
+    "Run 37456272305 confirmed all 33 reviewed semantic paths closed; net/core/sock.c B+D passed and the only remaining materialization failure was two inherited FTS Makefile.rej sidecars",
+    "Verified frozen Candidate0059 commit 6e568a contains exactly two tracked .rej files, both identical legacy FTS V521 Makefile reject artifacts",
+    "C0061 source recreation now removes only those two verified inherited reject sidecars at commit 61a214c while leaving frozen Candidate0059 immutable",
+    "Legacy Batch B workflow made manual-only at 2185ace so shared Direct-302 source-recreation changes no longer revive the obsolete 5.4.296 build gate",
+    "Direct-302 run 37457594973 is in progress from 61a214c"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
