@@ -11,6 +11,8 @@ on:
       - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
       - reconstruction/scripts/candidate_0061_direct_302_reviewed.py
       - reconstruction/scripts/candidate_0061_direct_302_review_gate.py
+      - reconstruction/scripts/candidate_0061_direct_302_apply.py
+      - reconstruction/scripts/candidate_0061_direct_302_manual.py
 
 permissions:
   contents: read
@@ -165,6 +167,21 @@ jobs:
           fi
           echo "C0061_DIRECT_302_SEMANTIC_CLOSURE=PASS raw=${{ steps.review.outputs.semantic_review_count }} reviewed=${{ steps.review.outputs.reviewed_semantic_count }} unresolved=$count"
 
+      - name: Materialize Direct-302 source tree
+        id: apply
+        env:
+          PYTHONPATH: ${{ github.workspace }}/package/reconstruction/scripts
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0061_direct_302_apply.py \
+            --source kernel \
+            --scan candidate-0061-direct-302-scan.json \
+            --report candidate-0061-direct-302-apply.json \
+            2>&1 | tee candidate-0061-direct-302-apply.log
+          grep -q '^C0061_DIRECT_302_APPLY=PASS$' candidate-0061-direct-302-apply.log
+          grep -q '^source_identity=5.4.302$' candidate-0061-direct-302-apply.log
+          grep -q '^git_diff_check=PASS$' candidate-0061-direct-302-apply.log
+
       - name: Report Direct-302 scan evidence
         if: ${{ always() }}
         env:
@@ -175,6 +192,7 @@ jobs:
           SCAN_OUTCOME: ${{ steps.scan.outcome }}
           REVIEW_OUTCOME: ${{ steps.review.outcome }}
           CLOSURE_OUTCOME: ${{ steps.closure.outcome }}
+          APPLY_OUTCOME: ${{ steps.apply.outcome }}
         run: |
           set -u
           {
@@ -188,6 +206,7 @@ jobs:
             echo "- direct_302_scan: $SCAN_OUTCOME"
             echo "- semantic_review_gate: $REVIEW_OUTCOME"
             echo "- semantic_closure: $CLOSURE_OUTCOME"
+            echo "- source_materialization: $APPLY_OUTCOME"
             if test -s candidate-0061-direct-302-scan.json; then
               python3 - <<'PY'
           import json
