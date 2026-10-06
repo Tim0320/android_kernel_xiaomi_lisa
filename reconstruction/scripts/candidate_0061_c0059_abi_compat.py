@@ -103,19 +103,68 @@ EXPORT_SYMBOL(qcom_scm_get_download_mode);
     cp.write_text(c.replace(anchor, anchor + getter, 1))
 
 
+
+def _patch_timer_delete_sync_compat(kernel: Path) -> None:
+    """Bridge upstream 5.4 stable timer_delete_sync() callers to Lisa KMI.
+
+    Upstream 5.4.289+ already exposes timer_delete_sync() and keeps
+    del_timer_sync() as the compatibility spelling.  Lisa's downstream base
+    still exports del_timer_sync() directly.  Do not rename the exported Lisa
+    implementation: provide a header-only wrapper so newer stable call-sites
+    compile without adding/removing a Module.symvers symbol.
+    """
+    p = kernel / "include/linux/timer.h"
+    s = p.read_text()
+
+    if "static inline int timer_delete_sync(struct timer_list *timer)" in s:
+        return
+    if "extern int timer_delete_sync(struct timer_list *timer);" in s:
+        return
+
+    anchor = """#if defined(CONFIG_SMP) || defined(CONFIG_PREEMPT_RT)
+	extern int del_timer_sync(struct timer_list *timer);
+#else
+# define del_timer_sync(t)			 del_timer(t)
+#endif
+
+"""
+    if s.count(anchor) != 1:
+        raise RuntimeError(
+            f"timer_delete_sync compatibility anchor count={s.count(anchor)}"
+        )
+
+    wrapper = anchor + """/*
+ * Candidate0061 compatibility bridge:
+ * stable 5.4 call-sites use timer_delete_sync(), while the frozen Lisa KMI
+ * still exports del_timer_sync().  Keep the exported ABI unchanged.
+ */
+static inline int timer_delete_sync(struct timer_list *timer)
+{
+	return del_timer_sync(timer);
+}
+
+"""
+    p.write_text(s.replace(anchor, wrapper, 1))
+
+
+
 def apply(root: Path, kernel: Path) -> None:
     _patch_mtdoops(kernel)
     _patch_qcom_download_mode(kernel)
+    _patch_timer_delete_sync_compat(kernel)
 
     m = (kernel / "drivers/mtd/mtdoops.c").read_text()
     qh = (kernel / "include/linux/qcom_scm.h").read_text()
     qc = (kernel / "drivers/firmware/qcom_scm.c").read_text()
+    th = (kernel / "include/linux/timer.h").read_text()
     gates = [
         ("mtd checkpoint export", "EXPORT_SYMBOL_GPL(lisa_mtdoops_checkpoint);", m),
         ("mtd checkpoint persistence", "mtdoops_write(cxt, 0);", m),
         ("download-mode prototype", "qcom_scm_get_download_mode(unsigned int *mode", qh),
         ("download-mode implementation", "__qcom_scm_io_readl(dev, addr, mode)", qc),
         ("download-mode export", "EXPORT_SYMBOL(qcom_scm_get_download_mode);", qc),
+        ("timer-delete compatibility wrapper", "static inline int timer_delete_sync(struct timer_list *timer)", th),
+        ("timer-delete preserves Lisa implementation", "return del_timer_sync(timer);", th),
     ]
     for label, needle, body in gates:
         if needle not in body:
@@ -128,5 +177,6 @@ def apply(root: Path, kernel: Path) -> None:
         "mtd_semantics=synchronous printk-ring persistence through normal mtdoops write path\n"
         "download_mode_semantics=read TCSR/dload-mode address through __qcom_scm_io_readl\n"
         "stable_policy=do not revert official Batch A xHCI/fs/softirq/flow-offload ABI changes\n"
+        "timer_api_compat=header-only timer_delete_sync wrapper over Lisa del_timer_sync; no new exported timer symbol\n"
         "C0061_C0059_ABI_COMPAT_GATE=PASS\n"
     )
