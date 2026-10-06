@@ -54,8 +54,8 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS",
-    "phase_6_direct_302_integrated_static_abi_gate": "INTEGRATED_302_RUN_IN_PROGRESS"
+    "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
+    "phase_6_direct_302_integrated_static_abi_gate": "TIMER_DELETE_COMPAT_RERUN_IN_PROGRESS"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -106,18 +106,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "4143f5954d517e240453d36b8791f2b6b4980a8c",
-  "last_checked_run": 37467257404,
-  "blocker": "WAITING_RUNTIME_PM_MIXED_CONFLICT_RERUN",
-  "next_action": "Inspect Direct-302 run 37467152445 and integrated run 37467257404. Require Direct-302 semantic closure raw=34 reviewed=34 unresolved=0. Verify drivers/base/power/runtime.c retains Segment-B expires <= ktime_get_mono_fast_ns(), contains no needs_force_resume reference, and preserves Lisa pm_runtime_need_not_resume() behavior. Then verify integrated 5.4.302 target compile progresses beyond drivers/base/power/runtime.c. If compile fails, repair only the first actual blocker. If compile passes, continue ABI/KMI gate with Candidate0059 removed symbols=0 and explicit changed/added symbol provenance before identity/boot packaging. Do not create Batch C/D builds.",
+  "last_checked_commit": "4957e63282e42e1d34158a956fe3f21afe99ac97",
+  "last_checked_run": 37472578561,
+  "blocker": "NONE_RUN_37472578561_IN_PROGRESS",
+  "next_action": "Inspect Direct-302 run 37472578606 / job 112299616246 and integrated run 37472578561 / job 112299611136. Previous integrated run 37467257404 passed the runtime-PM mixed-conflict adaptation but failed the target compile at net/ipv4/inet_connection_sock.c because stable call-site timer_delete_sync() was unavailable in Lisa's downstream timer API/KMI. Commit 421d00a adds only a header-level timer_delete_sync() compatibility wrapper over Lisa's existing del_timer_sync(), intentionally preserving the old exported timer symbol and avoiding a timer subsystem/KMI rename. Require Direct-302 semantic closure to remain raw=34 reviewed=34 unresolved=0 and source_identity=5.4.302. Then require integrated compile to pass inet_connection_sock.c. If another compile error appears, repair only that first actual blocker. If compile passes, continue ABI/KMI with Candidate0059 removed symbols=0, then identity and boot.img packaging/static validation. Ignore run 37472578645 because Candidate0061 Batch A is retired provenance-only; commit 4957e63 makes that workflow manual-only for future pushes.",
   "next_expected_evidence": [
-    "Direct-302 run 37467152445 reports semantic closure raw=34 reviewed=34 unresolved=0",
-    "runtime PM mixed-conflict adapter executes even after clean upstream hunk application",
-    "drivers/base/power/runtime.c has Segment-B timer expiry <= fix and no needs_force_resume",
-    "integrated run 37467257404 target compile passes the prior runtime.c failure point",
+    "Direct-302 run 37472578606 remains semantic closure raw=34 reviewed=34 unresolved=0 and source_identity=5.4.302",
+    "Candidate0061 compatibility evidence records header-only timer_delete_sync -> del_timer_sync bridge",
+    "integrated run 37472578561 target compile passes net/ipv4/inet_connection_sock.c",
+    "no new exported timer_delete_sync symbol is introduced; Lisa del_timer_sync KMI remains",
     "Candidate0059 removed ABI symbols = 0",
-    "each changed/added ABI symbol receives stable or reviewed MIXED_CONFLICT provenance evidence",
-    "kernel identity is 5.4.302 Candidate0061 and boot packaging/static validation passes"
+    "changed/added ABI symbols receive stable or reviewed MIXED_CONFLICT provenance",
+    "kernel identity 5.4.302 Candidate0061 and boot.img static packaging pass"
   ],
   "forbidden": [
     "global frequency pin",
@@ -416,7 +416,13 @@
     "Runtime PM path promoted to the 34th Direct-302 reviewed semantic path at commits 23e4c6eb/e7e1bdcd; classification MIXED_CONFLICT Segments B+C",
     "Runtime PM adapter committed at 729e07dc: preserves Segment-B timer expiry <= semantics, removes Segment-C needs_force_resume write, and preserves Lisa pm_runtime_need_not_resume/KMI layout",
     "Materializer updated at d1bd699f so reviewed clean-merge paths can force post-apply adaptation",
-    "Integrated provenance text updated at 7cad7b5d; canonical plan marks Phase 4 and Phase 5 DONE and Phase 6 ACTIVE at 4143f595"
+    "Integrated provenance text updated at 7cad7b5d; canonical plan marks Phase 4 and Phase 5 DONE and Phase 6 ACTIVE at 4143f595",
+    "Direct-302 run 37467152445 completed SUCCESS with semantic closure raw=34 reviewed=34 unresolved=0, source_identity=5.4.302 and git_diff_check=PASS",
+    "Integrated run 37467257404 passed Candidate0059 control, Direct-302 materialization and runtime-PM mixed-conflict adaptation; next first compile blocker was net/ipv4/inet_connection_sock.c implicit timer_delete_sync declaration",
+    "Compared upstream v5.4.299/v5.4.302 and MiYume: stable networking call-site correctly uses timer_delete_sync; frozen Lisa still exports del_timer_sync and lacks the renamed timer API",
+    "Candidate0061 C0059 compatibility layer commit 421d00a adds a header-only timer_delete_sync wrapper over Lisa del_timer_sync, preserving existing exported timer KMI without adding a new exported timer symbol",
+    "Direct-302 run 37472578606 / job 112299616246 and integrated run 37472578561 / job 112299611136 started from 421d00a",
+    "Retired Candidate0061 Batch A push trigger disabled at 4957e63 so future compatibility/source pushes do not revive the obsolete 5.4.292 build gate"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
