@@ -106,14 +106,14 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "04c816cd77a65e1e4f00be982d1def0fe362c573",
+  "last_checked_commit": "d8b42aa7581f26b1c8c0b04a5491342e508e38c2",
   "last_checked_run": 37421765566,
   "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_RPMH_RSC_D",
-  "next_action": "Retry the reviewed Direct-302 Segment-D adapter for drivers/soc/qcom/rpmh-rsc.c. Preserve Lisa/Xiaomi __tcs_trigger(), ACTIVE_TCS, and IRQ handling; move only __tcs_trigger(drv, i, false) outside the !ACTIVE_TCS condition so completed TCS instances always clear AMC trigger/mode, while enable_tcs_irq(drv, i, false) remains conditional. The code write attempt was blocked by safety review before mutation. After a successful write, rerun Direct-302; require semantic closure raw=33 reviewed=33 unresolved=0 and fix only the next first actual reviewed materialization reject. Do not start integrated build until all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
+  "next_action": "Retry the already-reviewed Direct-302 Segment-D adapter for drivers/soc/qcom/rpmh-rsc.c. Frozen Lisa ref 6e568aabc77a06fa787baec1d9e60e4b559874a3 confirms __tcs_trigger(drv, i, false) is currently inside the !ACTIVE_TCS block; MiYume final-state oracle 6f0290557329655f29c9b1bc52eec33e36f859ba confirms the 5.4.302 endpoint moves only that trigger clear before the retained !ACTIVE_TCS condition while enable_tcs_irq remains conditional. The code write in this run was blocked by safety review before GitHub mutation. After write succeeds, rerun Direct-302 and fix only the next first actual reviewed materialization reject. Do not start integrated build until all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
   "next_expected_evidence": [
     "Direct-302 rpmh-rsc Segment-D adapter write succeeds",
     "new Direct-302 run semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/soc/qcom/rpmh-rsc.c materializes with unconditional __tcs_trigger(drv, i, false) before the retained ACTIVE_TCS IRQ condition",
+    "rpmh-rsc materializes with unconditional completed-TCS __tcs_trigger(drv, i, false) and conditional enable_tcs_irq",
     "next materialization blocker, if any, is exactly one subsequent reviewed path",
     "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
     "no .rej files remain, git diff --check PASS, source_identity=5.4.302",
@@ -317,7 +317,10 @@
     "Direct-302 run 37420907502 / job 112129816652 triggered from 8a2ef36b and entered in-progress execution",
     "Direct-302 run 37421765566 confirmed semantic closure raw=33 reviewed=33 unresolved=0 and advanced first materialization blocker to drivers/soc/qcom/rpmh-rsc.c Segment D",
     "Reviewed rpmh-rsc Segment-D endpoint: unconditional AMC cleanup trigger while retaining Lisa/Xiaomi ACTIVE_TCS conditional IRQ disable semantics",
-    "Pre-reviewed next Segment-A socinfo.c path: existing Batch-A adapter adds serial_num bounds protection only and does not import Lahaina/SM8350 platform IDs"
+    "Pre-reviewed next Segment-A socinfo.c path: existing Batch-A adapter adds serial_num bounds protection only and does not import Lahaina/SM8350 platform IDs",
+    "Re-read canonical plan/state and latest Direct-302 run 37421765566; semantic closure remains raw=33 reviewed=33 unresolved=0 and rpmh-rsc.c Segment D remains first materialization blocker",
+    "Verified frozen Lisa rpmh-rsc endpoint at ref 6e568aabc77a06fa787baec1d9e60e4b559874a3 and MiYume final-state oracle at 6f0290557329655f29c9b1bc52eec33e36f859ba; only completed-TCS trigger clear moves outside !ACTIVE_TCS, IRQ disable stays conditional",
+    "Retried reviewed rpmh-rsc Direct-302 adapter write; mutation was blocked by safety review before repository change"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
