@@ -137,9 +137,9 @@ void pkg_roll_user_history(unsigned int slot)
         "void __weak migt_hook(struct task_struct *task, u64 delta, int cpu)\n"
         "{\n}\n",
         r'''
-int __weak package_runtime_should_stop(void)
+bool __weak c0061_pkg_runtime_should_pause(void)
 {
-	return 0;
+	return false;
 }
 
 static void pkg_runtime_roll_wk(struct work_struct *work)
@@ -197,7 +197,7 @@ static void pkg_runtime_roll_wk(struct work_struct *work)
         "void package_runtime_monitor(u64 now)\n"
         "{\n"
         "\tu64 window;\n\n"
-        "\tWRITE_ONCE(pkg_runtime_paused, !!package_runtime_should_stop());\n"
+        "\tWRITE_ONCE(pkg_runtime_paused, c0061_pkg_runtime_should_pause());\n"
         "\tif (!pkg_enable())\n"
         "\t\treturn;\n\n"
         "\twindow = (u64)READ_ONCE(pkg_runtime_window_secs) * HZ;\n"
@@ -232,7 +232,7 @@ def verify(kernel: Path) -> dict:
         "state_roll_helper": "void pkg_roll_user_history(unsigned int slot)" in state,
         "deferred_work": "queue_work_on(0, system_long_wq, &pkg_runtime_roll);" in core,
         "work_init": "INIT_WORK(&pkg_runtime_roll, pkg_runtime_roll_wk);" in core,
-        "pause_hook": "package_runtime_should_stop" in core and "pkg_runtime_paused" in core,
+        "pause_hook": "c0061_pkg_runtime_should_pause" in core and "pkg_runtime_paused" in core,
         "migt_retained": "migt_hook(task, delta, cpu);" in core,
         "task_history_retained": "task_state->sup_cluster_runtime[slot]" in core,
     }
@@ -259,6 +259,7 @@ def verify(kernel: Path) -> dict:
         "frozen_candidate0059_modified": False,
         "donor_semantics": {
             "pause_hook": True,
+            "pause_decoupled_from_migt_boost_policy": True,
             "user_history_roll_system_long_wq": True,
             "task_history_hotpath_retained": True,
             "user_history_hotpath_copies_removed": True,
