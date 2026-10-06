@@ -842,6 +842,64 @@ def adapt_function_ncm(root: Path):
     p.write_text(s)
 
 
+
+def adapt_xhci_plat(root: Path):
+    p = root / "drivers/usb/host/xhci-plat.c"
+    s = p.read_text()
+
+    # Segment C 5.4.296->5.4.299: do not advertise streams when the controller
+    # carries XHCI_BROKEN_STREAMS.
+    old_streams = (
+        "\tif (HCC_MAX_PSA(xhci->hcc_params) >= 4)\n"
+        "\t\txhci->shared_hcd->can_do_streams = 1;\n"
+    )
+    endpoint_streams = (
+        "\tif (HCC_MAX_PSA(xhci->hcc_params) >= 4 &&\n"
+        "\t    !(xhci->quirks & XHCI_BROKEN_STREAMS))\n"
+        "\t\txhci->shared_hcd->can_do_streams = 1;\n"
+    )
+    if endpoint_streams not in s:
+        s = once(
+            s,
+            old_streams,
+            endpoint_streams,
+            "Direct-302 xhci broken-streams guard",
+        )
+
+    # Segment D 5.4.299->5.4.302 adds runtime autosuspend use. Lisa/Xiaomi
+    # already carries the stronger downstream endpoint with autosuspend enabled
+    # plus a 1000 ms delay before set_active(). Preserve that ordering instead
+    # of duplicating/reordering it to upstream.
+    if s.count("pm_runtime_use_autosuspend(&pdev->dev);") != 1:
+        raise RuntimeError(
+            "Direct-302 xhci expected exactly one runtime autosuspend enable"
+        )
+    if "pm_runtime_set_autosuspend_delay(&pdev->dev, 1000);" not in s:
+        raise RuntimeError(
+            "Direct-302 xhci lost Lisa/Xiaomi 1000ms autosuspend delay"
+        )
+    if s.index("pm_runtime_use_autosuspend(&pdev->dev);") > s.index("pm_runtime_set_active(&pdev->dev);"):
+        raise RuntimeError(
+            "Direct-302 xhci Lisa/MiYume autosuspend ordering changed"
+        )
+
+    if endpoint_streams not in s:
+        raise RuntimeError("Direct-302 xhci broken-streams endpoint missing")
+
+    # Preserve the Lisa/Xiaomi runtime-PM/wakeup flow rather than replacing the
+    # whole file with upstream.
+    for token in (
+        "pm_runtime_get_sync(&pdev->dev)",
+        "pm_runtime_mark_last_busy(&pdev->dev)",
+        "pm_runtime_put_autosuspend(&pdev->dev)",
+        "device_wakeup_enable(&xhci->shared_hcd->self.root_hub->dev)",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 xhci lost Lisa downstream token {token}")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -896,6 +954,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/usb/gadget/function/f_ncm.c":
         adapt_function_ncm(root)
         return "DIRECT_302_FUNCTION_NCM_D"
+
+    if path == "drivers/usb/host/xhci-plat.c":
+        adapt_xhci_plat(root)
+        return "DIRECT_302_XHCI_PLAT_C_D"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
