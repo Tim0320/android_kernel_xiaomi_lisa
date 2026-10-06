@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "SCHED_FAIR_D_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "SOFTIRQ_A_IDEMPOTENT_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,16 +106,16 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "dba3f3cbc6635d77939f66c2504d1d4b74fbec89",
-  "last_checked_run": 37449799658,
-  "blocker": "NONE_RUN_37449799658_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37449799658 / job 112223330050. Prior run 37449002601 kept semantic closure raw=33 reviewed=33 unresolved=0, passed include/net/sock.h Segment-D, and advanced first materialization blocker to kernel/sched/fair.c Segment D. Commit dba3f3c implements only the stable final-state chain for sched_balance_newidle and the lost-idle PELT fix: static declaration/final function, standalone call-site rename, and rf-conditional balancing while preserving unconditional update_idle_rq_clock_pelt(). Preserve Lisa WALT force_lb/prefer_spread/NOHZ logic unchanged. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate.",
+  "last_checked_commit": "4b40f2bbfe025578a34f12d6ed7b41cc43c5cb73",
+  "last_checked_run": 37450718941,
+  "blocker": "NONE_RUN_37450718941_IN_PROGRESS",
+  "next_action": "Inspect Direct-302 run 37450718941 / job 112226350712. Prior run 37449799658 kept semantic closure raw=33 reviewed=33 unresolved=0, passed kernel/sched/fair.c Segment-D, and failed next at kernel/softirq.c Segment A because the reused Batch-A adapter was non-idempotent after git apply had already applied tasklet_setup/tasklet_init use_callback state while only Lisa's trace-instrumented dispatch hunk rejected. Commit 4b40f2b replaces that path with a Direct-302 idempotent adapter: preserve trace_tasklet_entry/exit, add callback dispatch only if missing, add tasklet_setup only if missing, and add use_callback=false to legacy tasklet_init only if missing. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate.",
   "next_expected_evidence": [
-    "run 37449799658 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "kernel/sched/fair.c Segment-D materializes successfully",
-    "sched_balance_newidle is static and all standalone old newidle_balance references are gone while nohz_newidle_balance remains",
-    "update_idle_rq_clock_pelt executes even when rf is null",
-    "Lisa WALT force_lb/prefer_spread and NOHZ code remains intact",
+    "run 37450718941 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "kernel/softirq.c Segment-A materializes successfully",
+    "tasklet_setup exists exactly once",
+    "tasklet callback dispatch coexists with Lisa trace_tasklet_entry/exit",
+    "legacy tasklet_init sets use_callback=false exactly once",
     "next blocker, if any, is exactly one subsequent reviewed semantic path"
   ],
   "forbidden": [
@@ -375,7 +375,12 @@
     "Run 37449002601 advanced first materialization blocker to kernel/sched/fair.c Segment D",
     "Segment-D fair.c provenance isolated to stable commits d8dd0400, 7335a5a0, ca51183e and d0936c8b; MiYume 5.4.302 confirms static sched_balance_newidle plus unconditional lost-idle PELT accounting while retaining Xiaomi/WALT downstream scheduler logic",
     "Direct-302 kernel/sched/fair.c Segment-D adapter committed at dba3f3c preserving Lisa WALT force_lb/prefer_spread/NOHZ semantics",
-    "Direct-302 run 37449799658 / job 112223330050 started"
+    "Direct-302 run 37449799658 / job 112223330050 started",
+    "Run 37449799658 kept Direct-302 semantic closure PASS raw=33 reviewed=33 unresolved=0 and confirmed kernel/sched/fair.c Segment-D adapter passes",
+    "Run 37449799658 advanced first materialization blocker to kernel/softirq.c Segment A",
+    "Softirq failure classified as adapter-idempotency issue: stable git apply already applied tasklet_setup/tasklet_init use_callback state, while Lisa trace-instrumented dispatch hunk rejected; old Batch-A adapter then failed because its tasklet-init anchor was already transformed",
+    "Direct-302 idempotent kernel/softirq.c Segment-A tasklet adapter committed at 4b40f2b preserving Lisa tasklet trace instrumentation",
+    "Direct-302 run 37450718941 / job 112226350712 started"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
