@@ -106,17 +106,17 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "2444ca83308febc954dbe5b632c921f50e51860b",
-  "last_checked_run": 37452775546,
-  "blocker": "NONE_RUN_37452775546_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37452775546 / job 112233028968. Prior run 37450718941 kept semantic closure raw=33 reviewed=33 unresolved=0, passed kernel/softirq.c Segment-A, and advanced first materialization blocker to kernel/time/posix-timers.c Segment B. Commit 2444ca8 preserves Lisa's older posix_timer_id do/while allocator and adds only the stable retry cond_resched semantic on ID collision, rather than forcing upstream next_posix_timer_id layout. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate.",
+  "last_checked_commit": "df8a7c59bde946d41c19b0293f0dd1becf912510",
+  "last_checked_run": 37453907986,
+  "blocker": "WAITING_DIRECT_302_OOM_KILL_A_RERUN",
+  "next_action": "Inspect Direct-302 run 37453907986 triggered by df8a7c59bde946d41c19b0293f0dd1becf912510. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the new idempotent mm/oom_kill.c Segment-A adapter passes while preserving Lisa downstream OOM layout. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
   "next_expected_evidence": [
-    "run 37452775546 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "kernel/time/posix-timers.c Segment-B materializes successfully",
-    "timer-ID collision retry path contains cond_resched",
-    "Lisa posix_timer_id allocator layout remains intact and next_posix_timer_id is not forced into downstream signal ABI",
+    "run 37453907986 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "mm/oom_kill.c Segment-A adapter passes watchdog and UID trace endpoint checks",
+    "Lisa downstream OOM layout remains intact",
     "next blocker, if any, is exactly one subsequent reviewed semantic path",
-    "all 1760 paths eventually materialize with no .rej and git diff --check PASS"
+    "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
+    "source_identity=5.4.302 before integrated build starts"
   ],
   "forbidden": [
     "global frequency pin",
@@ -385,7 +385,10 @@
     "Run 37450718941 advanced first materialization blocker to kernel/time/posix-timers.c Segment B",
     "Segment-B POSIX timer endpoint revalidated: stable adds cond_resched to timer-ID collision retry loop; Lisa retains an older posix_timer_id do/while allocator, so only retry reschedule semantics are adapted",
     "Direct-302 kernel/time/posix-timers.c Segment-B adapter committed at 2444ca8 preserving Lisa allocator layout",
-    "Direct-302 run 37452775546 / job 112233028968 started"
+    "Direct-302 run 37452775546 / job 112233028968 started",
+    "Run 37452775546 confirmed POSIX timer Segment-B adapter passed and advanced first materialization blocker to mm/oom_kill.c Segment A",
+    "Direct-302 OOM Segment-A adapter committed at df8a7c59; made watchdog/UID-trace adaptation idempotent while preserving Lisa downstream OOM layout",
+    "Direct-302 run 37453907986 queued from df8a7c59"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
