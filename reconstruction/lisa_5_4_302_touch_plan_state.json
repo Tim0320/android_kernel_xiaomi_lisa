@@ -106,18 +106,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "aef18e99343dbd5109ac3dcd613f6f5df20c14d6",
-  "last_checked_run": 37461749144,
-  "blocker": "NONE_RUN_37461749144_IN_PROGRESS",
-  "next_action": "Inspect integrated Candidate0061 run 37461749144 / job 112262767364. Direct-302 run 37457594973 is PASS with C0061_C0059_LEGACY_REJECT_CLEANUP=PASS count=2, semantic closure raw=33 reviewed=33 unresolved=0, no reject hygiene blocker, git_diff_check=PASS and source_identity=5.4.302. Ignore legacy Batch B run 37457594895 failure because that workflow is retired/provenance-only and was made manual-only at 2185ace. The first generated integrated workflow run 37461485426 failed at parser time because JS replacement-token expansion corrupted the YAML; commit aef18e9 rebuilt the workflow cleanly from the validated Direct-302 workflow, and run 37461749144 is now executing. Verify in order: same-run C0059 control config/build, Direct-302 materialization, integrated 5.4.302 target config/build, ABI/KMI removed symbols=0, kernelrelease/ARM64 identity, then stock-layout boot.img packaging/static validation. Repair only the first actual failing gate.",
+  "last_checked_commit": "4143f5954d517e240453d36b8791f2b6b4980a8c",
+  "last_checked_run": 37467257404,
+  "blocker": "WAITING_RUNTIME_PM_MIXED_CONFLICT_RERUN",
+  "next_action": "Inspect Direct-302 run 37467152445 and integrated run 37467257404. Require Direct-302 semantic closure raw=34 reviewed=34 unresolved=0. Verify drivers/base/power/runtime.c retains Segment-B expires <= ktime_get_mono_fast_ns(), contains no needs_force_resume reference, and preserves Lisa pm_runtime_need_not_resume() behavior. Then verify integrated 5.4.302 target compile progresses beyond drivers/base/power/runtime.c. If compile fails, repair only the first actual blocker. If compile passes, continue ABI/KMI gate with Candidate0059 removed symbols=0 and explicit changed/added symbol provenance before identity/boot packaging. Do not create Batch C/D builds.",
   "next_expected_evidence": [
-    "run 37461749144 Candidate0059 same-run control config/build PASS",
-    "Direct-302 scan/materialization remains PASS raw=33 reviewed=33 unresolved=0 source_identity=5.4.302",
-    "integrated 5.4.302 Image/modules/dtbs/modpost PASS",
-    "C0061_INTEGRATED_ABI_KMI_GATE=PASS removed=0",
-    "kernelrelease is 5.4.302-qgki-lisa-c0061-r<sha>-by-Tim0320 and ARM64 Image magic PASS",
-    "C0061_INTEGRATED_BOOT_STATIC_GATE=PASS and boot.img artifact is produced",
-    "then label Candidate0061 as static/ABI verified pending HyperOS 3.0.9 A16 device validation"
+    "Direct-302 run 37467152445 reports semantic closure raw=34 reviewed=34 unresolved=0",
+    "runtime PM mixed-conflict adapter executes even after clean upstream hunk application",
+    "drivers/base/power/runtime.c has Segment-B timer expiry <= fix and no needs_force_resume",
+    "integrated run 37467257404 target compile passes the prior runtime.c failure point",
+    "Candidate0059 removed ABI symbols = 0",
+    "each changed/added ABI symbol receives stable or reviewed MIXED_CONFLICT provenance evidence",
+    "kernel identity is 5.4.302 Candidate0061 and boot packaging/static validation passes"
   ],
   "forbidden": [
     "global frequency pin",
@@ -411,7 +411,12 @@
     "Legacy Batch B run 37457594895 failure explicitly ignored as retired provenance-only workflow; auto push trigger disabled at 2185ace",
     "Initial integrated workflow commit 02f1651 created run 37461485426 but failed before jobs due generated YAML corruption from JavaScript replacement-token expansion",
     "Integrated workflow rebuilt cleanly from validated Direct-302 base at aef18e9; structure sanity check found exactly one control config/build, target config/build, ABI, identity and boot packaging step",
-    "Integrated Candidate0061 5.4.302 run 37461749144 / job 112262767364 started successfully"
+    "Integrated Candidate0061 5.4.302 run 37461749144 / job 112262767364 started successfully",
+    "Run 37461749144 passed same-run Candidate0059 control build and Direct-302 materialization, then exposed the first integrated compile blocker: drivers/base/power/runtime.c referenced absent dev_pm_info.needs_force_resume",
+    "Runtime PM path promoted to the 34th Direct-302 reviewed semantic path at commits 23e4c6eb/e7e1bdcd; classification MIXED_CONFLICT Segments B+C",
+    "Runtime PM adapter committed at 729e07dc: preserves Segment-B timer expiry <= semantics, removes Segment-C needs_force_resume write, and preserves Lisa pm_runtime_need_not_resume/KMI layout",
+    "Materializer updated at d1bd699f so reviewed clean-merge paths can force post-apply adaptation",
+    "Integrated provenance text updated at 7cad7b5d; canonical plan marks Phase 4 and Phase 5 DONE and Phase 6 ACTIVE at 4143f595"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
