@@ -324,7 +324,7 @@ jobs:
               "removed": removed,
               "added": added,
               "provenance_contract": {
-                  "source_delta": "official Linux stable v5.4.289->v5.4.302 plus 33 reviewed Direct-302 semantic adapters",
+                  "source_delta": "official Linux stable v5.4.289->v5.4.302 plus 34 reviewed Direct-302 semantic adapters including runtime-PM MIXED_CONFLICT",
                   "compat_symbols": sorted(compat),
                   "rule": "removed must be zero; changed/added occur only after reviewed stable materialization and C0059 ABI compatibility layer",
               },
