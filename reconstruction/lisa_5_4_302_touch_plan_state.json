@@ -106,16 +106,16 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "85e631ca5b88dfcdc8149a3784e118d240d2d33d",
+  "last_checked_commit": "ee9dd39c02b73507a5f40d1b5fca1ed9ea828c53",
   "last_checked_run": 37447448879,
   "blocker": "NONE_RUN_37447448879_IN_PROGRESS",
-  "next_action": "Inspect Direct-302 run 37447448879 / job 112215585414. Prior run 37446884780 kept semantic closure raw=33 reviewed=33 unresolved=0, passed ext4 Segment-B, and advanced first materialization blocker to include/linux/pid.h Segment B. Commit 85e631c adds only the official 5.4.292->5.4.296 pidfd_prepare declaration and pid_has_task helper while preserving Lisa/MiYume pidfd_get_pid downstream declaration. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, immediately advance to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate.",
+  "next_action": "Re-read Direct-302 run 37447448879 / job 112215585414. At this check the provenance/oracle fetch passed and durable stock ABI materialization was still running; no kernel/materialization failure existed yet, so do not modify source preemptively. When the run reaches source materialization, verify semantic closure remains raw=33 reviewed=33 unresolved=0 and include/linux/pid.h Segment-B passes. If it fails, repair only the first actual reviewed reject. The next reviewed scan-order candidate after pid.h is include/linux/usb/usbnet.h Segment C; its official 5.4.296->5.4.299 endpoint is EVENT_LINK_CARRIER_ON=14 while preserving Lisa Android KABI/downstream speed layout, but do not write that adapter unless it becomes the first actual blocker. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, immediately advance to the single integrated 5.4.302 build/static/ABI/KMI/identity/packaging gate.",
   "next_expected_evidence": [
-    "run 37447448879 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "include/linux/pid.h Segment-B materializes successfully",
-    "pidfd_prepare and pid_has_task exist exactly once",
+    "run 37447448879 progresses past stock ABI/source recreation without orchestration failure",
+    "semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "include/linux/pid.h Segment-B materializes successfully with pidfd_prepare and pid_has_task exactly once",
     "Lisa/MiYume pidfd_get_pid declaration remains intact",
-    "next blocker, if any, is exactly one subsequent reviewed semantic path",
+    "if a next reject occurs, it is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
     "source_identity=5.4.302 before integrated build starts"
   ],
@@ -357,7 +357,9 @@
     "Run 37446884780 advanced first materialization blocker to include/linux/pid.h Segment B",
     "Stable v5.4.292->v5.4.296 pid.h endpoint verified as pidfd_prepare declaration plus pid_has_task helper; MiYume 5.4.302 confirms these coexist with Lisa downstream pidfd_get_pid",
     "Direct-302 pid.h Segment-B adapter committed at 85e631c",
-    "Direct-302 run 37447448879 / job 112215585414 started"
+    "Direct-302 run 37447448879 / job 112215585414 started",
+    "Automation re-read canonical plan/state, latest main ee9dd39 and Direct-302 run 37447448879 / job 112215585414; run remained in progress with provenance/oracle fetch PASS and durable stock ABI materialization running, so no source repair was justified yet",
+    "Pre-reviewed next scan-order candidate include/linux/usb/usbnet.h Segment C against official 5.4.296/299/302: endpoint adds EVENT_LINK_CARRIER_ON=14; retain Lisa Android KABI/downstream speed fields and do not write unless it becomes the first actual blocker"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
