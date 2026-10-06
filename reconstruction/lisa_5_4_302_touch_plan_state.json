@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "EXT4_DIR_B_ADAPTER_COMMITTED_RUN_QUEUED",
+    "phase_5_direct_302_semantic_conflict_closure": "PID_H_B_ADAPTER_COMMITTED_RUN_IN_PROGRESS",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,15 +106,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "a6e20032b85f0096fc4a784e4e93b32404cb7e47",
-  "last_checked_run": 37446884780,
-  "blocker": "NONE_RUN_37446884780_QUEUED",
-  "next_action": "Inspect Direct-302 run 37446884780. Prior run 37445984087 kept semantic closure raw=33 reviewed=33 unresolved=0, passed xhci-plat C+D, and advanced first materialization blocker to fs/ext4/dir.c Segment B. Commit a6e2003 preserves Lisa/MiYume downstream fake-dir, metadata-csum and ext4_dir_rec_len() semantics and adds only the official stable final-dot data-block guard. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate.",
+  "last_checked_commit": "85e631ca5b88dfcdc8149a3784e118d240d2d33d",
+  "last_checked_run": 37447448879,
+  "blocker": "NONE_RUN_37447448879_IN_PROGRESS",
+  "next_action": "Inspect Direct-302 run 37447448879 / job 112215585414. Prior run 37446884780 kept semantic closure raw=33 reviewed=33 unresolved=0, passed ext4 Segment-B, and advanced first materialization blocker to include/linux/pid.h Segment B. Commit 85e631c adds only the official 5.4.292->5.4.296 pidfd_prepare declaration and pid_has_task helper while preserving Lisa/MiYume pidfd_get_pid downstream declaration. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, immediately advance to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate.",
   "next_expected_evidence": [
-    "run 37446884780 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "fs/ext4/dir.c Segment-B materializes successfully",
-    "Lisa fake-dir and metadata-csum-aware ext4_dir_rec_len() semantics remain intact",
-    "final-dot data-block guard exists exactly once",
+    "run 37447448879 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "include/linux/pid.h Segment-B materializes successfully",
+    "pidfd_prepare and pid_has_task exist exactly once",
+    "Lisa/MiYume pidfd_get_pid declaration remains intact",
     "next blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
     "source_identity=5.4.302 before integrated build starts"
@@ -352,7 +352,12 @@
     "Run 37445984087 advanced first materialization blocker to fs/ext4/dir.c Segment B",
     "Lisa/MiYume ext4 endpoint confirmed to already carry next_offset, fake-dir, metadata-csum and ext4_dir_rec_len() downstream checks; only stable final-dot guard was missing",
     "Direct-302 ext4 Segment-B final-dot adapter committed at a6e2003",
-    "Direct-302 run 37446884780 queued"
+    "Direct-302 run 37446884780 queued",
+    "Run 37446884780 kept Direct-302 semantic closure PASS raw=33 reviewed=33 unresolved=0 and confirmed ext4 Segment-B adapter passes",
+    "Run 37446884780 advanced first materialization blocker to include/linux/pid.h Segment B",
+    "Stable v5.4.292->v5.4.296 pid.h endpoint verified as pidfd_prepare declaration plus pid_has_task helper; MiYume 5.4.302 confirms these coexist with Lisa downstream pidfd_get_pid",
+    "Direct-302 pid.h Segment-B adapter committed at 85e631c",
+    "Direct-302 run 37447448879 / job 112215585414 started"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
