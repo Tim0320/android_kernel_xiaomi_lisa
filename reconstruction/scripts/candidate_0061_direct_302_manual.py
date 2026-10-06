@@ -488,6 +488,89 @@ def adapt_usb_core_quirks(root: Path):
 
     p.write_text(s)
 
+
+def adapt_dwc3_qcom(root: Path):
+    p = root / "drivers/usb/dwc3/dwc3-qcom.c"
+    s = p.read_text()
+
+    # Segment C 5.4.296->5.4.299 stable endpoint ("usb: dwc3: qcom:
+    # Don't leave BCR asserted"). The one-shot patch may already have applied
+    # the direct-return and remove() hunks cleanly; make the adapter idempotent
+    # and only remove the stale reset_assert error tail when it remains.
+    s = s.replace(
+        "\t\tdev_err(&pdev->dev, \"failed to deassert resets, err=%d\\n\", ret);\n"
+        "\t\tgoto reset_assert;\n",
+        "\t\tdev_err(&pdev->dev, \"failed to deassert resets, err=%d\\n\", ret);\n"
+        "\t\treturn ret;\n",
+    )
+    s = s.replace(
+        "\t\tdev_err(dev, \"failed to get clocks\\n\");\n"
+        "\t\tgoto reset_assert;\n",
+        "\t\tdev_err(dev, \"failed to get clocks\\n\");\n"
+        "\t\treturn ret;\n",
+    )
+
+    stale_tail = (
+        "reset_assert:\n"
+        "\treset_control_assert(qcom->resets);\n\n"
+        "\treturn ret;\n"
+    )
+    if stale_tail in s:
+        s = s.replace(stale_tail, "\treturn ret;\n", 1)
+
+    # Remove-time BCR assertion was part of the same stable fix. Restrict the
+    # edit to dwc3_qcom_remove() so the required initial probe assertion stays.
+    remove_start = s.find("static int dwc3_qcom_remove(struct platform_device *pdev)")
+    if remove_start < 0:
+        raise RuntimeError("Direct-302 dwc3-qcom: remove function missing")
+    remove_end = s.find("\nstatic ", remove_start + 1)
+    if remove_end < 0:
+        remove_end = len(s)
+    remove_body = s[remove_start:remove_end]
+    remove_body = remove_body.replace(
+        "\n\treset_control_assert(qcom->resets);\n",
+        "\n",
+    )
+    s = s[:remove_start] + remove_body + s[remove_end:]
+
+    # Final endpoint assertions. Keep the one initial probe assertion, but no
+    # stale reset_assert label/gotos and no remove-time BCR assertion.
+    if "goto reset_assert;" in s or "\nreset_assert:\n" in s:
+        raise RuntimeError("Direct-302 dwc3-qcom: stale reset_assert path remains")
+
+    deassert_block = (
+        "\tret = reset_control_deassert(qcom->resets);\n"
+        "\tif (ret) {\n"
+        "\t\tdev_err(&pdev->dev, \"failed to deassert resets, err=%d\\n\", ret);\n"
+        "\t\treturn ret;\n"
+        "\t}\n"
+    )
+    if deassert_block not in s:
+        raise RuntimeError("Direct-302 dwc3-qcom: deassert failure is not direct-return endpoint")
+
+    clk_block = (
+        "\tret = dwc3_qcom_clk_init(qcom, of_clk_get_parent_count(np));\n"
+        "\tif (ret) {\n"
+        "\t\tdev_err(dev, \"failed to get clocks\\n\");\n"
+        "\t\treturn ret;\n"
+        "\t}\n"
+    )
+    if clk_block not in s:
+        raise RuntimeError("Direct-302 dwc3-qcom: clock-init failure is not direct-return endpoint")
+
+    remove_body = s[remove_start:s.find("\nstatic ", remove_start + 1)]
+    if "reset_control_assert(qcom->resets);" in remove_body:
+        raise RuntimeError("Direct-302 dwc3-qcom: remove-time BCR assertion remains")
+
+    # Lisa-specific downstream integration must survive the stable endpoint
+    # adaptation; do not replace the file wholesale with upstream.
+    for token in ("USB3_GDSC", "qcom->clks", "qcom->num_clocks"):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 dwc3-qcom: lost Lisa downstream token {token}")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -526,6 +609,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/usb/core/quirks.c":
         adapt_usb_core_quirks(root)
         return "DIRECT_302_USB_CORE_QUIRKS_A_B_C_D"
+
+    if path == "drivers/usb/dwc3/dwc3-qcom.c":
+        adapt_dwc3_qcom(root)
+        return "DIRECT_302_DWC3_QCOM_C"
 
     # Reuse historical reviewed adapters only when the path is affected by that
     # single provenance segment. Multi-segment paths need a Direct-302 endpoint
