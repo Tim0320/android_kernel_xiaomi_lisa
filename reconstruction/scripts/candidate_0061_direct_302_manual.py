@@ -1369,6 +1369,116 @@ def adapt_posix_timers(root: Path):
     p.write_text(s)
 
 
+
+def adapt_oom_kill(root: Path):
+    p = root / "mm/oom_kill.c"
+    s = p.read_text()
+
+    # Segment A endpoint is partially clean-applied by the one-shot delta on
+    # some Lisa layouts. Make the Direct-302 adapter idempotent and preserve
+    # downstream OOM structure rather than forcing the upstream whole file.
+    if "#include <linux/cred.h>" not in s:
+        anchor = "#include <linux/mmu_notifier.h>\n"
+        s = once(
+            s, anchor,
+            anchor + "#include <linux/cred.h>\n#include <linux/nmi.h>\n",
+            "Direct-302 oom includes",
+        )
+    elif "#include <linux/nmi.h>" not in s:
+        anchor = "#include <linux/cred.h>\n"
+        s = once(s, anchor, anchor + "#include <linux/nmi.h>\n",
+                 "Direct-302 oom nmi include")
+
+    # Stable endpoint: yield to the softlockup watchdog while dumping a very
+    # large task list. If clean hunks already materialized it, leave intact.
+    if "touch_softlockup_watchdog();" not in s:
+        old = (
+            "\telse {\n"
+            "\t\tstruct task_struct *p;\n\n"
+            "\t\trcu_read_lock();\n"
+            "\t\tfor_each_process(p)\n"
+            "\t\t\tdump_task(p, oc);\n"
+            "\t\trcu_read_unlock();\n"
+            "\t}"
+        )
+        new = (
+            "\telse {\n"
+            "\t\tstruct task_struct *p;\n"
+            "\t\tint i = 0;\n\n"
+            "\t\trcu_read_lock();\n"
+            "\t\tfor_each_process(p) {\n"
+            "\t\t\tif ((++i & 1023) == 0)\n"
+            "\t\t\t\ttouch_softlockup_watchdog();\n"
+            "\t\t\tdump_task(p, oc);\n"
+            "\t\t}\n"
+            "\t\trcu_read_unlock();\n"
+            "\t}"
+        )
+        s = once(s, old, new, "Direct-302 oom dump watchdog")
+
+    # Stable endpoint: trace the victim UID. Support both upstream-style and
+    # Lisa downstream mark_oom_victim layouts, and tolerate clean application.
+    if "const struct cred *cred;" not in s:
+        upstream_anchor = (
+            "static void mark_oom_victim(struct task_struct *tsk)\n"
+            "{\n"
+            "\tstruct mm_struct *mm = tsk->mm;"
+        )
+        lisa_anchor = (
+            "static void mark_oom_victim(struct task_struct *tsk)\n"
+            "{\n"
+            "\tWARN_ON(oom_killer_disabled);"
+        )
+        if upstream_anchor in s:
+            s = once(
+                s, upstream_anchor,
+                "static void mark_oom_victim(struct task_struct *tsk)\n"
+                "{\n"
+                "\tconst struct cred *cred;\n"
+                "\tstruct mm_struct *mm = tsk->mm;",
+                "Direct-302 oom cred upstream",
+            )
+        elif lisa_anchor in s:
+            s = once(
+                s, lisa_anchor,
+                "static void mark_oom_victim(struct task_struct *tsk)\n"
+                "{\n"
+                "\tconst struct cred *cred;\n\n"
+                "\tWARN_ON(oom_killer_disabled);",
+                "Direct-302 oom cred lisa",
+            )
+        else:
+            raise RuntimeError("Direct-302 oom: no supported mark_oom_victim layout")
+
+    uid_trace = (
+        "\tcred = get_task_cred(tsk);\n"
+        "\ttrace_mark_victim(tsk, cred->uid.val);\n"
+        "\tput_cred(cred);\n"
+    )
+    if uid_trace not in s:
+        if "\ttrace_mark_victim(tsk->pid);\n" in s:
+            s = once(
+                s,
+                "\ttrace_mark_victim(tsk->pid);\n",
+                uid_trace,
+                "Direct-302 oom victim UID trace",
+            )
+        elif "trace_mark_victim(tsk, cred->uid.val);" not in s:
+            raise RuntimeError("Direct-302 oom: victim trace endpoint anchor missing")
+
+    for token in (
+        "touch_softlockup_watchdog();",
+        "const struct cred *cred;",
+        "get_task_cred(tsk);",
+        "trace_mark_victim(tsk, cred->uid.val);",
+        "put_cred(cred);",
+    ):
+        if token not in s:
+            raise RuntimeError(f"Direct-302 oom endpoint missing {token}")
+
+    p.write_text(s)
+
+
 def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments):
     segments = tuple(reviewed_segments)
 
@@ -1415,6 +1525,10 @@ def adapt(root: Path, path: str, target_ref: str, target_blob, reviewed_segments
     if path == "drivers/usb/dwc3/gadget.c":
         adapt_dwc3_gadget(root)
         return "DIRECT_302_DWC3_GADGET_A_B_C"
+
+    if path == "mm/oom_kill.c":
+        adapt_oom_kill(root)
+        return "DIRECT_302_OOM_KILL_A"
 
     if path == "drivers/usb/gadget/function/f_fs.c":
         adapt_functionfs(root)
