@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "SDHCI_ADAPTER_ANCHOR_SCOPED_RUN_IN_PROGRESS",
+    "phase_5_direct_302_semantic_conflict_closure": "PLATFORM_KCONFIG_B_ADAPTER_COMMITTED_RUN_37420907502_IN_PROGRESS",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,17 +106,18 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "a7366b9067f691c3cbbd1dae9e20e6a4fc6bc58d",
-  "last_checked_run": 37415920807,
-  "blocker": "WRITE_PERMISSION_BLOCKED_DIRECT_302_PLATFORM_KCONFIG_B",
-  "next_action": "Retry the reviewed Direct-302 Segment-B adapter for drivers/platform/Kconfig. The intended endpoint is unchanged: add source \"drivers/platform/surface/Kconfig\" exactly once immediately before and while retaining source \"drivers/platform/msm/Kconfig\". The write attempt in this run was blocked by safety review before GitHub mutation. After a successful write, let the Direct-302 workflow rerun; if materialization fails, fix only the next first actual reviewed reject. Do not start integrated build before all 1760 paths materialize, no .rej remains, git diff --check passes, and source_identity=5.4.302.",
+  "last_checked_commit": "8a2ef36b958518114c4159561b378d1f50df09a0",
+  "last_checked_run": 37420907502,
+  "blocker": "DIRECT_302_SOURCE_MATERIALIZATION_CI_IN_PROGRESS_AFTER_PLATFORM_KCONFIG_B_FIX",
+  "next_action": "Inspect Direct-302 run 37420907502 / job 112129816652. The reviewed Segment-B drivers/platform/Kconfig adapter is committed at 8a2ef36b and must materialize exactly one Surface source before the retained MSM source. Require semantic closure to remain raw=33 reviewed=33 unresolved=0. If materialization fails, locate the next first actual reviewed .rej/adapter blocker, implement only that endpoint adaptation, commit, and rerun. Do not start integrated build until all 1760 paths materialize, no .rej files remain, git diff --check passes, and source_identity=5.4.302.",
   "next_expected_evidence": [
-    "Direct-302 platform Kconfig adapter write succeeds",
-    "new Direct-302 run semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "drivers/platform/Kconfig materializes with exactly one Surface source and one retained MSM source, ordered Surface then MSM",
-    "Materialize Direct-302 source tree either PASS or identifies exactly the next first reviewed semantic blocker",
+    "Run 37420907502 reaches Materialize Direct-302 source tree",
+    "semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "drivers/platform/Kconfig materializes with Surface before retained MSM exactly once",
+    "the next failure, if any, identifies exactly one subsequent reviewed semantic blocker",
     "all 1760 paths eventually account as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE",
-    "no .rej files remain, git diff --check PASS, source_identity=5.4.302"
+    "no .rej files remain, git diff --check PASS, source_identity=5.4.302",
+    "no integrated build starts before source materialization PASS"
   ],
   "forbidden": [
     "global frequency pin",
@@ -311,7 +312,9 @@
     "Direct-302 run 37415920807 started from 7aca913",
     "Run 37415920807 confirmed scoped sdhci-msm adapter passes and advanced source materialization to drivers/platform/Kconfig (Segment B)",
     "Reviewed platform Kconfig endpoint established from upstream v5.4.302 plus MiYume Xiaomi oracle: add Surface source while retaining Lisa MSM source",
-    "2026-10-06 retry confirmed Run 37415920807 still blocks first at drivers/platform/Kconfig (Segment B); reviewed Surface-before-MSM adapter write was blocked by safety review before repository mutation"
+    "2026-10-06 retry confirmed Run 37415920807 still blocks first at drivers/platform/Kconfig (Segment B); reviewed Surface-before-MSM adapter write was blocked by safety review before repository mutation",
+    "Reviewed Direct-302 Segment-B drivers/platform/Kconfig adapter committed at 8a2ef36b; adds Surface source before retaining Lisa MSM source",
+    "Direct-302 run 37420907502 / job 112129816652 triggered from 8a2ef36b and entered in-progress execution"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
