@@ -106,14 +106,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "4ee9b3912553d03d85f958c275fdd26cb3497078",
-  "last_checked_run": 37455743354,
-  "blocker": "WAITING_DIRECT_302_ZSMALLOC_C_RERUN",
-  "next_action": "Inspect Direct-302 run 37455743354 triggered by 4ee9b3912553d03d85f958c275fdd26cb3497078. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the mm/zsmalloc.c Segment-C adapter passes the cache_alloc_zspage kmem_cache_zalloc endpoint while preserving Lisa downstream zsmalloc behavior. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
+  "last_checked_commit": "8e9a9ca64f9cb2b8ed0d2b39cfb9ebe3004ea295",
+  "last_checked_run": 37456272305,
+  "blocker": "WAITING_DIRECT_302_NET_CORE_SOCK_B_D_RERUN",
+  "next_action": "Inspect Direct-302 run 37456272305 triggered by 8e9a9ca64f9cb2b8ed0d2b39cfb9ebe3004ea295. Verify semantic closure remains raw=33 reviewed=33 unresolved=0 and the net/core/sock.c B+D adapter passes by adding only sk_owner_put(sk) in sk_prot_free while preserving all five clean-applied stable hunks and Lisa downstream networking behavior. If materialization fails, repair only the next first actual reviewed reject. If all 1760 paths materialize with no .rej, git diff --check PASS and source_identity=5.4.302, advance immediately to the single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gate. Do not create Batch C/D builds.",
   "next_expected_evidence": [
-    "run 37455743354 semantic closure remains raw=33 reviewed=33 unresolved=0",
-    "mm/zsmalloc.c Segment-C adapter passes cache_alloc_zspage zeroed allocation endpoint",
-    "no unintended Lisa downstream zsmalloc behavior replacement",
+    "run 37456272305 semantic closure remains raw=33 reviewed=33 unresolved=0",
+    "net/core/sock.c B+D adapter passes sk_owner_put(sk) lifetime endpoint",
+    "five other net/core/sock.c hunks remain clean-applied",
+    "no unintended Lisa downstream networking behavior replacement",
     "next blocker, if any, is exactly one subsequent reviewed semantic path",
     "all 1760 paths eventually materialize with no .rej and git diff --check PASS",
     "source_identity=5.4.302 before integrated build starts"
@@ -397,7 +398,10 @@
     "Direct-302 run 37454969206 queued from 5023614b",
     "Run 37454969206 confirmed the Direct-302 SLUB Segment-C adapter passed and advanced first materialization blocker to mm/zsmalloc.c Segment C",
     "Direct-302 zsmalloc Segment-C adapter committed at 4ee9b391; cache_alloc_zspage now uses kmem_cache_zalloc while preserving Lisa downstream zsmalloc behavior",
-    "Direct-302 run 37455743354 queued from 4ee9b391"
+    "Direct-302 run 37455743354 queued from 4ee9b391",
+    "Run 37455743354 confirmed Direct-302 zsmalloc Segment-C adapter passed and advanced first materialization blocker to net/core/sock.c Segments B+D",
+    "Direct-302 net/core/sock.c B+D adapter committed at 8e9a9ca6; sk_prot_free now adds sk_owner_put(sk) before object memory release while preserving the five clean-applied stable hunks",
+    "Direct-302 run 37456272305 queued from 8e9a9ca6"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
