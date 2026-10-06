@@ -54,7 +54,7 @@
     "phase_10_candidate0061_a16_validation": "NOT_STARTED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
-    "phase_5_direct_302_semantic_conflict_closure": "REVIEW_REGISTRY_33_OF_33_AND_GATE_WIRED_CI_PENDING",
+    "phase_5_direct_302_semantic_conflict_closure": "WORKFLOW_SYNTAX_REPAIRED_RUN_37407283819_IN_PROGRESS",
     "phase_6_direct_302_integrated_static_abi_gate": "NOT_STARTED"
   },
   "research_verdict": {
@@ -106,16 +106,17 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "9fcfe60484e018c965f6df4fab6401e6d65b1246",
-  "last_checked_run": 37363542334,
-  "blocker": "DIRECT_302_REVIEW_GATE_CI_PENDING",
-  "next_action": "Inspect the Direct-302 workflow triggered by commit 9fcfe604. Require CI evidence raw semantic_review_count=33, reviewed_semantic_count=33, unresolved_semantic_count=0. If the review gate fails, fix the first real registry/provenance mismatch and rerun. If it passes, do not start the integrated build yet: implement and validate a one-shot Direct-302 source apply stage that materializes all 1760 paths as ALREADY_PRESENT/DIRECT/AUTO_3WAY/ADAPT/NOT_APPLICABLE, preserves Lisa SM7325/Yupik and Candidate0059 KMI/device semantics, runs git diff --check, and proves final Makefile SUBLEVEL=302 before Phase 6.",
+  "last_checked_commit": "bd27792d03a2e1948641cace4dd691d81d6c7c1d",
+  "last_checked_run": 37407283819,
+  "blocker": "DIRECT_302_REVIEW_GATE_CI_IN_PROGRESS",
+  "next_action": "Inspect run 37407283819 / job 112087534581. Require raw semantic_review_count=33, reviewed_semantic_count=33, unresolved_semantic_count=0 and semantic closure PASS. If it fails, fix the first actual workflow/registry/provenance blocker. If it passes, implement the one-shot Direct-302 source apply/materialization gate before any integrated build.",
   "next_expected_evidence": [
-    "Direct-302 workflow triggered from 9fcfe604 is visible with a new run/job ID",
-    "scan remains changed_file_count=1760, DIRECT=1489, AUTO_3WAY=238, raw semantic_review_count=33",
+    "Run 37407283819 creates direct-302-scan job 112087534581 and progresses beyond workflow parsing",
+    "Candidate0059 reconstruction and ABI compatibility PASS",
+    "Direct-302 scan remains changed_file_count=1760, DIRECT=1489, AUTO_3WAY=238, raw semantic_review_count=33",
     "review gate reports reviewed_semantic_count=33 and unresolved_semantic_count=0",
-    "semantic closure step PASS uses unresolved_semantic_count rather than raw semantic_review_count",
-    "no integrated build starts before a real Direct-302 source apply/materialization gate"
+    "semantic closure PASS uses unresolved_semantic_count",
+    "no integrated build starts before source materialization and SUBLEVEL=302 validation"
   ],
   "forbidden": [
     "global frequency pin",
@@ -284,7 +285,9 @@
     "All 19 paths not yet present in candidate_0061_direct_302_reviewed.py have prepared final review decisions, completing intended semantic coverage from 14/33 to 33/33: Makefile, cputype.h, regmap.c, hid-ids.h, ivtv-streams.c, sdhci-msm.c, rpmh-rsc.c, usb quirks, dwc3-qcom, dwc3 gadget, f_fs, f_ncm, xhci-plat, usbnet.h, sock.h, fair.c, slub.c, zsmalloc.c, net/core/sock.c.",
     "Attempted to write the complete 33-path Direct-302 reviewed registry to main; GitHub update_file was blocked by OpenAI safety checks, so repository code content was not changed.",
     "Complete Direct-302 reviewed semantic registry committed at deec2235 with 33/33 scan paths and exact A/B/C/D provenance coverage",
-    "Direct-302 workflow review-gate wiring committed at 9fcfe604; trigger paths include reviewed registry and review gate, closure now gates on unresolved_semantic_count"
+    "Direct-302 workflow review-gate wiring committed at 9fcfe604; trigger paths include reviewed registry and review gate, closure now gates on unresolved_semantic_count",
+    "Direct-302 workflow syntax rebuilt from last known-good 2906dfb body and repaired at bd27792d",
+    "Run 37407283819 / job 112087534581 successfully created, proving workflow YAML parses again"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
