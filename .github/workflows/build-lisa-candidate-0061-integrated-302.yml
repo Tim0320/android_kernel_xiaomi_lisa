@@ -9,7 +9,6 @@ on:
       - reconstruction/scripts/candidate_0061_direct_302_scan.py
       - reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py
       - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
-      - reconstruction/scripts/candidate_0061_touch_jank_hotpath.py
       - reconstruction/scripts/candidate_0061_direct_302_reviewed.py
       - reconstruction/scripts/candidate_0061_direct_302_review_gate.py
       - reconstruction/scripts/candidate_0061_direct_302_apply.py
@@ -273,22 +272,6 @@ jobs:
           grep -q '^SUBLEVEL = 302$' kernel/Makefile
           git -C kernel diff --check
 
-      - name: Apply Phase7 package-runtime WALT hot-path correction
-        id: phase7_hotpath
-        run: |
-          set -euo pipefail
-          python3 package/reconstruction/scripts/candidate_0061_touch_jank_hotpath.py apply \
-            --source kernel \
-            --json candidate-0061-phase7-hotpath.json \
-            2>&1 | tee candidate-0061-phase7-hotpath.log
-          grep -q '^C0061_TOUCH_JANK_HOTPATH=PASS$' candidate-0061-phase7-hotpath.log
-          grep -q '^CLASSIFICATION=TOUCH_PERF_ONLY$' candidate-0061-phase7-hotpath.log
-          grep -q 'queue_work_on(0, system_long_wq, &pkg_runtime_roll);' kernel/kernel/sched/pkg_core.c
-          ! grep -q 'user_state->front_runtime\[slot\]\[cluster\] =' kernel/kernel/sched/pkg_core.c
-          ! grep -q 'user_state->back_runtime\[slot\]\[cluster\] =' kernel/kernel/sched/pkg_core.c
-          grep -q 'migt_hook(task, delta, cpu);' kernel/kernel/sched/pkg_core.c
-          git -C kernel diff --check
-
       - name: Prepare integrated 5.4.302 target config
         id: target_config
         env:
@@ -495,7 +478,6 @@ jobs:
           CONTROL_CONFIG_OUTCOME: ${{ steps.control_config.outcome }}
           CONTROL_BUILD_OUTCOME: ${{ steps.control_build.outcome }}
           POST_COMPAT_OUTCOME: ${{ steps.post_compat.outcome }}
-          PHASE7_HOTPATH_OUTCOME: ${{ steps.phase7_hotpath.outcome }}
           TARGET_CONFIG_OUTCOME: ${{ steps.target_config.outcome }}
           TARGET_BUILD_OUTCOME: ${{ steps.target_build.outcome }}
           ABI_OUTCOME: ${{ steps.abi.outcome }}
@@ -511,7 +493,6 @@ jobs:
             echo "- control_config: $CONTROL_CONFIG_OUTCOME"
             echo "- control_build: $CONTROL_BUILD_OUTCOME"
             echo "- post_materialization_c0059_kmi_compat: $POST_COMPAT_OUTCOME"
-            echo "- phase7_hotpath: $PHASE7_HOTPATH_OUTCOME"
             echo "- target_config: $TARGET_CONFIG_OUTCOME"
             echo "- target_build: $TARGET_BUILD_OUTCOME"
             echo "- abi_kmi: $ABI_OUTCOME"
