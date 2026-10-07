@@ -106,16 +106,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "9a0495f72e43389f8495ccec72532aa3845a907d",
+  "last_checked_commit": "ec60654345188e899c3de35e8f36700bfa44b63a",
   "last_checked_run": 37582021048,
-  "blocker": "CI_QUEUED_ORDERED_PHASE7",
-  "next_action": "Inspect ordered Phase7 run 37582021048. Require accepted pure Phase6 artifact gate PASS, then unchanged Candidate0059 reconstruction and Direct-302 closure. Apply TOUCH_PERF_ONLY hot-path correction only after 5.4.302 materialization and C0059 KMI restoration. Require Phase7 compile/modpost, Phase7-vs-Phase6 ABI changed=0 removed=0 added=0, exact c0061p7 identity, and boot packaging. Fix only the first concrete blocker if it fails.",
+  "blocker": "CI_IN_PROGRESS_ORDERED_PHASE7_ORACLE_FETCH",
+  "next_action": "Inspect ordered Phase7 run 37582021048 / job 112663627245. Accepted pure Phase6 baseline download and gate are PASS. Continue through unchanged Candidate0059 reconstruction and 34/34 Direct-302 semantic closure; apply TOUCH_PERF_ONLY hot-path only after materialization/KMI restore; then require compile/modpost, Phase7-vs-Phase6 ABI changed=0 removed=0 added=0, c0061p7 identity and boot packaging.",
   "next_expected_evidence": [
-    "pure Phase6 run 37576020824 artifact 11464311817 accepted as Phase7 baseline",
-    "C0061_C0059_IPA_PAS_INHERITANCE=PASS",
+    "Candidate0059 reconstruction PASS with C0061_C0059_IPA_PAS_INHERITANCE=PASS",
     "Direct-302 semantic closure 34 reviewed / 0 unresolved",
     "C0061_TOUCH_JANK_HOTPATH=PASS with CLASSIFICATION=TOUCH_PERF_ONLY",
-    "Phase7 5.4.302 Image/modules/dtbs/modpost PASS",
+    "Phase7 5.4.302 compile/modpost PASS",
     "Phase7 vs pure Phase6 ABI changed=0 removed=0 added=0",
     "exact c0061p7 kernel identity PASS",
     "Phase7 boot static packaging PASS and new device-test artifact"
@@ -472,7 +471,11 @@
     "Pure Phase6 run 37576020824 passed 34/34/0 semantic closure, 5.4.302 compile/modpost, Candidate0059 ABI removed=0, exact identity 5.4.302-qgki-lisa-c0061-ra8fb21a-by-Tim0320, and static boot packaging.",
     "Pure Phase6 canonical boot artifact 11463937382 has boot SHA256 70082a01ec0fd3cf1ebf4cfbf9b539626045ce17cb5d94a1349f78b9a135e984.",
     "Commit 9a0495f72e43389f8495ccec72532aa3845a907d added a dedicated ordered Phase7 workflow pinned to pure Phase6 run 37576020824 and enforcing Phase7-vs-Phase6 KMI neutrality.",
-    "Ordered Phase7 run 37582021048 queued; FREQ_QOS/input boost isolation remains conditional and is not part of this run."
+    "Ordered Phase7 run 37582021048 queued; FREQ_QOS/input boost isolation remains conditional and is not part of this run.",
+    "Ordered Phase7 run 37582021048 / job 112663627245 reached the runner.",
+    "Phase7 download of accepted pure Phase6 run 37576020824 evidence artifact passed.",
+    "Phase7 accepted-pure-Phase6 baseline gate passed before any Direct-302 or hot-path mutation.",
+    "Phase7 run 37582021048 is currently fetching Direct-302 provenance/oracles; the hot-path step has not run yet."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
