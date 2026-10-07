@@ -281,7 +281,7 @@ Exit:
 - integrated compile exposed one textually-clean but semantically incompatible runtime-PM path; `drivers/base/power/runtime.c` is now the 34th reviewed path, classified MIXED_CONFLICT for Segments B+C: keep the Segment-B timer-expiry `<=` stable fix, but reject the Segment-C `needs_force_resume` reinit write because frozen Lisa intentionally retains `pm_runtime_need_not_resume()` and no `dev_pm_info.needs_force_resume` field.
 
 ### Phase 6 - Direct-302 integrated static/ABI gate
-Status: REVALIDATION REQUIRED - PHASE7 ORDERING MUST BE REMOVED FROM BASE GATE
+Status: DONE - PURE PHASE6 CANONICAL PASS RUN 37576020824
 
 Run one target build after Phase 5 conflict closure.
 
@@ -499,23 +499,37 @@ Classification:
 - primary failure class: STABLE_UPLIFT;
 - implementation provenance: reviewed MIXED_CONFLICT preserving Lisa/Yupik Candidate0059 runtime semantics across the Direct-302 reconstruction.
 
+## 2026-10-07 Pure Phase6 canonical acceptance
+
+Canonical pure Direct-302 Phase6 is now accepted:
+- run 37576020824 / job 112644987705 completed SUCCESS from commit a8fb21ad55f98453c88d1e43de46514f7073f513;
+- Candidate0059 reconstruction PASS;
+- Direct-302 semantic closure = 34 reviewed / 0 unresolved;
+- integrated 5.4.302 Image/modules/dtbs/modpost PASS;
+- ABI/KMI gate PASS with Candidate0059 removed symbols = 0;
+- exact kernel release = 5.4.302-qgki-lisa-c0061-ra8fb21a-by-Tim0320;
+- boot static packaging PASS;
+- boot SHA256 = 70082a01ec0fd3cf1ebf4cfbf9b539626045ce17cb5d94a1349f78b9a135e984;
+- canonical pure Phase6 boot artifact = 11463937382;
+- integrated evidence artifact = 11464311817;
+- Direct-302 scan artifact = 11464371802.
+
+Phase6 is therefore closed. The earlier mixed-order run 37571737761 remains evidence only and is not the canonical Phase6 artifact.
+
+## 2026-10-07 Ordered Phase7 launch
+
+A separate Phase7 workflow was added in commit 9a0495f72e43389f8495ccec72532aa3845a907d:
+- workflow: .github/workflows/build-lisa-candidate-0061-phase7-touch-jank.yml;
+- run: 37582021048;
+- accepted baseline is pinned to pure Phase6 run 37576020824;
+- Phase7 applies candidate_0061_touch_jank_hotpath.py only after Direct-302 materialization and post-materialization C0059 KMI restoration;
+- Phase7 target release is distinct: c0061p7;
+- Phase7 must remain KMI-neutral relative to the accepted pure Phase6 Module.symvers;
+- this remains TOUCH_PERF_ONLY. FREQ_QOS/input boost isolation stays conditional and is not mixed into this run.
+
 ## Current next action
 
 NEXT_ACTION:
-Inspect pure Direct-302 Phase6 integrated run 37576020824 from commit a8fb21ad55f98453c88d1e43de46514f7073f513.
+Inspect ordered Phase7 run 37582021048. First require the accepted pure Phase6 artifact gate to PASS, then require Candidate0059 reconstruction and Direct-302 semantic closure to remain unchanged. The hot-path correction may run only after 5.4.302 source materialization and C0059 KMI restoration. Require C0061_TOUCH_JANK_HOTPATH=PASS, then compile Image/modules/dtbs, require Phase7-vs-Phase6 ABI changed=0 removed=0 added=0, exact c0061p7 kernel identity, and boot static packaging. If any step fails, repair only the first concrete blocker and re-run this dedicated Phase7 workflow.
 
-This workflow intentionally removes candidate_0061_touch_jank_hotpath.py from both the trigger list and build steps. It must prove the repaired Candidate0059 IPA/PAS inheritance and the Direct-302 5.4.302 base independently of the Phase7 TOUCH_PERF_ONLY intervention.
-
-Require:
-- C0061_C0059_IPA_PAS_INHERITANCE=PASS;
-- C0059_INHERITED_SOURCE_STACK_RECREATED=PASS;
-- Direct-302 semantic closure 34 reviewed / 0 unresolved;
-- Image/modules/dtbs/modpost PASS;
-- Candidate0059 removed ABI symbols = 0;
-- changed/added ABI symbols limited to the reviewed stable/MIXED_CONFLICT provenance set recorded in reconstruction/c0061_repaired_ipa_pas_abi_provenance_20261007.md;
-- exact Candidate0061 identity PASS;
-- boot static packaging PASS.
-
-Do not enter Phase10 yet. After this pure Phase6 gate passes, start a separate ordered Phase7 rebuild on top of the proven base, then require Phase7 static/ABI/identity/packaging PASS before producing the next device-test artifact.
-
-Run 37571737761 remains useful repaired reconstruction evidence but is not the canonical Phase6 gate because its target build applied Phase7 before the base static gate.
+Phase10 remains blocked until this ordered Phase7 artifact is produced. Do not use the pure Phase6 artifact as the final touch/jank test artifact, and do not restore Batch C/D build gates.
