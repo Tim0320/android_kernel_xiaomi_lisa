@@ -281,7 +281,7 @@ Exit:
 - integrated compile exposed one textually-clean but semantically incompatible runtime-PM path; `drivers/base/power/runtime.c` is now the 34th reviewed path, classified MIXED_CONFLICT for Segments B+C: keep the Segment-B timer-expiry `<=` stable fix, but reject the Segment-C `needs_force_resume` reinit write because frozen Lisa intentionally retains `pm_runtime_need_not_resume()` and no `dev_pm_info.needs_force_resume` field.
 
 ### Phase 6 - Direct-302 integrated static/ABI gate
-Status: REVALIDATION REQUIRED AFTER C0059 RECONSTRUCTION REPAIR
+Status: REVALIDATION REQUIRED - PHASE7 ORDERING MUST BE REMOVED FROM BASE GATE
 
 Run one target build after Phase 5 conflict closure.
 
@@ -292,6 +292,12 @@ Exit:
 - changed/added ABI symbols provenance-reviewed;
 - static/identity/packaging automation ready;
 - then proceed to Phase 7 touch/jank correction.
+
+2026-10-07 ordering audit:
+- run 37571737761 completed successfully and proved the repaired C0059 IPA/PAS reconstruction, 34/34 semantic closure, compile/modpost, removed ABI symbols = 0, exact 5.4.302 identity and boot static packaging;
+- however its workflow applied `candidate_0061_touch_jank_hotpath.py` before the Phase 6 target config/build, so this run mixes the Phase 7 TOUCH_PERF_ONLY intervention into the base Direct-302 gate;
+- therefore run 37571737761 is useful evidence but is NOT accepted as the canonical Phase 6 stable-only gate under the current strategy;
+- the integrated workflow must first be rerun without the Phase 7 hot-path step. Only after that pure Direct-302 static/ABI/identity/packaging gate passes may Phase 7 be entered.
 
 ### Phase 7 - Touch/jank hot-path correction on 5.4.302
 Status: DONE - STATIC/ABI/IDENTITY/PACKAGING PASS; DEVICE EFFECT PENDING
