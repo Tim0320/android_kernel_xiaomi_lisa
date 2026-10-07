@@ -117,7 +117,8 @@ jobs:
           python3 package/reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py \
             --package package --kernel kernel \
             2>&1 | tee candidate-0061-direct-302-c0059-source.log
-          grep -q '^C0061_C0059_IPA_PAS_INHERITANCE=PASS
+          grep -q '^C0061_C0059_IPA_PAS_INHERITANCE=PASS$' candidate-0061-direct-302-c0059-source.log
+          grep -q '^C0059_INHERITED_SOURCE_STACK_RECREATED=PASS$' candidate-0061-direct-302-c0059-source.log
       - name: Install integrated build dependencies
         run: |
           set -euo pipefail
