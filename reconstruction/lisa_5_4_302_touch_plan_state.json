@@ -108,17 +108,18 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "608eb2bde8ab2fd4c85cbf24f903c82da13e449c",
-  "last_checked_run": 37644375324,
-  "blocker": "NFC_GUARD_COMPILED_BUT_NOT_DEPLOYED_IN_BOOT_ONLY_ARTIFACT",
-  "next_action": "Rework Candidate0061 integrated/runtime packaging so the rebuilt QTI NFC module containing candidate_0061_nfc_cdev_guard.py is actually deployed with the tested kernel, rather than shipping only boot.img/Image. First identify the produced nfc_i2c.ko and its installed vendor_dlkm/module path, preserve Candidate0059 ABI/KMI semantics, verify module vermagic/dependency compatibility, then produce a bounded boot+module or vendor_dlkm test artifact. Do not enter Phase7 WALT/MIGT/FREQ_QOS/Goodix work until the fresh ffffffffffffffc8 nfc_dev_open fault disappears on device.",
+  "last_checked_commit": "fb3b3c2c3d136e7f8abee1f45c24e69174fc119f",
+  "last_checked_run": 37655937871,
+  "blocker": "CI_IN_PROGRESS_NFC_RUNTIME_MODULE_ARTIFACT",
+  "next_action": "Watch run 37655937871. Confirm the integrated build produces a rebuilt NFC runtime module containing the cdev guard and publishes module inventory/modinfo evidence. If the run fails, fix the first concrete CI blocker. If it passes, use the resulting module identity/path evidence to build the bounded runtime deployment artifact before any Phase7 WALT/MIGT/FREQ_QOS/Goodix work.",
   "next_expected_evidence": [
-    "Fresh module inventory proving which built .ko contains drivers/nfc/qti/nfc_common.c and the runtime module name/path",
-    "Rebuilt nfc_i2c module contains the NFC cdev unavailable guard",
-    "Module vermagic/dependency/KMI compatibility PASS against 5.4.302-qgki-lisa-c0061-rce002f8-by-Tim0320",
-    "Packaging/deployment artifact includes the rebuilt NFC module instead of only Image/boot.img",
-    "Device retest no longer records LISA0054_RAW_FAULT addr=ffffffffffffffc8 from nfc_dev_open",
-    "Only after NFC runtime stability: resume Phase7 package-runtime/WALT correction"
+    "Run 37655937871 reaches target compile successfully",
+    "C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
+    "candidate-0061-nfc-module-candidates.txt identifies the rebuilt runtime module",
+    "rebuilt module strings contain NFC cdev unavailable",
+    "module modinfo/vermagic is compatible with the Candidate0061 5.4.302 kernel",
+    "artifact includes candidate-0061-runtime-modules for bounded deployment planning",
+    "device retest eventually removes fresh ffffffffffffffc8 nfc_dev_open fault"
   ],
   "forbidden": [
     "global frequency pin",
@@ -552,7 +553,9 @@
     "Phase7 workflow audit found stale Phase6 baseline run 37576020824 and legacy non-AVB-preserving packaging; rebase patch prepared but GitHub workflow write was blocked by safety review.",
     "Device capture lisa-twrp-iter-0001_20261008-005639_boot_3d329e9614a4.zip inspected for accepted Direct-302 boot SHA256 3d329e9614a4cb0dda2bf44fb053fd105afbdf5fcada1466495532f99debe070.",
     "Fresh current-session mtdoops sequence around 41.816s records LISA0054_RAW_FAULT addr=ffffffffffffffc8 followed by kernel paging request, reproducing the prior nfc_dev_open negative-pointer crash despite the CI NFC guard gate.",
-    "Integrated workflow audit proves the NFC source guard is applied before compile, but final packaging uploads boot.img/Image only and does not package rebuilt modules/vendor_dlkm. The runtime [nfc_i2c] module can therefore remain stale, explaining why the source guard passed CI but did not affect device behavior."
+    "Integrated workflow audit proves the NFC source guard is applied before compile, but final packaging uploads boot.img/Image only and does not package rebuilt modules/vendor_dlkm. The runtime [nfc_i2c] module can therefore remain stale, explaining why the source guard passed CI but did not affect device behavior.",
+    "Commit fb3b3c2 adds integrated CI inventory/export for rebuilt NFC runtime modules and verifies the compiled module contains the NFC cdev guard marker.",
+    "Integrated run 37655937871 queued from fb3b3c2 to identify and publish the actual guarded NFC runtime module."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
