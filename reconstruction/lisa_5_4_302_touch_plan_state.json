@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_10_CANDIDATE0061_A16_VALIDATION",
+  "current_phase": "PHASE_4_DIRECT_302_SOURCE_RECONSTRUCTION_REPAIR",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -51,11 +51,11 @@
     "phase_7_touch_jank_hotpath_correction": "DONE_STATIC_ABI_IDENTITY_PACKAGING_PASS_DEVICE_EFFECT_PENDING",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
-    "phase_10_candidate0061_a16_validation": "DEVICE_VALIDATION_PENDING",
+    "phase_10_candidate0061_a16_validation": "BLOCKED_ON_REPAIRED_DIRECT_302_REBUILD",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
-    "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
+    "phase_4_direct_5_4_289_to_5_4_302": "REOPENED_C0059_IPA_PAS_RECONSTRUCTION_REPAIR",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "DONE_STATIC_ABI_IDENTITY_PACKAGING_PASS_RUN_37498709196"
+    "phase_6_direct_302_integrated_static_abi_gate": "REVALIDATION_IN_PROGRESS_RUN_37571503370"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,29 +99,25 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "PASS",
-    "abi_module_gate": "PASS_C0061_REMOVED_0",
-    "touch_latency_gate": "PENDING_C0061_DEVICE_VALIDATION",
-    "performance_retention_gate": "PENDING_C0061_DEVICE_VALIDATION",
+    "stable_uplift_gate": "REVALIDATION_PENDING_REPAIRED_C0059_RECONSTRUCTION",
+    "abi_module_gate": "REVALIDATION_PENDING_REPAIRED_C0059_RECONSTRUCTION",
+    "touch_latency_gate": "BLOCKED_ON_REPAIRED_C0061_ARTIFACT",
+    "performance_retention_gate": "BLOCKED_ON_REPAIRED_C0061_ARTIFACT",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "5ef75c195bbf229a24533e46f146358da1062673",
-  "last_checked_run": 37513703360,
-  "blocker": "DEVICE_RUNTIME_EVIDENCE_PENDING",
-  "next_action": "Test Candidate0061 static-verified boot artifact 11437434497 from run 37513703360 on the active HyperOS 3.0.9 / Android 16 baseline. Expected kernel release is 5.4.302-qgki-lisa-c0061-r55105aa-by-Tim0320 and boot SHA256 is 65e94493f1b41cc889074b3ccc9c19bfea6977c50b0a56754c535aeb9889f8d4. Confirm boot stability, SELinux Enforcing, Wi-Fi, battery/charging and UFS/data; reproduce the Candidate0059 touch workload; run reconstruction/tools/collect_lisa_touch_runtime.ps1 and provide the resulting zip. If touch still regresses with normal Goodix IRQ delivery, enter Phase 8 FREQ_QOS/Qualcomm touch-boost isolation. Do not modify kernel source before runtime evidence.",
+  "last_checked_commit": "ef9e96a1228fa63d614efc9d0ffc0914f5778355",
+  "last_checked_run": 37571503370,
+  "blocker": "CI_IN_PROGRESS_C0059_IPA_PAS_RECONSTRUCTION_REPAIR",
+  "next_action": "Inspect integrated run 37571503370. Require the Candidate0059 source reconstruction step to complete successfully with the repaired C0046/C0053 IPA/PAS lineage. If it fails, fix the first reconstruction blocker. If it passes, continue the same single integrated 5.4.302 static/ABI/identity/packaging gate.",
   "next_expected_evidence": [
-    "actual kernel release exactly 5.4.302-qgki-lisa-c0061-r55105aa-by-Tim0320",
-    "sys.boot_completed=1 and stable runtime",
-    "SELinux Enforcing",
-    "Wi-Fi PASS",
-    "battery reporting and charging PASS",
-    "UFS/data PASS",
-    "no new panic/oops/watchdog/RCU stall",
-    "Goodix IRQ rate/affinity/spurious evidence under repeatable touch workload",
-    "MIGT/package-runtime and cpufreq state capture",
-    "touch result versus Candidate0059 User B",
-    "jank/performance retention result versus Candidate0059 User B"
+    "Candidate0059 source reconstruction PASS with bounded C0046/C0053 IPA/PAS replay",
+    "C0061_C0059_IPA_PAS_INHERITANCE=PASS emitted by reconstruction script",
+    "Direct-302 semantic closure remains 34 reviewed / 0 unresolved",
+    "5.4.302 Image/modules/dtbs/modpost PASS",
+    "Candidate0059 removed ABI symbols = 0",
+    "exact Candidate0061 identity PASS",
+    "boot static packaging PASS and a new artifact"
   ],
   "forbidden": [
     "global frequency pin",
@@ -451,7 +447,11 @@
     "Final Candidate0061 Phase7A static-verified boot artifact 11437434497 produced; boot SHA256 65e94493f1b41cc889074b3ccc9c19bfea6977c50b0a56754c535aeb9889f8d4; Image SHA256 542c80563f11f759ce8837fd8526acb751af701097042e6bc8033fa12d1a77a6",
     "Phase10 device validation manifest added at reconstruction/c0061_phase10_device_validation_20261007.md",
     "Phase10 runtime collector expanded at reconstruction/tools/collect_lisa_touch_runtime.ps1 to capture kernel identity, SELinux, Wi-Fi, battery/charging, UFS/data, Goodix IRQ, cpufreq, MIGT/package-runtime, logcat and dmesg",
-    "No further kernel source change is justified until Candidate0061 runtime evidence is captured"
+    "No further kernel source change is justified until Candidate0061 runtime evidence is captured",
+    "Artifact 11437434497 retired from Phase10 after device one-screen reset and re-audit showed incomplete Candidate0059 IPA/PAS source reconstruction.",
+    "Commit 9dd3fba added bounded Candidate0046/Candidate0053 IPA/PAS replay; run 37571219318 exposed candidate_0053_build.py import-time historical build side effects.",
+    "Commit e10d16c pinned the Candidate0053 recipe blob and AST-extracted only the reviewed IPA/PAS functions, avoiding the historical module tail.",
+    "Integrated run 37571503370 and provenance-only scan 37571503382 started successfully from e10d16c; checkout, oracle fetch and BPF Stage-A materialization passed."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
