@@ -379,7 +379,7 @@ identify whether latency is:
 - render/present.
 
 ### Phase 10 - Candidate0061 integrated A16 validation
-Status: BLOCKED ON REPAIRED DIRECT-302 REBUILD
+Status: BLOCKED ON PURE PHASE6 BASE + ORDERED PHASE7 REBUILD
 
 Candidate0061 can progress only if all are PASS:
 - Linux 5.4.302 stable provenance;
@@ -488,6 +488,8 @@ Repair history:
 - 9dd3fba887d0b543c21d54f898e2ef423b06bca4 — initial bounded C0046 -> C0053 replay; integrated run 37571219318 proved the first real blocker was importing candidate_0053_build.py, whose module tail auto-starts the historical C0053 build and aborts because Candidate0018 IKCONFIG is not present in the C0061 workspace.
 - 74597be686dd43270002e938f8f9c953f0539f88 / 90894032203d2b0440be09c3eeab060f78a733e4 / 8807914fcbdfb1bc22c5a8b84345a9d30e594ea1 — superseded workflow-edit attempts; invalid before runner allocation because a JavaScript replacement-token expansion corrupted the YAML payload. These are workflow/tooling failures, not kernel evidence.
 - e10d16cb04dc01f38cd4c6688ad54e180effa238 — current repair: pin Candidate0053 blob d3111485e075156687c5eee50546ba42417dd2fa, AST-extract only patch_ipa_pas_metadata_dma_retention() and candidate0053_patch_ipa_pas_shmbridge(), avoid all C0053 module-tail side effects, and restore the last known-valid integrated workflow blob.
+- 803b05f1932d3109f7ec1f4f301c20f911de167d — repaired IPA/PAS reconstruction completed end-to-end in run 37571737761, with inheritance PASS, Direct-302 34/34/0, compile/modpost, ABI removed=0, identity and packaging PASS. Its target build also contained the Phase7 TOUCH_PERF_ONLY overlay, so it is evidence but not the canonical Phase6 base gate.
+- a8fb21ad55f98453c88d1e43de46514f7073f513 — removed Phase7 script trigger/application/reporting from the integrated Phase6 workflow. Run 37576020824 is the canonical pure Direct-302 Phase6 revalidation.
 
 Current CI:
 - integrated run 37571503370 / job 112630951523: in progress from e10d16c;
@@ -500,8 +502,20 @@ Classification:
 ## Current next action
 
 NEXT_ACTION:
-Inspect integrated run 37571737761 from commit 803b05f1932d3109f7ec1f4f301c20f911de167d. The previous run 37571503370 reached the Candidate0059 reconstruction step and failed only because the Candidate0053 Git-blob pin calculation used a literal backslash-zero sequence instead of Git's NUL separator. Commit 803b05f corrects only that hash calculation; the pinned Candidate0053 recipe remains d3111485e075156687c5eee50546ba42417dd2fa.
+Inspect pure Direct-302 Phase6 integrated run 37576020824 from commit a8fb21ad55f98453c88d1e43de46514f7073f513.
 
-Require Candidate0059 source reconstruction PASS with the bounded C0046/C0053 IPA/PAS replay. If reconstruction fails, repair only its first concrete blocker. If it passes, continue the same single Direct-302 integrated 5.4.302 compile/modpost, static, ABI/KMI, identity and packaging gates. Provenance scan 37571737667 remains evidence-only and must not become an intermediate build gate.
+This workflow intentionally removes candidate_0061_touch_jank_hotpath.py from both the trigger list and build steps. It must prove the repaired Candidate0059 IPA/PAS inheritance and the Direct-302 5.4.302 base independently of the Phase7 TOUCH_PERF_ONLY intervention.
 
-Phase10 remains blocked until a new repaired integrated artifact is produced. Artifact 11437434497 remains retired.
+Require:
+- C0061_C0059_IPA_PAS_INHERITANCE=PASS;
+- C0059_INHERITED_SOURCE_STACK_RECREATED=PASS;
+- Direct-302 semantic closure 34 reviewed / 0 unresolved;
+- Image/modules/dtbs/modpost PASS;
+- Candidate0059 removed ABI symbols = 0;
+- changed/added ABI symbols limited to the reviewed stable/MIXED_CONFLICT provenance set recorded in reconstruction/c0061_repaired_ipa_pas_abi_provenance_20261007.md;
+- exact Candidate0061 identity PASS;
+- boot static packaging PASS.
+
+Do not enter Phase10 yet. After this pure Phase6 gate passes, start a separate ordered Phase7 rebuild on top of the proven base, then require Phase7 static/ABI/identity/packaging PASS before producing the next device-test artifact.
+
+Run 37571737761 remains useful repaired reconstruction evidence but is not the canonical Phase6 gate because its target build applied Phase7 before the base static gate.
