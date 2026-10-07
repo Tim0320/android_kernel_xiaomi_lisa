@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScriptVersion = "1.3.0"
+$ScriptVersion = "1.3.1"
 $SchemaVersion = 1
 
 function Write-Step {
@@ -423,12 +423,13 @@ Get-ChildItem -LiteralPath $OutputRoot -Directory -ErrorAction SilentlyContinue 
         $existingNumbers += [int]$Matches[1]
     }
 }
-$nextNumber = 1
+[int]$nextNumber = 1
 if ($existingNumbers.Count -gt 0) {
-    $nextNumber = (($existingNumbers | Measure-Object -Maximum).Maximum + 1)
+    [int]$maxExisting = [int](($existingNumbers | Measure-Object -Maximum).Maximum)
+    $nextNumber = $maxExisting + 1
 }
 
-$iteration = "{0:D4}" -f $nextNumber
+$iteration = ([int]$nextNumber).ToString("D4", [System.Globalization.CultureInfo]::InvariantCulture)
 $timestampName = Get-Date -Format "yyyyMMdd-HHmmss"
 $timestampLocal = (Get-Date).ToString("o")
 $timestampUtc = (Get-Date).ToUniversalTime().ToString("o")
