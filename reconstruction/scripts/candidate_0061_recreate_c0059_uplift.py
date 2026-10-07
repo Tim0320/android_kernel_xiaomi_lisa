@@ -58,6 +58,17 @@ def main():
     c46.patch_mtdoops_periodic_snapshot()
     c46.patch_mtdoops_fast_snapshot_io()
 
+    # Candidate0046 -> Candidate0059 also retains two bounded diagnostic layers
+    # that the first C0061 reconstruction accidentally omitted: delayed TZ/HYP
+    # tail sampling and Linux restart/PS_HOLD markers. They do not change
+    # watchdog timing, SELinux policy, restart policy, or PAS behavior; they
+    # only persist evidence needed to distinguish normal Linux restart,
+    # Qualcomm PS_HOLD, watchdog/secure reset, and an external reset.
+    c46.patch_tz_hyp_diagnostics()
+    c46.patch_restart_path_diagnostics()
+    print("C0061_C0059_TZ_HYP_DIAG_INHERITANCE=PASS")
+    print("C0061_C0059_RESTART_DIAG_INHERITANCE=PASS")
+
     # The verified Candidate0059 build includes Candidate0054's raw first-fault
     # latch.  Earlier C0061 reconstruction short-circuited the retained
     # 0057->0056->0055->0054 chain to avoid double-applying UFS/power, which
@@ -113,6 +124,24 @@ def main():
     mounts=(kernel/"init/do_mounts.c").read_text()
     yupik=(kernel/"arch/arm64/boot/dts/vendor/qcom/yupik.dtsi").read_text()
     yupik_icc=(kernel/"drivers/interconnect/qcom/yupik.c").read_text()
+    tz_log=(kernel/"drivers/firmware/qcom/tz_log.c").read_text()
+    reboot=(kernel/"kernel/reboot.c").read_text()
+    msm_poweroff=(kernel/"drivers/power/reset/msm-poweroff.c").read_text()
+
+    diag_gates = (
+        ("TZ/HYP secure-state marker", "LISA0046: secure_state hyplog=%d hyp_ok=%d enc=%d" in tz_log),
+        ("TZ/HYP delayed worker", "LISA0046: secure TZ/HYP diagnostic armed at +8000ms" in tz_log),
+        ("kernel restart marker", "LISA0046: kernel_restart entry cmd=%s" in reboot),
+        ("emergency restart marker", "LISA0046: emergency_restart entry" in reboot),
+        ("Qualcomm restart marker", "LISA0046: do_msm_restart action=%lu cmd=%s" in msm_poweroff),
+        ("PS_HOLD marker", "LISA0046: deassert_ps_hold reached" in msm_poweroff),
+        ("restart kmsg dump", "kmsg_dump(KMSG_DUMP_RESTART);" in msm_poweroff),
+    )
+    diag_missing = [name for name, ok in diag_gates if not ok]
+    if diag_missing:
+        raise RuntimeError("Candidate0059 restart/TZ diagnostic inheritance gate missing: " + ", ".join(diag_missing))
+    print("C0061_C0059_RESET_DIAGNOSTIC_FINAL_GATE=PASS")
+
     ipa_gates = (
         ("block2mtd Lisa devpath", "defined(CONFIG_BOARD_XIAOMI_LISA)" in mounts),
         ("synchronous mtdoops checkpoint", "void lisa_mtdoops_checkpoint(const char *tag)" in mtd),
