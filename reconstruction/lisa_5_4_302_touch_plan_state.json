@@ -108,17 +108,18 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "da92e26c7838eafc1b4a81373a561d6a33c2af25",
+  "last_checked_commit": "3b4079e8d2e1617e5a26aa82000794c99eec4100",
   "last_checked_run": 37617885939,
-  "blocker": "DEVICE_RECAPTURE_REQUIRED_COLLECTOR_V1_3_2_RECOVERY_TRANSPORT_FIX",
-  "next_action": "Refresh local scripts/collect_lisa_twrp_logs.ps1 to repository v1.3.2 (commit da92e26), verify ScriptVersion=1.3.2, and run it while the phone remains in TWRP/recovery. v1.3.2 accepts ADB get-state values 'recovery' or 'device' and does not call adb wait-for-device, which blocked indefinitely on the user's TWRP transport. Do not change kernel source before fresh userspace failure payloads are captured.",
+  "blocker": "DEVICE_RECOVERY_PROVENANCE_CAPTURE_REQUIRED_ADBD_ROOT_BRANCH",
+  "next_action": "Refresh local scripts/collect_lisa_twrp_logs.ps1 to collector v1.3.3 (commit d5de484) and rerun it in the current TWRP session without rebooting the phone. The r20b187c userspace package already proves /data is readable and captures adbd aborting after SELinux denies dyntransition from u:r:adbd:s0 to u:r:su:s0. v1.3.3 adds raw/22_adbd_debug_provenance.txt to capture static system/vendor property sources, init adbd/root references, debug marker files, /data/adb root-module indicators, and persistent-property strings. Do not weaken SELinux or change kernel source until this provenance is classified.",
   "next_expected_evidence": [
-    "collector_version=1.3.2",
-    "collector prints ADB transport ready: recovery",
-    "new ZIP completes successfully",
-    "raw/21_userspace_failure_sources.txt present",
-    "bounded userspace_failure/dropbox, tombstones and anr payloads or explicit empty proof",
-    "first fresh boot-completion failure classified before any kernel patch"
+    "collector_version=1.3.3",
+    "raw/22_adbd_debug_provenance.txt present",
+    "system/vendor property sources for ro.debuggable, ro.force.debuggable, ro.secure, ro.adb.secure",
+    "init adbd/root_seclabel/service.adb.root references",
+    "presence or absence of force_debuggable/adb_debug.prop/userdebug policy markers",
+    "presence or absence of /data/adb root/property override modules",
+    "classification of adbd root-retention source before any kernel or SELinux intervention"
   ],
   "forbidden": [
     "global frequency pin",
@@ -535,7 +536,13 @@
     "Persistent crash partitions did not refresh between 20:57 and 22:10 captures: oops SHA256 72745e4797692a40882417833e66e87628328987eec8740ece67fc8aaa914672, minidump SHA256 40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d, logfs SHA256 8be0f9461bd3aa7f03a8c995f158ded75b69312a9a7c15c9803fff580034cdb2.",
     "pstore remained empty and no new r20b187c persistent kernel crash record was captured; kernel changes remain frozen pending userspace evidence.",
     "Collector v1.3.1 commit 78b924a fixes PowerShell invalid {0:D4} iteration formatting by explicit Int32 handling and ToString(\"D4\", InvariantCulture).",
-    "Collector v1.3.2 commit da92e26 removes adb wait-for-device and accepts recovery/device ADB states, fixing indefinite blocking when adb get-state returns recovery in TWRP."
+    "Collector v1.3.2 commit da92e26 removes adb wait-for-device and accepts recovery/device ADB states, fixing indefinite blocking when adb get-state returns recovery in TWRP.",
+    "Inspected lisa-twrp-iter-0005_20261007-224443_boot_deee5ff41b61.zip collected with v1.3.2; boot SHA256 matches r20b187c artifact deee5ff41b617391c9ea88663596fed0cbf8b93d3d89f5d0e3e568f4d2788edf.",
+    "v1.3.2 bounded userspace capture succeeded: /data mounted on /dev/block/dm-6, 8 dropbox files, 8 tombstone files and 0 ANR files were collected.",
+    "No fresh r20b187c persistent kernel panic record was found: pstore empty, /proc/last_kmsg unavailable, persistent oops remains historical.",
+    "System A16 tombstone evidence shows adbd SIGABRT after SELinux denied dyntransition from u:r:adbd:s0 to u:r:su:s0; abort message is 'Could not set SELinux context'.",
+    "AOSP adbd semantics confirm root_seclabel is normally supplied, but setcon is reached only when adbd remains root; healthy user builds should not take that root-retention branch.",
+    "Collector v1.3.3 commit d5de484 adds read-only adbd/property/root provenance capture; canonical plan updated at 3b4079e."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
