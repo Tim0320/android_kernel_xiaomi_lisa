@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScriptVersion = "1.2.0"
+$ScriptVersion = "1.3.0"
 $SchemaVersion = 1
 
 function Write-Step {
@@ -149,6 +149,53 @@ function Pull-AdbGlobFiles {
         Pull-AdbPathIfPresent -AdbPath $AdbPath -RemotePath $remoteFile -LocalPath $localFile -StatusFile $StatusFile | Out-Null
     }
     return $remoteFiles.Count
+}
+
+
+
+function Pull-RecentAdbFiles {
+    param(
+        [string]$AdbPath,
+        [string]$RemoteDirectory,
+        [string]$LocalDirectory,
+        [string]$StatusFile,
+        [int]$MaxFiles = 8,
+        [int64]$MaxBytes = 2097152
+    )
+
+    New-Item -ItemType Directory -Force -Path $LocalDirectory | Out-Null
+    $listCommand = 'if [ -d "' + $RemoteDirectory + '" ]; then ls -1t "' + $RemoteDirectory + '" 2>/dev/null | head -n ' + $MaxFiles + '; fi'
+    $listed = Get-AdbShellText -AdbPath $AdbPath -Command $listCommand
+    $names = @($listed -split "\r?\n" | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+    $pulled = 0
+
+    foreach ($nameRaw in $names) {
+        $name = ([string]$nameRaw).Trim()
+        if ([string]::IsNullOrWhiteSpace($name) -or $name.Contains("'") -or $name.Contains("/")) {
+            Add-Content -Path $StatusFile -Value ("SKIP_UNSAFE_NAME dir=" + $RemoteDirectory + " name=" + $name)
+            continue
+        }
+
+        $remoteFile = $RemoteDirectory.TrimEnd("/") + "/" + $name
+        $sizeText = Get-AdbShellText -AdbPath $AdbPath -Command ("if [ -f '" + $remoteFile + "' ]; then stat -c %s '" + $remoteFile + "' 2>/dev/null || wc -c < '" + $remoteFile + "'; fi")
+        [int64]$size = -1
+        if (-not [int64]::TryParse(($sizeText -split "\r?\n")[0].Trim(), [ref]$size)) {
+            Add-Content -Path $StatusFile -Value ("SKIP_SIZE_UNKNOWN remote=" + $remoteFile)
+            continue
+        }
+        if ($size -gt $MaxBytes) {
+            Add-Content -Path $StatusFile -Value ("SKIP_TOO_LARGE bytes=" + $size + " max=" + $MaxBytes + " remote=" + $remoteFile)
+            continue
+        }
+
+        $localFile = Join-Path $LocalDirectory $name
+        if (Pull-AdbPathIfPresent -AdbPath $AdbPath -RemotePath $remoteFile -LocalPath $localFile -StatusFile $StatusFile) {
+            $pulled++
+        }
+    }
+
+    Add-Content -Path $StatusFile -Value ("RECENT_PULL_SUMMARY dir=" + $RemoteDirectory + " pulled=" + $pulled + " max_files=" + $MaxFiles + " max_bytes_each=" + $MaxBytes)
+    return $pulled
 }
 
 
@@ -458,7 +505,8 @@ $commands = @(
     @{ File = "14_cache_recovery_log.txt"; Command = "if [ -r /cache/recovery/log ]; then cat /cache/recovery/log; else echo NO_CACHE_RECOVERY_LOG; fi" },
     @{ File = "15_cache_recovery_last_log.txt"; Command = "if [ -r /cache/recovery/last_log ]; then cat /cache/recovery/last_log; else echo NO_CACHE_RECOVERY_LAST_LOG; fi" },
     @{ File = "16_boot_reason_sources.txt"; Command = 'echo ro.boot.bootreason=$(getprop ro.boot.bootreason); echo sys.boot.reason=$(getprop sys.boot.reason); echo ro.bootmode=$(getprop ro.bootmode); echo ro.boot.slot_suffix=$(getprop ro.boot.slot_suffix); echo ro.boot.verifiedbootstate=$(getprop ro.boot.verifiedbootstate); echo ro.boot.vbmeta.device_state=$(getprop ro.boot.vbmeta.device_state)' },
-    @{ File = "17_kernel_message_sources.txt"; Command = 'for p in /sys/fs/pstore /data/vendor/ramoops /cache/recovery /tmp; do echo "===== $p ====="; ls -la "$p" 2>&1 || true; done' }
+    @{ File = "17_kernel_message_sources.txt"; Command = 'for p in /sys/fs/pstore /data/vendor/ramoops /cache/recovery /tmp; do echo "===== $p ====="; ls -la "$p" 2>&1 || true; done' },
+    @{ File = "21_userspace_failure_sources.txt"; Command = 'echo "===== data mount ====="; grep " /data " /proc/mounts 2>/dev/null || echo NO_DATA_MOUNT_LINE; echo; for p in /data/system/dropbox /data/tombstones /data/anr; do echo "===== $p ====="; if [ -d "$p" ]; then ls -lat "$p" 2>&1 | head -n 80; else echo MISSING_OR_LOCKED; fi; echo; done' }
 )
 
 foreach ($entry in $commands) {
@@ -494,6 +542,25 @@ foreach ($cacheFile in @("/cache/recovery/last_status", "/cache/recovery/last_in
     $leaf = Split-Path -Leaf $cacheFile
     Pull-AdbPathIfPresent -AdbPath $adbPath -RemotePath $cacheFile -LocalPath (Join-Path $cacheHistoryDir $leaf) -StatusFile $pullStatus | Out-Null
 }
+
+
+$userspaceEvidenceDir = Join-Path $pulledDir "userspace_failure"
+$dataAccessProbe = Get-AdbShellText -AdbPath $adbPath -Command 'if [ -d /data/system ] && [ -r /data/system ]; then echo DATA_ACCESSIBLE; else echo DATA_UNAVAILABLE_OR_LOCKED; fi'
+$dataAccessible = ($dataAccessProbe -match "DATA_ACCESSIBLE")
+$dropboxFileCount = 0
+$tombstoneFileCount = 0
+$anrFileCount = 0
+
+Add-Content -Path $pullStatus -Value ("DATA_ACCESS_PROBE " + $dataAccessProbe)
+if ($dataAccessible) {
+    $dropboxFileCount = Pull-RecentAdbFiles -AdbPath $adbPath -RemoteDirectory "/data/system/dropbox" -LocalDirectory (Join-Path $userspaceEvidenceDir "dropbox") -StatusFile $pullStatus -MaxFiles 8 -MaxBytes 2097152
+    $tombstoneFileCount = Pull-RecentAdbFiles -AdbPath $adbPath -RemoteDirectory "/data/tombstones" -LocalDirectory (Join-Path $userspaceEvidenceDir "tombstones") -StatusFile $pullStatus -MaxFiles 8 -MaxBytes 2097152
+    $anrFileCount = Pull-RecentAdbFiles -AdbPath $adbPath -RemoteDirectory "/data/anr" -LocalDirectory (Join-Path $userspaceEvidenceDir "anr") -StatusFile $pullStatus -MaxFiles 8 -MaxBytes 2097152
+}
+else {
+    Add-Content -Path $pullStatus -Value "USERSPACE_EVIDENCE_SKIPPED data unavailable or encrypted in recovery"
+}
+
 
 $blockDumpDir = Join-Path $pulledDir "block_partitions"
 $blockCaptures = @()
@@ -551,6 +618,12 @@ $manifest = [ordered]@{
         data_vendor_ramoops_present = (Test-Path -LiteralPath (Join-Path $pulledDir "data_vendor_ramoops"))
         cache_recovery_last_kmsg_count = $cacheLastKmsgCount
         cache_recovery_last_log_count = $cacheLastLogCount
+        data_accessible_in_recovery = $dataAccessible
+        dropbox_recent_file_count = $dropboxFileCount
+        tombstone_recent_file_count = $tombstoneFileCount
+        anr_recent_file_count = $anrFileCount
+        userspace_failure_inventory_file = "raw/21_userspace_failure_sources.txt"
+        userspace_failure_pull_root = "pulled/userspace_failure"
         block_partition_captures = @($blockCaptures)
         dump_partition_inventory_file = "raw/20_dump_partition_inventory.txt"
         proc_last_kmsg_marker_file = "raw/10_last_kmsg.txt"
@@ -594,14 +667,18 @@ $summary = @(
     "7. raw/10_last_kmsg.txt",
     "8. pulled/data_vendor_ramoops",
     "9. raw/11_dmesg_recovery.txt",
+    "10. raw/21_userspace_failure_sources.txt",
+    "11. pulled/userspace_failure/dropbox (up to 8 newest files, <=2 MiB each)",
+    "12. pulled/userspace_failure/tombstones (up to 8 newest files, <=2 MiB each)",
+    "13. pulled/userspace_failure/anr (up to 8 newest files, <=2 MiB each)",
     "",
     "Recovery history (context only):",
-    "10. pulled/cache_recovery_history/last_kmsg*",
-    "11. pulled/cache_recovery_history/last_log*",
+    "14. pulled/cache_recovery_history/last_kmsg*",
+    "15. pulled/cache_recovery_history/last_log*",
     "",
     "Additional dump inventory:",
-    "12. raw/20_dump_partition_inventory.txt",
-    "13. rawdump is captured only when -IncludeRawDump is explicitly supplied"
+    "16. raw/20_dump_partition_inventory.txt",
+    "17. rawdump is captured only when -IncludeRawDump is explicitly supplied"
 )
 $summary | Set-Content -LiteralPath (Join-Path $iterationDir "SUMMARY.txt") -Encoding utf8
 
