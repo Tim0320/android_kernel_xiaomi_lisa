@@ -108,18 +108,18 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "26dd3e5fe87bc8f5f639b0a99020cc37baa10263",
+  "last_checked_commit": "26bd1b3f0f3f771f0defa87a3182e854e0d7d67e",
   "last_checked_run": 37617885939,
-  "blocker": "DEVICE_RECAPTURE_REQUIRED_WITH_BOUNDED_USERSPACE_EVIDENCE",
-  "next_action": "Use scripts/collect_lisa_twrp_logs.ps1 v1.3.0 from commit 26dd3e5 on the next recovery capture after reproducing the r20b187c boot-completion failure. The collector now records /data mount/access state and pulls up to 8 newest files (<=2 MiB each) from /data/system/dropbox, /data/tombstones and /data/anr when recovery can access decrypted /data. Classify the first fresh failure before any new kernel patch. Keep qxm_ipa, PAS, watchdog, NFC, touch/WALT and FREQ_QOS frozen unless fresh evidence points there.",
+  "blocker": "DEVICE_RECAPTURE_REQUIRED_LOCAL_COLLECTOR_STALE_V1_2_0",
+  "next_action": "Refresh the local scripts/collect_lisa_twrp_logs.ps1 to repository v1.3.0 from commit 26dd3e5, verify the script reports version 1.3.0, then reproduce the same r20b187c System/userspace boot-completion failure once and collect a new TWRP package. The 2026-10-07 22:10 package used v1.2.0, so it did not pull actual /data/system/dropbox, /data/tombstones, or /data/anr contents even though /data was decrypted and mounted. Do not change kernel source before fresh userspace failure content is captured.",
   "next_expected_evidence": [
-    "fresh TWRP package produced by collector v1.3.0 / commit 26dd3e5",
-    "raw/21_userspace_failure_sources.txt proving /data access state and recent file inventory",
-    "actual recent /data/system/dropbox file contents or explicit proof none are accessible/new",
-    "actual recent /data/tombstones contents or explicit proof none are accessible/new",
-    "actual recent /data/anr contents when present",
-    "boot attempt identity matching 5.4.302-qgki-lisa-c0061-r20b187c-by-Tim0320",
-    "first fresh failure classified as system_server, zygote, SurfaceFlinger, vendor service, Android-requested reboot, or late kernel panic",
+    "new package manifest/SUMMARY reports collector_version=1.3.0",
+    "boot_image_sha256 remains deee5ff41b617391c9ea88663596fed0cbf8b93d3d89f5d0e3e568f4d2788edf",
+    "raw/21_userspace_failure_sources.txt present",
+    "pulled/userspace_failure/dropbox contains newest bounded files or explicit zero-new-file proof",
+    "pulled/userspace_failure/tombstones contains newest bounded files or explicit zero-new-file proof",
+    "pulled/userspace_failure/anr contains newest bounded files when present",
+    "first fresh failure classified before any kernel patch",
     "no recurrence of nfc_dev_open/mutex_lock fault at ffffffffffffffc8"
   ],
   "forbidden": [
@@ -529,7 +529,13 @@
     "No further kernel-source change is justified until fresh userspace crash evidence is captured; qxm_ipa/PAS/watchdog/NFC/touch/FREQ_QOS remain frozen for this triage.",
     "Attempted bounded TWRP collector enhancement to pull actual recent dropbox/tombstone/anr files, but GitHub write was blocked by safety review this round.",
     "Commit 26dd3e5fe87bc8f5f639b0a99020cc37baa10263 upgrades scripts/collect_lisa_twrp_logs.ps1 to v1.3.0 and adds bounded userspace failure evidence capture.",
-    "Collector v1.3.0 records /data access state and pulls at most 8 newest files up to 2 MiB each from /data/system/dropbox, /data/tombstones and /data/anr; kernel source remains unchanged."
+    "Collector v1.3.0 records /data access state and pulls at most 8 newest files up to 2 MiB each from /data/system/dropbox, /data/tombstones and /data/anr; kernel source remains unchanged.",
+    "Inspected lisa-twrp-iter-0002_20261007-221047_boot_deee5ff41b61.zip from the r20b187c device retry.",
+    "Package confirms boot SHA256 deee5ff41b617391c9ea88663596fed0cbf8b93d3d89f5d0e3e568f4d2788edf and F2FS fsck source 5.4.302-qgki-lisa-c0061-r20b187c-by-Tim0320.",
+    "Recovery /data is decrypted and mounted on /dev/block/dm-6 as F2FS, so userspace evidence is accessible in recovery.",
+    "Package collector is stale v1.2.0, not repository v1.3.0, and therefore omitted actual bounded dropbox/tombstone/anr payloads.",
+    "Persistent crash partitions did not refresh between 20:57 and 22:10 captures: oops SHA256 72745e4797692a40882417833e66e87628328987eec8740ece67fc8aaa914672, minidump SHA256 40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d, logfs SHA256 8be0f9461bd3aa7f03a8c995f158ded75b69312a9a7c15c9803fff580034cdb2.",
+    "pstore remained empty and no new r20b187c persistent kernel crash record was captured; kernel changes remain frozen pending userspace evidence."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
