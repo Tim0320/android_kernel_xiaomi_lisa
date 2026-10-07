@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_NFC_CDEV_RUNTIME_FIX",
+  "current_phase": "PHASE_10_SYSTEM_USERSPACE_BOOT_COMPLETION_TRIAGE",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -48,14 +48,14 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_NFC_FIXED_PHASE6_DEVICE_VALIDATION",
+    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_RUNTIME_STABILITY_AND_FRESH_USERSPACE_FAILURE_EVIDENCE",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
-    "phase_10_candidate0061_a16_validation": "R4F85557_REACHED_ANDROID_OOPS_NFC_CDEV_AT_41S",
+    "phase_10_candidate0061_a16_validation": "R20B187C_REACHES_SYSTEM_USERSPACE_BUT_BOOT_NOT_COMPLETED_NO_FRESH_PANIC_CAPTURED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "SOURCE_AND_STATIC_PASS_R4F85557_DEVICE_RUNTIME_NFC_FIX_REQUIRED"
+    "phase_6_direct_302_integrated_static_abi_gate": "PASS_R20B187C_STATIC_ABI_IDENTITY_PACKAGING_DEVICE_REACHES_SYSTEM_USERSPACE"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,28 +99,26 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "PASS_R4F85557_RUNTIME_REACHED_ANDROID",
-    "abi_module_gate": "PASS_R4F85557_REMOVED_0",
-    "touch_latency_gate": "BLOCKED_ON_RUNTIME_STABILITY",
-    "performance_retention_gate": "BLOCKED_ON_RUNTIME_STABILITY",
+    "stable_uplift_gate": "PASS_R20B187C_DEVICE_REACHES_SYSTEM_USERSPACE",
+    "abi_module_gate": "PASS_R20B187C_REMOVED_0",
+    "touch_latency_gate": "BLOCKED_ON_BOOT_COMPLETION",
+    "performance_retention_gate": "BLOCKED_ON_BOOT_COMPLETION",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED",
-    "identity_gate": "PASS_R60F98E6",
-    "packaging_gate": "PASS_FIXED_REGION"
+    "identity_gate": "PASS_R20B187C",
+    "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "cb318493fba35318a1725ce68956e3e79c00c917",
+  "last_checked_commit": "bb367175e7150d15af2e9648330dae428126429b",
   "last_checked_run": 37617885939,
-  "blocker": "CI_IN_PROGRESS_NFC_CDEV_RUNTIME_FIX_CONTROL_BUILD",
-  "next_action": "Continue inspecting integrated run 37617885939 / job 112780569976. The same-run Candidate0059 ABI control build is still in progress and has not exposed a failure. When it completes, require C0061_NFC_CDEV_GUARD=PASS before target config/build, then require compile/modpost, strict ABI provenance with removed=0, exact identity and fixed-region packaging. Fix only the first concrete blocker if one appears.",
+  "blocker": "SYSTEM_USERSPACE_REACHED_BUT_BOOT_NOT_COMPLETED_FRESH_FAILURE_CONTENT_MISSING_WRITE_PERMISSION_BLOCKED",
+  "next_action": "Treat run 37617885939 as static/ABI/identity/packaging PASS. Do not modify qxm_ipa, PAS, watchdog, NFC, touch, WALT or FREQ_QOS without new evidence. Improve the TWRP failure collector to pull actual recent /data/system/dropbox, /data/tombstones and /data/anr file contents when /data is mounted/decrypted, then classify the first fresh failure as system_server/zygote/SurfaceFlinger/vendor service/kernel-late panic before any new kernel patch. GitHub write was blocked this round; retry the bounded collector/state update first.",
   "next_expected_evidence": [
-    "Candidate0059 same-run ABI control build PASS",
-    "C0061_NFC_CDEV_GUARD=PASS",
-    "target 5.4.302 compile/modpost PASS",
-    "strict ABI provenance removed=0",
-    "exact Candidate0061 identity PASS",
-    "fixed-region AVB packaging PASS",
-    "new device boot artifact",
-    "device retest has no nfc_dev_open/mutex_lock fault at ffffffffffffffc8"
+    "fresh TWRP package containing actual recent /data/system/dropbox file contents",
+    "fresh /data/tombstones contents or explicit proof none are new",
+    "fresh /data/anr contents when present",
+    "boot attempt identity matching 5.4.302-qgki-lisa-c0061-r20b187c-by-Tim0320",
+    "first fresh failure classified as system_server, zygote, SurfaceFlinger, vendor service, Android-requested reboot, or late kernel panic",
+    "no recurrence of nfc_dev_open/mutex_lock fault at ffffffffffffffc8"
   ],
   "forbidden": [
     "global frequency pin",
@@ -521,7 +519,13 @@
     "IPA PAS15 still returns -22 in the fresh log but is not the first blocker because the device proceeds into Android userspace.",
     "Commit 20b187cdd1acd4782fba166ad7e9f7d5230007ae adds the target-only NFC cdev guard derived from the r4f85557 device Oops.",
     "New integrated run 37617885939 / job 112780569976 started from 20b187c.",
-    "Fresh check of run 37617885939: job 112780569976 remains in progress at Candidate0059 same-run ABI control build; no new CI failure observed"
+    "Fresh check of run 37617885939: job 112780569976 remains in progress at Candidate0059 same-run ABI control build; no new CI failure observed",
+    "Integrated run 37617885939 / job 112780569976 completed SUCCESS from 20b187c with NFC cdev guard PASS, Direct-302 semantic closure 34/34/0, compile/modpost PASS, ABI provenance covered=16 stable=15 mixed=1 removed=0, exact identity PASS and fixed-region packaging PASS.",
+    "Static-verified artifact 11483471124 produced kernel 5.4.302-qgki-lisa-c0061-r20b187c-by-Tim0320; Image SHA256 e26c2121b897aa985d4405eb837e111d493647a68759c20944be7ef99822de22; boot SHA256 deee5ff41b617391c9ea88663596fed0cbf8b93d3d89f5d0e3e568f4d2788edf.",
+    "Device capture lisa-twrp-deep-20261007-205735.zip plus user observation shows initial System/userspace entry but Android boot does not complete.",
+    "The 20:57:35 deep capture has empty pstore and no /proc/last_kmsg; minidump/rawdump are unchanged historical data and the package contains only dropbox/tombstone listings rather than their file contents, so there is no trustworthy fresh crash root cause yet.",
+    "No further kernel-source change is justified until fresh userspace crash evidence is captured; qxm_ipa/PAS/watchdog/NFC/touch/FREQ_QOS remain frozen for this triage.",
+    "Attempted bounded TWRP collector enhancement to pull actual recent dropbox/tombstone/anr files, but GitHub write was blocked by safety review this round."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
