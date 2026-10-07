@@ -281,7 +281,7 @@ Exit:
 - integrated compile exposed one textually-clean but semantically incompatible runtime-PM path; `drivers/base/power/runtime.c` is now the 34th reviewed path, classified MIXED_CONFLICT for Segments B+C: keep the Segment-B timer-expiry `<=` stable fix, but reject the Segment-C `needs_force_resume` reinit write because frozen Lisa intentionally retains `pm_runtime_need_not_resume()` and no `dev_pm_info.needs_force_resume` field.
 
 ### Phase 6 - Direct-302 integrated static/ABI gate
-Status: DONE - PURE PHASE6 CANONICAL PASS RUN 37576020824
+Status: STATIC PASS BUT RUNTIME INVALIDATED - ONE-SCREEN REBOOT
 
 Run one target build after Phase 5 conflict closure.
 
@@ -527,9 +527,32 @@ A separate Phase7 workflow was added in commit 9a0495f72e43389f8495ccec72532aa38
 - Phase7 must remain KMI-neutral relative to the accepted pure Phase6 Module.symvers;
 - this remains TOUCH_PERF_ONLY. FREQ_QOS/input boost isolation stays conditional and is not mixed into this run.
 
+## 2026-10-07 Pure Phase6 device failure and runtime-equivalence reopen
+
+Device result for canonical pure Phase6 artifact 11463937382 / boot SHA256 70082a01ec0fd3cf1ebf4cfbf9b539626045ce17cb5d94a1349f78b9a135e984:
+- one screen appears;
+- device immediately crashes/reboots;
+- System is not reached.
+
+Therefore run 37576020824 remains a valid static/ABI/identity/packaging proof but is no longer a runtime-valid Phase6 baseline.
+
+Re-audit against the actual verified Candidate0059 r43da7c5 build (run 37254944397) found a concrete reconstruction gap:
+- real Candidate0059 verification includes LISA_CANDIDATE_0059_RAW_LATCH_COMPILED_GATE=PASS;
+- candidate_0061_recreate_c0059_uplift.py explicitly short-circuits the retained Candidate0057 -> Candidate0056 -> Candidate0055 -> Candidate0054 chain to avoid double-applying UFS/power;
+- that shortcut also omitted Candidate0054 raw first-fault latch/persistent module-map layer from C0061;
+- this layer is diagnostic-first and is not claimed to be the crash fix, but it is part of the real Candidate0059 source contract and is required to persist PC/LR/register evidence for the current one-screen reboot.
+
+Repair decision:
+- keep frozen Candidate0059 r43da7c5 unchanged;
+- keep DIRECT 5.4.289 -> 5.4.302 strategy;
+- restore only the pinned Candidate0054 raw first-fault latch into the bounded C0059 reconstruction;
+- add a post-Direct-302 runtime-contract gate covering raw latch, IPA/PAS, proc_create ABI, UFS, power, camera ownership and package-runtime/MIGT presence;
+- current ordered Phase7 run 37582021048 may finish as static evidence but must not become a device-test candidate based on the failed Phase6 runtime baseline;
+- do not enter device Phase7 validation until a rebuilt Phase6 artifact passes static gates and provides the restored persistent crash evidence path.
+
+Classification: MIXED_CONFLICT (preserve verified Candidate0059 runtime-equivalence while carrying Direct-302 stable changes).
+
 ## Current next action
 
 NEXT_ACTION:
-Inspect ordered Phase7 run 37582021048. First require the accepted pure Phase6 artifact gate to PASS, then require Candidate0059 reconstruction and Direct-302 semantic closure to remain unchanged. The hot-path correction may run only after 5.4.302 source materialization and C0059 KMI restoration. Require C0061_TOUCH_JANK_HOTPATH=PASS, then compile Image/modules/dtbs, require Phase7-vs-Phase6 ABI changed=0 removed=0 added=0, exact c0061p7 kernel identity, and boot static packaging. If any step fails, repair only the first concrete blocker and re-run this dedicated Phase7 workflow.
-
-Phase10 remains blocked until this ordered Phase7 artifact is produced. Do not use the pure Phase6 artifact as the final touch/jank test artifact, and do not restore Batch C/D build gates.
+Run a new pure Direct-302 Phase6 build after restoring Candidate0054 raw first-fault inheritance and adding the post-materialization Candidate0059 runtime-contract gate. Require reconstruction markers C0061_C0059_RAW_LATCH_INHERITANCE=PASS, C0061_C0059_IPA_PAS_INHERITANCE=PASS and post-302 C0061_POST_302_C0059_RUNTIME_CONTRACT=PASS before target compilation. Then require compile/modpost, Candidate0059 removed ABI symbols = 0, identity and packaging. The resulting boot is the next device diagnostic candidate. If it still one-screen reboots, collect the persisted raw-fault/mtdoops evidence to identify the actual faulting PC/LR rather than guessing. Do not use Phase7 touch/jank changes as a remedy for this pre-System reboot.

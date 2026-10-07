@@ -13,6 +13,7 @@ def main():
 
     import candidate_0046_build as c46
     import candidate_0050_proc_abi_patch as proc50
+    import candidate_0054_fault_patch as fault54
     import candidate_0056_power_patch as power
     import candidate_0059_ownership_patch as ownership
     import candidate_0059_perf_port as perf
@@ -41,6 +42,14 @@ def main():
     c46.patch_mtdoops_persistence()
     c46.patch_mtdoops_periodic_snapshot()
     c46.patch_mtdoops_fast_snapshot_io()
+
+    # The verified Candidate0059 build includes Candidate0054's raw first-fault
+    # latch.  Earlier C0061 reconstruction short-circuited the retained
+    # 0057->0056->0055->0054 chain to avoid double-applying UFS/power, which
+    # unintentionally dropped this diagnostic/runtime-equivalence layer.
+    fault54.apply(root, kernel)
+    print("C0061_C0059_RAW_LATCH_INHERITANCE=PASS")
+
     c46.patch_ipa_pil_stage_trace()
     c46.patch_ipa_pas_sync_checkpoint()
 
@@ -102,6 +111,21 @@ def main():
     if missing:
         raise RuntimeError("Candidate0059 IPA/PAS inheritance gate missing: " + ", ".join(missing))
     print("C0061_C0059_IPA_PAS_INHERITANCE=PASS")
+
+    raw_fault=(kernel/"arch/arm64/mm/fault.c").read_text()
+    raw_module=(kernel/"kernel/module.c").read_text()
+    raw_mtd=(kernel/"drivers/mtd/mtdoops.c").read_text()
+    raw_gates = (
+        ("raw fault capture", "lisa_arm64_capture_first_fault(addr, esr, regs);" in raw_fault),
+        ("raw fault marker", "LISA0054_RAW_FAULT saved=1" in raw_fault),
+        ("raw fault mtd append", "lisa_arm64_fault_copy(lisa_fault_text" in raw_mtd),
+        ("module relocation map", "LISA0054_MODULE name=%s" in raw_module),
+        ("fault capture header", (kernel/"include/linux/lisa_fault_capture.h").is_file()),
+    )
+    raw_missing = [name for name, ok in raw_gates if not ok]
+    if raw_missing:
+        raise RuntimeError("Candidate0059 raw-latch inheritance gate missing: " + ", ".join(raw_missing))
+    print("C0061_C0059_RAW_LATCH_FINAL_GATE=PASS")
     proc50.apply(root,kernel)
     ownership.retained=lambda _root: SimpleNamespace(apply=lambda _r,_k: None)
     ownership.apply(root,kernel)

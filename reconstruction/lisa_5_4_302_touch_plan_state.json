@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_7_ORDERED_TOUCH_JANK_REVALIDATION",
+  "current_phase": "PHASE_6_RUNTIME_EQUIVALENCE_REPAIR",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -48,14 +48,14 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "ORDERED_REVALIDATION_IN_PROGRESS_RUN_37582021048",
+    "phase_7_touch_jank_hotpath_correction": "STATIC_EVIDENCE_ONLY_DEVICE_BLOCKED_ON_PHASE6_RUNTIME_REPAIR",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
-    "phase_10_candidate0061_a16_validation": "BLOCKED_ON_ORDERED_PHASE7_ARTIFACT",
+    "phase_10_candidate0061_a16_validation": "BLOCKED_ON_PHASE6_RUNTIME_EQUIVALENCE_REPAIR",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "DONE_PURE_PHASE6_RUN_37576020824"
+    "phase_6_direct_302_integrated_static_abi_gate": "STATIC_PASS_RUN_37576020824_RUNTIME_INVALIDATED_ONE_SCREEN_REBOOT_REPAIR_IN_PROGRESS"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,25 +99,27 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "PASS_PURE_PHASE6_RUN_37576020824",
-    "abi_module_gate": "PASS_PURE_PHASE6_REMOVED_0",
-    "touch_latency_gate": "PENDING_ORDERED_PHASE7_ARTIFACT",
-    "performance_retention_gate": "PENDING_ORDERED_PHASE7_ARTIFACT",
+    "stable_uplift_gate": "STATIC_PASS_RUNTIME_REVALIDATION_REQUIRED",
+    "abi_module_gate": "STATIC_PASS_REMOVED_0_RUNTIME_REVALIDATION_REQUIRED",
+    "touch_latency_gate": "BLOCKED_ON_BOOT_TO_SYSTEM",
+    "performance_retention_gate": "BLOCKED_ON_BOOT_TO_SYSTEM",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "ec60654345188e899c3de35e8f36700bfa44b63a",
+  "last_checked_commit": "39764e4f302b0476d0e6b96489d2811e2dd86efe",
   "last_checked_run": 37582021048,
-  "blocker": "CI_IN_PROGRESS_ORDERED_PHASE7_ORACLE_FETCH",
-  "next_action": "Inspect ordered Phase7 run 37582021048 / job 112663627245. Accepted pure Phase6 baseline download and gate are PASS. Continue through unchanged Candidate0059 reconstruction and 34/34 Direct-302 semantic closure; apply TOUCH_PERF_ONLY hot-path only after materialization/KMI restore; then require compile/modpost, Phase7-vs-Phase6 ABI changed=0 removed=0 added=0, c0061p7 identity and boot packaging.",
+  "blocker": "PURE_PHASE6_DEVICE_ONE_SCREEN_REBOOT_C0054_RAW_LATCH_INHERITANCE_MISSING",
+  "next_action": "Build a new pure Direct-302 Phase6 after restoring Candidate0054 raw first-fault inheritance and adding the post-Direct-302 Candidate0059 runtime-contract gate. Require raw-latch + IPA/PAS reconstruction markers, post-302 runtime-contract PASS, compile/modpost, ABI removed=0, identity and packaging. If the new artifact still reboots after one screen, use its restored mtdoops/raw-fault persistence to identify PC/LR before further behavioral changes.",
   "next_expected_evidence": [
-    "Candidate0059 reconstruction PASS with C0061_C0059_IPA_PAS_INHERITANCE=PASS",
-    "Direct-302 semantic closure 34 reviewed / 0 unresolved",
-    "C0061_TOUCH_JANK_HOTPATH=PASS with CLASSIFICATION=TOUCH_PERF_ONLY",
-    "Phase7 5.4.302 compile/modpost PASS",
-    "Phase7 vs pure Phase6 ABI changed=0 removed=0 added=0",
-    "exact c0061p7 kernel identity PASS",
-    "Phase7 boot static packaging PASS and new device-test artifact"
+    "C0061_C0059_RAW_LATCH_INHERITANCE=PASS",
+    "C0061_C0059_RAW_LATCH_FINAL_GATE=PASS",
+    "C0061_C0059_IPA_PAS_INHERITANCE=PASS",
+    "C0061_POST_302_C0059_RUNTIME_CONTRACT=PASS after Direct-302 materialization",
+    "pure 5.4.302 compile/modpost PASS",
+    "Candidate0059 removed ABI symbols = 0",
+    "exact Candidate0061 identity PASS",
+    "new boot static packaging PASS",
+    "next device test either reaches System or yields persisted LISA0054_RAW_FAULT / mtdoops PC-LR evidence"
   ],
   "forbidden": [
     "global frequency pin",
@@ -475,7 +477,12 @@
     "Ordered Phase7 run 37582021048 / job 112663627245 reached the runner.",
     "Phase7 download of accepted pure Phase6 run 37576020824 evidence artifact passed.",
     "Phase7 accepted-pure-Phase6 baseline gate passed before any Direct-302 or hot-path mutation.",
-    "Phase7 run 37582021048 is currently fetching Direct-302 provenance/oracles; the hot-path step has not run yet."
+    "Phase7 run 37582021048 is currently fetching Direct-302 provenance/oracles; the hot-path step has not run yet.",
+    "Device test of pure Phase6 artifact 11463937382 / boot SHA256 70082a01ec0fd3cf1ebf4cfbf9b539626045ce17cb5d94a1349f78b9a135e984 showed one screen followed by immediate crash/reboot before System.",
+    "Pure Phase6 run 37576020824 remains static/ABI/identity/packaging PASS but is invalidated as a runtime baseline.",
+    "Actual verified Candidate0059 run 37254944397 includes LISA_CANDIDATE_0059_RAW_LATCH_COMPILED_GATE=PASS.",
+    "C0061 reconstruction audit found Candidate0054 raw first-fault latch was omitted when the retained 0057->0056->0055->0054 chain was short-circuited to avoid UFS/power double-patching.",
+    "Repair restores only Candidate0054 raw first-fault latch and adds a post-Direct-302 runtime-contract gate; Phase7 remains irrelevant to the pre-System reboot."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",

@@ -8,6 +8,7 @@ on:
       - .github/workflows/build-lisa-candidate-0061-integrated-302.yml
       - reconstruction/scripts/candidate_0061_direct_302_scan.py
       - reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py
+      - reconstruction/scripts/candidate_0061_c0059_runtime_contract_gate.py
       - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
       - reconstruction/scripts/candidate_0061_direct_302_reviewed.py
       - reconstruction/scripts/candidate_0061_direct_302_review_gate.py
@@ -116,6 +117,9 @@ jobs:
           python3 package/reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py \
             --package package --kernel kernel \
             2>&1 | tee candidate-0061-direct-302-c0059-source.log
+          grep -q '^C0061_C0059_IPA_PAS_INHERITANCE=PASS$' candidate-0061-direct-302-c0059-source.log
+          grep -q '^C0061_C0059_RAW_LATCH_INHERITANCE=PASS$' candidate-0061-direct-302-c0059-source.log
+          grep -q '^C0061_C0059_RAW_LATCH_FINAL_GATE=PASS$' candidate-0061-direct-302-c0059-source.log
           grep -q '^C0059_INHERITED_SOURCE_STACK_RECREATED=PASS$' candidate-0061-direct-302-c0059-source.log
 
       - name: Install integrated build dependencies
@@ -270,6 +274,17 @@ jobs:
           grep -q 'static inline unsigned int qdisc_peek_len' kernel/include/net/pkt_sched.h
           grep -q '__irq_apply_affinity_hint' kernel/include/linux/interrupt.h
           grep -q '^SUBLEVEL = 302$' kernel/Makefile
+          git -C kernel diff --check
+
+      - name: Gate Candidate0059 runtime contract after Direct-302
+        id: runtime_contract
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0061_c0059_runtime_contract_gate.py \
+            --source kernel \
+            --json candidate-0061-post-302-runtime-contract.json \
+            2>&1 | tee candidate-0061-post-302-runtime-contract.log
+          grep -q '^C0061_POST_302_C0059_RUNTIME_CONTRACT=PASS$' candidate-0061-post-302-runtime-contract.log
           git -C kernel diff --check
 
       - name: Prepare integrated 5.4.302 target config
