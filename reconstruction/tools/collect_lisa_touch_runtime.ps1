@@ -1,7 +1,7 @@
 param(
     [string]$Adb = "adb",
     [int]$WindowSeconds = 15,
-    [string]$ExpectedKernelRelease = "5.4.302-qgki-lisa-c0061-r803b05f-by-Tim0320",
+    [string]$ExpectedKernelRelease = "PENDING_ORDERED_PHASE7_REBUILD",
     [string]$OutDir = ("lisa-touch-runtime-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
 )
 
