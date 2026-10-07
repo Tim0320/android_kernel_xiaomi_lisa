@@ -108,20 +108,19 @@
     "identity_gate": "PASS_R60F98E6",
     "packaging_gate": "PASS_FIXED_REGION_NOT_SUFFICIENT"
   },
-  "last_checked_commit": "ee43b77c8fca408fb6af8c387ec78d3f4d3fb0b3",
-  "last_checked_run": 37588835164,
-  "blocker": "C0061_RECONSTRUCTION_MISSING_C0046_QXM_IPA_QOS_HARD_DISABLE",
-  "next_action": "Inspect the new pure Phase6 build after replaying Candidate0046 patch_yupik() and restoring true Candidate0059 watchdog 20000/15000. Require qxm_ipa inheritance before control build, qxm_ipa hard-disable/qosbox NULL/runtime marker after Direct-302 materialization, then compile/modpost, 16/16 ABI provenance, identity and fixed-region packaging.",
+  "last_checked_commit": "1f92ad1fd2269896923564d87cf5ccc0677db6e7",
+  "last_checked_run": 37594316840,
+  "blocker": "CI_QUEUED_QXM_IPA_RUNTIME_EQUIVALENCE_REBUILD",
+  "next_action": "Inspect integrated run 37594316840 from commit 1f92ad1. First require Candidate0059 reconstruction to emit C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS and the control config to use watchdog 20000/15000. Then require post-Direct-302 qxm_ipa runtime-contract markers before target build. If a gate fails, fix only the first concrete blocker. If all gates pass, publish the new fixed-region boot for device validation.",
   "next_expected_evidence": [
     "C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS",
-    "control CONFIG_QCOM_WATCHDOG_BARK_TIME=20000 and PET_TIME=15000",
-    "post-302 RUNTIME_CONTRACT_qxm_ipa_qos_hard_disabled=1",
-    "post-302 RUNTIME_CONTRACT_qxm_ipa_qosbox_null=1",
-    "post-302 RUNTIME_CONTRACT_qxm_ipa_runtime_marker=1",
+    "Candidate0059 control watchdog bark=20000 pet=15000",
+    "post-302 qxm_ipa hard-disable/qosbox NULL/runtime marker PASS",
     "Direct-302 semantic closure 34 reviewed / 0 unresolved",
     "5.4.302 compile/modpost PASS",
-    "strict ABI provenance 16/16 with removed=0",
-    "fixed-region AVB packaging PASS and new boot artifact"
+    "strict ABI provenance 16/16 removed=0",
+    "identity PASS",
+    "fixed-region AVB packaging PASS and new artifact"
   ],
   "forbidden": [
     "global frequency pin",
@@ -504,7 +503,10 @@
     "Historical Candidate0011 and Candidate0012 already ruled out watchdog-only and fixed-region/AVB-only fixes as sufficient.",
     "Historical Candidate0018 Linux entry faulted at qcom_icc_set_qos -> qnoc_probe on qxm_ipa QoS MAINCTL 0x10008; Candidate0020->0046 hard-disabled qxm_ipa.qosbox.",
     "C0061 reconstruction omitted c46.patch_yupik(), so current C0061 builds lacked the real Candidate0059 qxm_ipa early-runtime hard-disable.",
-    "Same-run C0059 control also drifted to watchdog 11000/9360; repair restores 20000/15000 for baseline fidelity."
+    "Same-run C0059 control also drifted to watchdog 11000/9360; repair restores 20000/15000 for baseline fidelity.",
+    "Commit 1f92ad1fd2269896923564d87cf5ccc0677db6e7 restores Candidate0046 qxm_ipa QoS hard-disable into C0061 Candidate0059 reconstruction and restores control watchdog 20000/15000.",
+    "New pure Phase6 integrated run 37594316840 queued from 1f92ad1.",
+    "Direct-302 scan run 37594316769 queued from 1f92ad1 as provenance evidence only."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
