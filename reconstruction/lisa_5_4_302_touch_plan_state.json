@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_4_DIRECT_302_SOURCE_RECONSTRUCTION_REPAIR",
+  "current_phase": "PHASE_6_DIRECT_302_INTEGRATED_REVALIDATION",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -53,9 +53,9 @@
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "BLOCKED_ON_REPAIRED_DIRECT_302_REBUILD",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
-    "phase_4_direct_5_4_289_to_5_4_302": "REOPENED_C0059_IPA_PAS_RECONSTRUCTION_REPAIR",
+    "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "REVALIDATION_QUEUED_RUN_37571737761"
+    "phase_6_direct_302_integrated_static_abi_gate": "REVALIDATION_IN_PROGRESS_RUN_37571737761"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,26 +99,25 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "REVALIDATION_PENDING_REPAIRED_C0059_RECONSTRUCTION",
-    "abi_module_gate": "REVALIDATION_PENDING_REPAIRED_C0059_RECONSTRUCTION",
+    "stable_uplift_gate": "REVALIDATION_IN_PROGRESS_AFTER_RECONSTRUCTION_PASS",
+    "abi_module_gate": "REVALIDATION_IN_PROGRESS",
     "touch_latency_gate": "BLOCKED_ON_REPAIRED_C0061_ARTIFACT",
     "performance_retention_gate": "BLOCKED_ON_REPAIRED_C0061_ARTIFACT",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "803b05f1932d3109f7ec1f4f301c20f911de167d",
+  "last_checked_commit": "16c405327c66e4ddd66b1780edf29a21003583e7",
   "last_checked_run": 37571737761,
-  "blocker": "CI_QUEUED_C0053_BLOB_PIN_REPAIR",
-  "next_action": "Inspect integrated run 37571737761 from commit 803b05f. First require Candidate0059 source reconstruction to PASS with the bounded C0046/C0053 IPA/PAS replay. If it fails, fix the first concrete reconstruction blocker. If it passes, continue the same single integrated 5.4.302 compile/modpost, static, ABI/KMI, identity and packaging gates. Treat scan run 37571737667 as provenance-only.",
+  "blocker": "CI_IN_PROGRESS_C0059_SAME_RUN_CONTROL_BUILD",
+  "next_action": "Inspect integrated run 37571737761 / job 112631680235. Candidate0059 reconstruction is now PASS and provenance scan 37571737667 emitted C0061_C0059_IPA_PAS_INHERITANCE=PASS plus C0059_INHERITED_SOURCE_STACK_RECREATED=PASS. The active step is Build Candidate0059 same-run ABI control. If it fails, fix the first compile/modpost blocker only. If it passes, continue the same single Direct-302 integrated sequence through compatibility, semantic closure, 5.4.302 materialization, Phase7 hot-path overlay, target compile/modpost, ABI removed=0, identity and boot packaging.",
   "next_expected_evidence": [
-    "Candidate0053 Git blob pin d3111485e075156687c5eee50546ba42417dd2fa PASS with correct NUL blob header",
-    "C0061_C0059_IPA_PAS_INHERITANCE=PASS",
-    "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
-    "Direct-302 semantic closure 34 reviewed / 0 unresolved",
+    "Candidate0059 same-run control Image/modules/dtbs/modpost PASS",
+    "Direct-302 semantic closure remains 34 reviewed / 0 unresolved",
     "integrated 5.4.302 Image/modules/dtbs/modpost PASS",
     "Candidate0059 removed ABI symbols = 0",
-    "exact Candidate0061 identity PASS",
-    "boot static packaging PASS and new artifact"
+    "changed/added ABI symbols remain stable or reviewed MIXED_CONFLICT provenance",
+    "exact Candidate0061 kernel identity PASS",
+    "boot static packaging PASS and new boot artifact uploaded"
   ],
   "forbidden": [
     "global frequency pin",
@@ -455,7 +454,10 @@
     "Integrated run 37571503370 and provenance-only scan 37571503382 started successfully from e10d16c; checkout, oracle fetch and BPF Stage-A materialization passed.",
     "Run 37571503370 reached Candidate0059 reconstruction and failed because the local Git blob pin calculation used a literal backslash-zero instead of the required NUL header separator.",
     "Commit 803b05f1932d3109f7ec1f4f301c20f911de167d fixes only the Git blob hash header and keeps Candidate0053 pinned to d3111485e075156687c5eee50546ba42417dd2fa.",
-    "Integrated run 37571737761 and provenance-only scan 37571737667 were queued from 803b05f."
+    "Integrated run 37571737761 and provenance-only scan 37571737667 were queued from 803b05f.",
+    "Direct-302 provenance scan 37571737667 completed SUCCESS from 803b05f.",
+    "Provenance scan 37571737667 emitted C0061_C0059_IPA_PAS_INHERITANCE=PASS and C0059_INHERITED_SOURCE_STACK_RECREATED=PASS, proving the repaired bounded Candidate0059 IPA/PAS reconstruction executes successfully.",
+    "Integrated run 37571737761 passed Recreate frozen Candidate0059 source contract and Prepare Candidate0059 same-run control config; Candidate0059 same-run ABI control build is currently in progress."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
