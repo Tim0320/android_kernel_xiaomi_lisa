@@ -9,6 +9,7 @@ on:
       - reconstruction/scripts/candidate_0061_direct_302_scan.py
       - reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py
       - reconstruction/scripts/candidate_0061_c0059_runtime_contract_gate.py
+      - reconstruction/scripts/candidate_0061_nfc_cdev_guard.py
       - reconstruction/scripts/candidate_0061_fixed_region_boot.py
       - reconstruction/scripts/candidate_0061_abi_provenance_gate.py
       - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
@@ -301,6 +302,20 @@ jobs:
           grep -q '^RUNTIME_CONTRACT_watchdog_pet_range_9360_15000=1$' candidate-0061-post-302-runtime-contract.log
           git -C kernel diff --check
 
+      - name: Apply device-evidence NFC cdev race guard
+        id: nfc_guard
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0061_nfc_cdev_guard.py \
+            --source kernel \
+            --json candidate-0061-nfc-cdev-guard.json \
+            2>&1 | tee candidate-0061-nfc-cdev-guard.log
+          grep -q '^C0061_NFC_CDEV_GUARD=PASS$' candidate-0061-nfc-cdev-guard.log
+          grep -q '^NFC_CDEV_open_checks_inode_before_container_of=1$' candidate-0061-nfc-cdev-guard.log
+          grep -q '^NFC_CDEV_close_prefers_private_data=1$' candidate-0061-nfc-cdev-guard.log
+          grep -q 'NFC cdev unavailable' kernel/drivers/nfc/qti/nfc_common.c
+          git -C kernel diff --check
+
       - name: Prepare integrated 5.4.302 target config
         id: target_config
         env:
@@ -471,6 +486,7 @@ jobs:
           ABI_PROVENANCE_OUTCOME: ${{ steps.abi_provenance.outcome }}
           IDENTITY_OUTCOME: ${{ steps.identity.outcome }}
           PACKAGE_OUTCOME: ${{ steps.package_boot.outcome }}
+          NFC_GUARD_OUTCOME: ${{ steps.nfc_guard.outcome }}
         run: |
           set -u
           {

@@ -635,7 +635,44 @@ Repair:
 - retain qxm_ipa hard-disable as the primary early-runtime repair;
 - do not treat watchdog timing alone as root cause because Candidate0011 already disproved that.
 
+## 2026-10-07 19:47 device retest: Direct-302 reaches Android, first concrete crash is QTI NFC cdev race
+
+Latest capture:
+- lisa-twrp-deep-20261007-194701.zip.
+
+Delta against 16:22 capture:
+- minidump unchanged: 40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d;
+- rawdump unchanged: 605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c;
+- oops/sda17 changed from 402b53f... to 381c0179e25e1406863172eb5c521115a4ebbee724356fb769c2197d0790745d;
+- therefore the 4f85557 kernel now reaches and writes fresh persistent Linux evidence.
+
+Important runtime progress:
+- kernel identity in the fresh Oops is 5.4.302-qgki-lisa-c0061-r4f85557-by-Tim0320;
+- Android userspace/services are active by about 40 s;
+- qxm_ipa early-MMIO blocker has been bypassed sufficiently to reach this stage;
+- IPA PAS15 still returns -EINVAL (-22) in repeated attempts, but it is no longer the first boot blocker because Android proceeds beyond it.
+
+First concrete Oops at 41.120904 s:
+- task: nqnfcinfo, PID 2145;
+- ESR 0x96000005, virtual address ffffffffffffffc8;
+- pc mutex_lock+0x18/0x40;
+- lr nfc_dev_open+0x30/0xf0 [nfc_i2c];
+- exact release 5.4.302-qgki-lisa-c0061-r4f85557-by-Tim0320.
+
+Source proof:
+- drivers/nfc/qti/nfc_common.c performs container_of(inode->i_cdev, struct nfc_dev, c_dev) before validating the cdev;
+- for this struct layout c_dev follows dev_ref_mutex by 0x38 bytes; a NULL inode->i_cdev therefore yields a negative container pointer and &dev_ref_mutex resolves to ffffffffffffffc8, exactly matching the device fault;
+- this is a cdev publish/teardown race exposed by nqnfcinfo, not an NFC success condition.
+
+Repair decision:
+- add a bounded C0061 NFC cdev guard after Direct-302 materialization/runtime-contract verification;
+- if inode or inode->i_cdev is unavailable, nfc_dev_open returns -ENODEV;
+- release prefers filp->private_data and returns -ENODEV if the device is already unavailable;
+- do not fake NFC success, do not change ioctl success semantics, do not replace NFC firmware;
+- keep Candidate0059 frozen control unchanged;
+- this mutation is DEVICE_RUNTIME_FIX and is applied only to the C0061 target tree.
+
 ## Current next action
 
 NEXT_ACTION:
-Inspect the new pure Direct-302 Phase6 run triggered by the watchdog-Kconfig inheritance repair. Require both qxm_ipa and stock-watchdog reconstruction markers before control config; require control olddefconfig to retain 20000/15000; after Direct-302 require qxm_ipa and all four watchdog Kconfig runtime-contract markers; then proceed through semantic closure, compile/modpost, strict ABI provenance, identity and fixed-region packaging. If another CI step fails, fix only the first concrete blocker.
+Run the pure Direct-302 target again with the NFC cdev guard applied only after Candidate0059 control and Direct-302 runtime-contract gates. Require C0061_NFC_CDEV_GUARD=PASS, compile/modpost, strict ABI provenance removed=0, exact identity and fixed-region packaging. The resulting boot is the next device candidate. On retest, verify the ffffffffffffffc8 / nfc_dev_open Oops disappears. If the system still reboots, use the next fresh oops/sda17 delta to identify the next first fault rather than altering PAS/touch/frequency speculatively.

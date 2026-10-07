@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_QXM_IPA_RUNTIME_EQUIVALENCE_REPAIR",
+  "current_phase": "PHASE_6_NFC_CDEV_RUNTIME_FIX",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -48,14 +48,14 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_QXM_IPA_PHASE6_DEVICE_VALIDATION",
+    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_NFC_FIXED_PHASE6_DEVICE_VALIDATION",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
-    "phase_10_candidate0061_a16_validation": "FAILED_9309F5F_AFTER_START_EBS_REBUILD_REQUIRED",
+    "phase_10_candidate0061_a16_validation": "R4F85557_REACHED_ANDROID_OOPS_NFC_CDEV_AT_41S",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "REBUILD_REQUIRED_AFTER_WATCHDOG_KCONFIG_INHERITANCE_FIX"
+    "phase_6_direct_302_integrated_static_abi_gate": "SOURCE_AND_STATIC_PASS_R4F85557_DEVICE_RUNTIME_NFC_FIX_REQUIRED"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,29 +99,28 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "REVALIDATION_REQUIRED_QXM_IPA_RUNTIME_EQUIVALENCE",
-    "abi_module_gate": "REVALIDATION_REQUIRED_AFTER_QXM_IPA_REPAIR",
-    "touch_latency_gate": "BLOCKED_ON_BOOT_TO_SYSTEM",
-    "performance_retention_gate": "BLOCKED_ON_BOOT_TO_SYSTEM",
+    "stable_uplift_gate": "PASS_R4F85557_RUNTIME_REACHED_ANDROID",
+    "abi_module_gate": "PASS_R4F85557_REMOVED_0",
+    "touch_latency_gate": "BLOCKED_ON_RUNTIME_STABILITY",
+    "performance_retention_gate": "BLOCKED_ON_RUNTIME_STABILITY",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED",
     "identity_gate": "PASS_R60F98E6",
-    "packaging_gate": "PASS_FIXED_REGION_NOT_SUFFICIENT"
+    "packaging_gate": "PASS_FIXED_REGION"
   },
-  "last_checked_commit": "4f855572394924e506bc10eb369bd1327997c891",
+  "last_checked_commit": "e80d6950c548a8c21250283b6321ec3ad0931417",
   "last_checked_run": 37595343926,
-  "blocker": "CI_IN_PROGRESS_C0059_WATCHDOG_KCONFIG_REPAIR",
-  "next_action": "Inspect integrated run 37595343926 / job 112706501518. Require Candidate0059 reconstruction to pass qxm_ipa and stock-watchdog Kconfig inheritance gates, then verify control olddefconfig retains bark=20000 pet=15000. Continue through post-Direct-302 qxm_ipa/watchdog runtime-contract gates and the normal Direct-302 compile/ABI/identity/fixed-region packaging gates. Fix only the first concrete blocker if it fails.",
+  "blocker": "DEVICE_OOPS_NFC_CDEV_NULL_RACE_AT_41S",
+  "next_action": "Rebuild pure Direct-302 C0061 with a target-only NFC cdev guard after the C0059/runtime-contract gates. Require C0061_NFC_CDEV_GUARD=PASS, compile/modpost, ABI removed=0 with strict provenance, exact identity and fixed-region packaging. Device retest must confirm the nfc_dev_open fault at ffffffffffffffc8 disappears; use fresh oops delta for any next blocker.",
   "next_expected_evidence": [
-    "C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS",
-    "C0061_C0059_STOCK_WATCHDOG_KCONFIG_INHERITANCE=PASS",
-    "C0061_C0059_STOCK_WATCHDOG_FINAL_GATE=PASS",
-    "control olddefconfig bark=20000 pet=15000",
-    "post-302 qxm_ipa and watchdog runtime-contract PASS",
-    "Direct-302 semantic closure 34 reviewed / 0 unresolved",
+    "C0061_NFC_CDEV_GUARD=PASS",
+    "nfc_dev_open validates inode->i_cdev before container_of",
+    "nfc_dev_close prefers filp->private_data and safely returns -ENODEV if unavailable",
     "5.4.302 compile/modpost PASS",
-    "strict ABI provenance 16/16 removed=0",
-    "identity and fixed-region packaging PASS"
+    "strict ABI provenance removed=0",
+    "identity and fixed-region packaging PASS",
+    "device retest has no nfc_dev_open/mutex_lock fault at ffffffffffffffc8",
+    "fresh oops/sda17 evidence if another blocker remains"
   ],
   "forbidden": [
     "global frequency pin",
@@ -514,7 +513,12 @@
     "Real Candidate0046->0059 recipe uses patch_stock_watchdog_timings() to widen defaults/ranges before olddefconfig; C0061 reconstruction had omitted this bounded recipe layer.",
     "Commit 4f855572394924e506bc10eb369bd1327997c891 restores Candidate0046 patch_stock_watchdog_timings() into bounded C0059 reconstruction.",
     "New integrated run 37595343926 / job 112706501518 started from 4f85557.",
-    "New Direct-302 scan run 37595344060 queued from 4f85557 as provenance evidence only."
+    "New Direct-302 scan run 37595344060 queued from 4f85557 as provenance evidence only.",
+    "Latest capture lisa-twrp-deep-20261007-194701.zip produced fresh oops/sda17 SHA256 381c0179e25e1406863172eb5c521115a4ebbee724356fb769c2197d0790745d; previous hash was 402b53f....",
+    "Fresh Oops identifies exact running kernel 5.4.302-qgki-lisa-c0061-r4f85557-by-Tim0320 and Android userspace activity around 40 seconds.",
+    "First concrete runtime Oops: PID 2145 nqnfcinfo, fault ffffffffffffffc8, ESR 96000005, pc mutex_lock+0x18/0x40, lr nfc_dev_open+0x30/0xf0 [nfc_i2c].",
+    "Source analysis proves container_of(NULL inode->i_cdev, nfc_dev.c_dev) maps dev_ref_mutex to the observed negative 0x38 address; target-only guard will return -ENODEV instead of crashing.",
+    "IPA PAS15 still returns -22 in the fresh log but is not the first blocker because the device proceeds into Android userspace."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
