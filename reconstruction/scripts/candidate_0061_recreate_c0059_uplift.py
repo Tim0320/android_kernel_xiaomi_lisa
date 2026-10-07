@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from pathlib import Path
 from types import SimpleNamespace
-import argparse, os, sys
+import argparse, ast, hashlib, os, sys
 
 def main():
     ap=argparse.ArgumentParser()
@@ -12,7 +12,6 @@ def main():
     sys.path.insert(0,str(root/"reconstruction/scripts"))
 
     import candidate_0046_build as c46
-    import candidate_0053_build as c53
     import candidate_0050_proc_abi_patch as proc50
     import candidate_0056_power_patch as power
     import candidate_0059_ownership_patch as ownership
@@ -45,10 +44,44 @@ def main():
     c46.patch_ipa_pil_stage_trace()
     c46.patch_ipa_pas_sync_checkpoint()
 
-    c53.ROOT=root; c53.KERNEL=kernel; c53.OUT=kernel/"out"
-    c53.base.ROOT=root; c53.base.KERNEL=kernel; c53.base.OUT=kernel/"out"
-    c53.candidate0053_patch_ipa_pas_shmbridge()
-    c53.patch_ipa_pas_metadata_dma_retention()
+    # candidate_0053_build.py is a historical executable builder, not an
+    # import-safe library: its module tail immediately starts the old C0053
+    # camera/kernel build.  Pin its Git blob and execute only the two reviewed
+    # IPA/PAS function definitions through AST extraction.
+    c53_path = root/"reconstruction/scripts/candidate_0053_build.py"
+    c53_bytes = c53_path.read_bytes()
+    c53_blob = hashlib.sha1(
+        b"blob " + str(len(c53_bytes)).encode() + b"\\0" + c53_bytes
+    ).hexdigest()
+    c53_expected_blob = "d3111485e075156687c5eee50546ba42417dd2fa"
+    if c53_blob != c53_expected_blob:
+        raise RuntimeError(
+            "Candidate0053 recipe blob changed; review before C0061 replay: "
+            + c53_blob
+        )
+
+    c53_tree = ast.parse(c53_bytes.decode("utf-8"), filename=str(c53_path))
+    c53_wanted = {
+        "patch_ipa_pas_metadata_dma_retention",
+        "candidate0053_patch_ipa_pas_shmbridge",
+    }
+    c53_nodes = [
+        node for node in c53_tree.body
+        if isinstance(node, ast.FunctionDef) and node.name in c53_wanted
+    ]
+    if {node.name for node in c53_nodes} != c53_wanted:
+        raise RuntimeError("Pinned Candidate0053 IPA/PAS functions missing")
+    c53_module = ast.Module(body=c53_nodes, type_ignores=[])
+    ast.fix_missing_locations(c53_module)
+    c53_ns = {
+        "__builtins__": __builtins__,
+        "ROOT": root,
+        "KERNEL": kernel,
+        "_candidate0053_patch_ipa_pas_shmbridge_base": c46.patch_ipa_pas_shmbridge,
+    }
+    exec(compile(c53_module, str(c53_path), "exec"), c53_ns, c53_ns)
+    c53_ns["candidate0053_patch_ipa_pas_shmbridge"]()
+    c53_ns["patch_ipa_pas_metadata_dma_retention"]()
 
     ipa_tz=(kernel/"drivers/soc/qcom/subsys-pil-tz.c").read_text()
     scm=(kernel/"drivers/firmware/qcom_scm.c").read_text()
