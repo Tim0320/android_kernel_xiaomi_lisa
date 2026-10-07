@@ -48,14 +48,14 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "STATIC_EVIDENCE_ONLY_DEVICE_BLOCKED_ON_PHASE6_RUNTIME_REPAIR",
+    "phase_7_touch_jank_hotpath_correction": "OLD_RUN_37582021048_STATIC_EVIDENCE_ONLY_DEVICE_BLOCKED",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "BLOCKED_ON_PHASE6_RUNTIME_EQUIVALENCE_REPAIR",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "STATIC_PASS_RUN_37576020824_RUNTIME_INVALIDATED_ONE_SCREEN_REBOOT_REPAIR_IN_PROGRESS"
+    "phase_6_direct_302_integrated_static_abi_gate": "REBUILD_IN_PROGRESS_RUN_37583148751_WITH_RAW_LATCH_AND_POST_302_RUNTIME_CONTRACT"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -106,20 +106,20 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "39764e4f302b0476d0e6b96489d2811e2dd86efe",
-  "last_checked_run": 37582021048,
-  "blocker": "PURE_PHASE6_DEVICE_ONE_SCREEN_REBOOT_C0054_RAW_LATCH_INHERITANCE_MISSING",
-  "next_action": "Build a new pure Direct-302 Phase6 after restoring Candidate0054 raw first-fault inheritance and adding the post-Direct-302 Candidate0059 runtime-contract gate. Require raw-latch + IPA/PAS reconstruction markers, post-302 runtime-contract PASS, compile/modpost, ABI removed=0, identity and packaging. If the new artifact still reboots after one screen, use its restored mtdoops/raw-fault persistence to identify PC/LR before further behavioral changes.",
+  "last_checked_commit": "60f98e6da78474101f5c57dd5b1b853bf48f2a93",
+  "last_checked_run": 37583148751,
+  "blocker": "CI_IN_PROGRESS_REBUILT_PHASE6_RAW_LATCH_RUNTIME_CONTRACT",
+  "next_action": "Inspect pure Phase6 integrated run 37583148751 / job 112667183074 from commit 60f98e6. First require Candidate0059 reconstruction to PASS with raw-latch + IPA/PAS markers. Then require post-Direct-302 C0061_POST_302_C0059_RUNTIME_CONTRACT=PASS before target compile. If any step fails, fix the first concrete blocker. If all static gates pass, the new boot becomes the next device diagnostic candidate; if it still one-screen reboots, use restored LISA0054_RAW_FAULT/mtdoops evidence to identify PC/LR.",
   "next_expected_evidence": [
     "C0061_C0059_RAW_LATCH_INHERITANCE=PASS",
     "C0061_C0059_RAW_LATCH_FINAL_GATE=PASS",
     "C0061_C0059_IPA_PAS_INHERITANCE=PASS",
-    "C0061_POST_302_C0059_RUNTIME_CONTRACT=PASS after Direct-302 materialization",
+    "C0061_POST_302_C0059_RUNTIME_CONTRACT=PASS",
     "pure 5.4.302 compile/modpost PASS",
     "Candidate0059 removed ABI symbols = 0",
     "exact Candidate0061 identity PASS",
     "new boot static packaging PASS",
-    "next device test either reaches System or yields persisted LISA0054_RAW_FAULT / mtdoops PC-LR evidence"
+    "device result or persisted LISA0054_RAW_FAULT/mtdoops PC-LR evidence"
   ],
   "forbidden": [
     "global frequency pin",
@@ -482,7 +482,11 @@
     "Pure Phase6 run 37576020824 remains static/ABI/identity/packaging PASS but is invalidated as a runtime baseline.",
     "Actual verified Candidate0059 run 37254944397 includes LISA_CANDIDATE_0059_RAW_LATCH_COMPILED_GATE=PASS.",
     "C0061 reconstruction audit found Candidate0054 raw first-fault latch was omitted when the retained 0057->0056->0055->0054 chain was short-circuited to avoid UFS/power double-patching.",
-    "Repair restores only Candidate0054 raw first-fault latch and adds a post-Direct-302 runtime-contract gate; Phase7 remains irrelevant to the pre-System reboot."
+    "Repair restores only Candidate0054 raw first-fault latch and adds a post-Direct-302 runtime-contract gate; Phase7 remains irrelevant to the pre-System reboot.",
+    "Commit 60f98e6da78474101f5c57dd5b1b853bf48f2a93 restores Candidate0054 raw first-fault inheritance into bounded C0059 reconstruction.",
+    "Commit 60f98e6 adds post-Direct-302 Candidate0059 runtime-contract gate covering raw latch, IPA/PAS, proc_create ABI, UFS, power, camera ownership, package-runtime and MIGT presence.",
+    "New pure Phase6 integrated run 37583148751 / job 112667183074 started from 60f98e6.",
+    "New Direct-302 scan run 37583148760 / job 112667183191 started from 60f98e6 as provenance evidence only."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
