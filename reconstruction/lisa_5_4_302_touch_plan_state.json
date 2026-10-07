@@ -48,14 +48,14 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "DONE_STATIC_ABI_IDENTITY_PACKAGING_PASS_DEVICE_EFFECT_PENDING",
+    "phase_7_touch_jank_hotpath_correction": "IMPLEMENTED_EVIDENCE_PASS_BUT_ORDERED_REVALIDATION_BLOCKED_ON_PURE_PHASE6",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
-    "phase_10_candidate0061_a16_validation": "BLOCKED_ON_REPAIRED_DIRECT_302_REBUILD",
+    "phase_10_candidate0061_a16_validation": "BLOCKED_ON_PURE_PHASE6_BASE_AND_ORDERED_PHASE7_REBUILD",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "REVALIDATION_IN_PROGRESS_RUN_37571737761"
+    "phase_6_direct_302_integrated_static_abi_gate": "PURE_BASE_REVALIDATION_QUEUED_RUN_37576020824"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,25 +99,28 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "REVALIDATION_IN_PROGRESS_AFTER_RECONSTRUCTION_PASS",
-    "abi_module_gate": "REVALIDATION_IN_PROGRESS",
-    "touch_latency_gate": "BLOCKED_ON_REPAIRED_C0061_ARTIFACT",
-    "performance_retention_gate": "BLOCKED_ON_REPAIRED_C0061_ARTIFACT",
+    "stable_uplift_gate": "PURE_PHASE6_REVALIDATION_QUEUED",
+    "abi_module_gate": "PURE_PHASE6_REVALIDATION_QUEUED",
+    "touch_latency_gate": "BLOCKED_ON_ORDERED_PHASE7_DEVICE_ARTIFACT",
+    "performance_retention_gate": "BLOCKED_ON_ORDERED_PHASE7_DEVICE_ARTIFACT",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "16c405327c66e4ddd66b1780edf29a21003583e7",
-  "last_checked_run": 37571737761,
-  "blocker": "CI_IN_PROGRESS_C0059_SAME_RUN_CONTROL_BUILD",
-  "next_action": "Inspect integrated run 37571737761 / job 112631680235. Candidate0059 reconstruction is now PASS and provenance scan 37571737667 emitted C0061_C0059_IPA_PAS_INHERITANCE=PASS plus C0059_INHERITED_SOURCE_STACK_RECREATED=PASS. The active step is Build Candidate0059 same-run ABI control. If it fails, fix the first compile/modpost blocker only. If it passes, continue the same single Direct-302 integrated sequence through compatibility, semantic closure, 5.4.302 materialization, Phase7 hot-path overlay, target compile/modpost, ABI removed=0, identity and boot packaging.",
+  "last_checked_commit": "bbe3c33ad40a88da812f08afa276649aa99f6bc0",
+  "last_checked_run": 37576020824,
+  "blocker": "CI_QUEUED_PURE_PHASE6_RUN_37576020824",
+  "next_action": "Inspect run 37576020824 from workflow commit a8fb21ad55f98453c88d1e43de46514f7073f513. This is the canonical pure Direct-302 Phase6 gate with the Phase7 hot-path step removed. Require repaired C0059 IPA/PAS inheritance PASS, Direct-302 semantic closure 34/34/0, 5.4.302 compile/modpost PASS, removed ABI symbols=0, changed/added symbols limited to the reviewed provenance set, exact identity PASS and boot packaging PASS. If it fails, fix only the first concrete Phase6 blocker. If it passes, then and only then launch a separate Phase7 rebuild and re-run static/ABI/identity/packaging before Phase10 device validation.",
   "next_expected_evidence": [
-    "Candidate0059 same-run control Image/modules/dtbs/modpost PASS",
-    "Direct-302 semantic closure remains 34 reviewed / 0 unresolved",
-    "integrated 5.4.302 Image/modules/dtbs/modpost PASS",
+    "run 37576020824 reaches runner with no Phase7 hot-path application step",
+    "C0061_C0059_IPA_PAS_INHERITANCE=PASS",
+    "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
+    "Direct-302 semantic closure 34 reviewed / 0 unresolved",
+    "pure 5.4.302 Image/modules/dtbs/modpost PASS",
     "Candidate0059 removed ABI symbols = 0",
-    "changed/added ABI symbols remain stable or reviewed MIXED_CONFLICT provenance",
-    "exact Candidate0061 kernel identity PASS",
-    "boot static packaging PASS and new boot artifact uploaded"
+    "changed CRC set remains reviewed stable xHCI set",
+    "added symbol set remains reviewed stable/MIXED_CONFLICT provenance set",
+    "exact Candidate0061 identity PASS",
+    "pure Phase6 boot static packaging PASS"
   ],
   "forbidden": [
     "global frequency pin",
@@ -457,7 +460,13 @@
     "Integrated run 37571737761 and provenance-only scan 37571737667 were queued from 803b05f.",
     "Direct-302 provenance scan 37571737667 completed SUCCESS from 803b05f.",
     "Provenance scan 37571737667 emitted C0061_C0059_IPA_PAS_INHERITANCE=PASS and C0059_INHERITED_SOURCE_STACK_RECREATED=PASS, proving the repaired bounded Candidate0059 IPA/PAS reconstruction executes successfully.",
-    "Integrated run 37571737761 passed Recreate frozen Candidate0059 source contract and Prepare Candidate0059 same-run control config; Candidate0059 same-run ABI control build is currently in progress."
+    "Integrated run 37571737761 passed Recreate frozen Candidate0059 source contract and Prepare Candidate0059 same-run control config; Candidate0059 same-run ABI control build is currently in progress.",
+    "Run 37571737761 completed SUCCESS after repaired C0059 IPA/PAS inheritance: C0061_C0059_IPA_PAS_INHERITANCE=PASS, Direct-302 34/34/0, compile/modpost, ABI removed=0, identity and packaging PASS",
+    "Exact run 37571737761 ABI JSON audited: changed=5 xHCI stable symbols, removed=0, added=11 reviewed stable/compat symbols; lisa_mtdoops_checkpoint is correctly present in the repaired C0059 control and is no longer target-only added",
+    "ABI provenance recorded in reconstruction/c0061_repaired_ipa_pas_abi_provenance_20261007.md",
+    "Ordering audit invalidated run 37571737761 as canonical Phase6 because candidate_0061_touch_jank_hotpath.py was applied before the target base build",
+    "Commit a8fb21ad55f98453c88d1e43de46514f7073f513 removes all Phase7 trigger/application/report references from the integrated Phase6 workflow",
+    "Pure Direct-302 Phase6 revalidation run 37576020824 queued from a8fb21a"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
