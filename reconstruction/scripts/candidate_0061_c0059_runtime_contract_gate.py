@@ -2,6 +2,8 @@
 """Verify Candidate0059 runtime-equivalence layers after Direct-302 materialization."""
 from __future__ import annotations
 
+# Retry marker: run 37642283969 failed before GitHub allocated any job; no kernel or gate semantics changed.
+
 import argparse
 import json
 from pathlib import Path
