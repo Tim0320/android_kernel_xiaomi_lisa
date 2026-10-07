@@ -494,21 +494,8 @@ Classification:
 ## Current next action
 
 NEXT_ACTION:
-Inspect integrated run 37571503370 from commit e10d16cb04dc01f38cd4c6688ad54e180effa238. The first gate is "Recreate frozen Candidate0059 source contract". The reconstructed source script itself must close every bounded IPA/PAS inheritance gate and emit C0061_C0059_IPA_PAS_INHERITANCE=PASS before it can emit C0059_INHERITED_SOURCE_STACK_RECREATED=PASS. If this step fails, fix only its first concrete anchor/blocker. If it passes, allow this same integrated run to continue through the single 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging sequence.
+Inspect integrated run 37571737761 from commit 803b05f1932d3109f7ec1f4f301c20f911de167d. The previous run 37571503370 reached the Candidate0059 reconstruction step and failed only because the Candidate0053 Git-blob pin calculation used a literal backslash-zero sequence instead of Git's NUL separator. Commit 803b05f corrects only that hash calculation; the pinned Candidate0053 recipe remains d3111485e075156687c5eee50546ba42417dd2fa.
 
-Expected repaired evidence:
-- pinned Candidate0053 blob = d3111485e075156687c5eee50546ba42417dd2fa;
-- no execution of Candidate0053 historical module tail/camera build;
-- C0046 block2mtd + mtdoops synchronous checkpoint prerequisites restored;
-- LISA0046 firmware SHMBridge path restored for yupik_ipa_fws / PAS 0x0f;
-- LISA0053 full 0x8b710000 / 0xA000 memory contract restored;
-- LISA0053 PAS15 dma_alloc_coherent metadata retention restored through auth_and_reset;
-- C0061_C0059_IPA_PAS_INHERITANCE=PASS;
-- Candidate0059 same-run control PASS;
-- Direct-302 semantic closure remains 34 reviewed / 0 unresolved;
-- integrated 5.4.302 Image/modules/dtbs/modpost PASS;
-- Candidate0059 removed ABI symbols = 0;
-- exact kernel identity and boot static packaging PASS;
-- a new boot artifact replaces retired artifact 11437434497.
+Require Candidate0059 source reconstruction PASS with the bounded C0046/C0053 IPA/PAS replay. If reconstruction fails, repair only its first concrete blocker. If it passes, continue the same single Direct-302 integrated 5.4.302 compile/modpost, static, ABI/KMI, identity and packaging gates. Provenance scan 37571737667 remains evidence-only and must not become an intermediate build gate.
 
-Phase10 remains blocked until the repaired integrated artifact is produced. Do not reuse artifact 11437434497 and do not restore the retired 296 -> 299 -> 302 segmented build loop.
+Phase10 remains blocked until a new repaired integrated artifact is produced. Artifact 11437434497 remains retired.
