@@ -108,16 +108,16 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "78020deb82e19a5245d2e9bb3317227885cb3b31",
+  "last_checked_commit": "0a8b115394cce4f1c5775e53322634682811d96a",
   "last_checked_run": 37655937871,
   "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN_UPDATE",
-  "next_action": "Retry the collector v1.3.6 hardening and canonical plan alignment writes. Keep Phase7 frozen. After the collector hardening is committed, use it on HyperOS 3.0.9 A16 to prove the actual runtime nfc_i2c.ko path, SHA256, vermagic and guard marker, then require a fresh boot with no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault before any WALT/MIGT/FREQ_QOS/Goodix work.",
+  "next_action": "Retry collector v1.3.6 strict-read-only hardening and canonical plan alignment. Keep Phase7/WALT/MIGT/FREQ_QOS/Goodix/PAS15 frozen. When hardening lands, use the collector on HyperOS 3.0.9 A16 to prove the actual runtime nfc_i2c.ko path, SHA256, vermagic and NFC cdev guard marker; accept Phase6 runtime only after a fresh boot has no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault.",
   "next_expected_evidence": [
-    "Collector v1.3.6 committed with strict read-only vendor_dlkm fallback and no generic read-only mount",
-    "Canonical plan records Phase6 runtime NFC deployment gate and Phase7 frozen status",
-    "Run 37655937871 remains SUCCESS with C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
+    "Collector v1.3.6 committed with no generic mount -o ro fallback; vendor_dlkm fallback limited to ext4 ro,noload or EROFS ro and records mount mode",
+    "Canonical plan records Phase6 matched NFC runtime deployment validation and keeps Phase7 frozen",
+    "Run 37655937871 / job 112910508641 remains SUCCESS with C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
     "Candidate0061 boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6",
-    "Guarded nfc_i2c.ko SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "Guarded nfc_i2c.ko SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b and vermagic 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320",
     "Device evidence proves actual runtime module path/hash/vermagic/guard",
     "Fresh boot has no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault"
   ],
@@ -560,7 +560,11 @@
     "Run 37655937871 log reconfirmed target release 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320 and boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6.",
     "Collector v1.3.5 audit found an unsafe generic vendor_dlkm fallback using mount -o ro before the ext4 ro,noload / EROFS ro attempts; strict read-only hardening is required before using that fallback as evidence.",
     "Attempt to commit collector v1.3.6 hardening was blocked by write safety review; record WRITE_PERMISSION_BLOCKED and keep kernel/Phase7 changes frozen.",
-    "2026-10-08 fresh audit: repo head is 78020deb; latest Actions run remains 37655937871 SUCCESS. Collector v1.3.6 and canonical plan alignment writes were retried but blocked by safety review; no kernel source or Phase7 change was made."
+    "2026-10-08 fresh audit: repo head is 78020deb; latest Actions run remains 37655937871 SUCCESS. Collector v1.3.6 and canonical plan alignment writes were retried but blocked by safety review; no kernel source or Phase7 change was made.",
+    "2026-10-08 05:04+08 fresh audit: repo head 0a8b115; run 37655937871 / job 112910508641 re-read and remains SUCCESS. Artifacts 11499874761, 11500359180 and 11501530106 are unexpired through 2026-10-21.",
+    "Fresh job-log verification reconfirmed C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS, nfc_i2c.ko vermagic 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320, ABI/KMI removed=0, and provenance covered=16 stable=15 mixed=1.",
+    "Collector v1.3.6 hardening write retried: planned change removes generic mount -o ro and permits only ext4 ro,noload or EROFS ro while recording mount mode; GitHub write was blocked by safety review.",
+    "Canonical plan alignment write retried to mark Phase6 matched NFC runtime deployment gate and Phase7 blocked; GitHub write was blocked by safety review. No kernel source or Phase7 change made."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
