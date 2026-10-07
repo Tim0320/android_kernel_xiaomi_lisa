@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_BOOT_PACKAGING_REPAIR",
+  "current_phase": "PHASE_10_FIXED_REGION_DEVICE_VALIDATION",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -48,14 +48,14 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_FIXED_REGION_PHASE6_DEVICE_VALIDATION",
+    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_FIXED_REGION_PHASE6_DEVICE_RESULT",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
-    "phase_10_candidate0061_a16_validation": "BLOCKED_ON_FIXED_REGION_BOOT_ARTIFACT",
+    "phase_10_candidate0061_a16_validation": "DEVICE_TEST_PENDING_ARTIFACT_11467702252",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "SOURCE_STATIC_PASS_RUN_37583148751_BOOT_PACKAGING_INVALIDATED_DYNAMIC_REPACK_REPAIR_IN_PROGRESS"
+    "phase_6_direct_302_integrated_static_abi_gate": "SOURCE_STATIC_PASS_RUN_37583148751_FIXED_REGION_PACKAGE_RECOVERY_PASS_RUN_37588835162"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,27 +99,24 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "SOURCE_STATIC_PASS_BOOT_PACKAGING_REPAIR_REQUIRED",
-    "abi_module_gate": "REMOVED_0_PENDING_STRICT_PER_SYMBOL_PROVENANCE_GATE",
+    "stable_uplift_gate": "PASS_SOURCE_STATIC_RUN_37583148751",
+    "abi_module_gate": "PASS_STRICT_PROVENANCE_16_OF_16_REMOVED_0_RUN_37588835162",
     "touch_latency_gate": "BLOCKED_ON_BOOT_TO_SYSTEM",
     "performance_retention_gate": "BLOCKED_ON_BOOT_TO_SYSTEM",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
-    "bpf_a17_gate": "BLOCKED"
+    "bpf_a17_gate": "BLOCKED",
+    "identity_gate": "PASS_R60F98E6",
+    "packaging_gate": "PASS_FIXED_REGION_AVB_RUN_37588835162"
   },
-  "last_checked_commit": "d077deeda78eb13c20167b83c7bcb9347ddfa427",
-  "last_checked_run": 37583148751,
-  "blocker": "C0061_DYNAMIC_REPACK_DROPPED_FIXED_REGION_AVB_METADATA_AFTER_EBS",
-  "next_action": "Run the package-only fixed-region recovery workflow from source run 37583148751 and hard-gate all 16 changed/added ABI symbols to stable/reviewed provenance. Publish only if the boot preserves the exact stock header page, fixed 51,436,032-byte kernel region, stock ramdisk offset/content, all bytes outside the kernel region, AVB0 metadata and AVBf footer. The corrected integrated workflow will use the same contract for future builds.",
+  "last_checked_commit": "9309f5f49d6a0c5930f0e8f7cab476d02e8d83cf",
+  "last_checked_run": 37588835162,
+  "blocker": "DEVICE_RUNTIME_EVIDENCE_PENDING_FIXED_REGION_BOOT",
+  "next_action": "Flash artifact 11467702252 (lisa-c0061-r60f98e6-fixed-region-avb-pending-device-a1), boot SHA256 ba66e9d0317cb0bc781bd2d07e60fde40904523a4b5a868b3b7e42dbe97c3e6d, on the unchanged HyperOS 3.0.9 / Android16 baseline. This uses the exact r60f98e6 Image from run 37583148751 but restores the verified Candidate0046/Candidate0059 fixed stock kernel region, ramdisk placement, AVB0 and AVBf bytes. If it still one-screen resets, collect the next TWRP deep bundle immediately before changing another partition. In parallel continue inspecting corrected integrated run 37588835164.",
   "next_expected_evidence": [
-    "C0061_ABI_PROVENANCE_GATE=PASS covered=16 stable=15 mixed=1 removed=0",
-    "C0061_FIXED_REGION_BOOT_GATE=PASS",
-    "header page byte-exact to stock",
-    "fixed kernel region size 51436032 with rebuilt Image prefix and zero padding",
-    "stock ramdisk byte-exact at offset 51441664",
-    "changed bytes outside kernel region = 0",
-    "stock AVB0 embedded vbmeta byte-exact",
-    "stock AVBf footer byte-exact",
-    "new fixed-region boot artifact and SHA256 for device validation"
+    "device reaches Linux/System with fixed-region boot artifact 11467702252",
+    "or fresh persistent evidence that differs from the morning oops/minidump/rawdump hashes",
+    "corrected integrated workflow run 37588835164 completes strict ABI provenance and fixed-region packaging gates",
+    "if device boot succeeds, proceed to ordered Phase7 touch/jank artifact only after recording kernel identity"
   ],
   "forbidden": [
     "global frequency pin",
@@ -492,7 +489,12 @@
     "Latest logfs changed and shows mission-mode boot loading boot_a/vendor_boot_a, orange-state authentication, DT overlay and Start EBS, followed by a later PSHOLD hard-reset boot.",
     "Binary A/B found working Candidate0059 boot preserves stock fixed 51436032-byte kernel region, stock ramdisk offset, AVB0 embedded vbmeta and AVBf footer; failed C0061 r60f98e6 dynamic repack moved the ramdisk and zeroed the AVB tail.",
     "C0061 r60f98e6 rejected boot SHA256 abc3568d8c18899d30186c34ccd2198cf2def92f2f1d0809224524551bb6b462.",
-    "Strict ABI audit inventory is changed=5 XHCI symbols, added=11 symbols, removed=0; a per-symbol provenance hard gate is required before the replacement boot is published."
+    "Strict ABI audit inventory is changed=5 XHCI symbols, added=11 symbols, removed=0; a per-symbol provenance hard gate is required before the replacement boot is published.",
+    "Package-only recovery run 37588835162 / job 112685186992 completed SUCCESS from commit 9309f5f.",
+    "Strict ABI provenance gate PASS: covered=16, stable=15, mixed=1, removed=0.",
+    "Fixed-region packaging gate PASS with stock header page byte-exact, fixed kernel region 51436032 bytes, ramdisk offset 51441664, fixed logical end 71327744, embedded AVB0 vbmeta offset 71327744 size 896, and AVBf footer byte-exact.",
+    "New fixed-region boot artifact 11467702252 has boot SHA256 ba66e9d0317cb0bc781bd2d07e60fde40904523a4b5a868b3b7e42dbe97c3e6d.",
+    "Artifact 11467702252 reuses exact r60f98e6 Image SHA256 065b762f369a18fa5d427e71dae0754bad253be2e8848ce568e73bdb6c1cf9f5; only packaging semantics changed from rejected dynamic boot abc3568d...."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
