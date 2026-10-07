@@ -361,6 +361,25 @@ jobs:
           sha256sum kernel/out/arch/arm64/boot/Image | tee candidate-0061-integrated-Image.sha256
           echo C0061_INTEGRATED_302_COMPILE_MODPOST=PASS
 
+
+      - name: Inventory guarded NFC runtime module
+        id: nfc_module_inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          find kernel/out -type f -name '*.ko' -print | sort | tee candidate-0061-module-inventory.txt
+          mapfile -t nfcmods < <(find kernel/out -type f -name '*.ko' | grep -E '/nfc(_i2c)?\.ko$|/drivers/nfc/qti/' || true)
+          printf '%s\n' "${nfcmods[@]}" | sed '/^$/d' | tee candidate-0061-nfc-module-candidates.txt
+          test "${#nfcmods[@]}" -ge 1
+          mkdir -p candidate-0061-runtime-modules
+          : > candidate-0061-nfc-module-modinfo.txt
+          for m in "${nfcmods[@]}"; do
+            cp -av "$m" candidate-0061-runtime-modules/
+            strings "$m" | grep -F 'NFC cdev unavailable' >/dev/null
+            modinfo "$m" 2>/dev/null | tee -a candidate-0061-nfc-module-modinfo.txt || true
+          done
+          echo 'C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS' | tee candidate-0061-nfc-runtime-module-gate.txt
+
       - name: Audit integrated 5.4.302 ABI and KMI
         id: abi
         if: ${{ steps.target_build.outcome == 'success' }}
@@ -554,6 +573,11 @@ jobs:
             kernel/out/Module.symvers
             kernel/out/System.map
             kernel/out/arch/arm64/boot/Image
+            candidate-0061-module-inventory.txt
+            candidate-0061-nfc-module-candidates.txt
+            candidate-0061-nfc-module-modinfo.txt
+            candidate-0061-nfc-runtime-module-gate.txt
+            candidate-0061-runtime-modules
 
       - name: Report Direct-302 scan evidence
         if: ${{ always() }}
