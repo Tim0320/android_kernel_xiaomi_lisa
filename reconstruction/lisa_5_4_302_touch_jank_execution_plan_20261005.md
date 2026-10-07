@@ -478,9 +478,14 @@ Decision:
 - replay only the pinned Candidate0046 prerequisites plus Candidate0053 IPA full-region and PAS15 metadata-retention endpoints inside the C0061 Candidate0059 reconstruction path;
 - require C0061_C0059_IPA_PAS_INHERITANCE=PASS before the integrated compile/static/ABI/identity/packaging gate can be accepted again.
 
-Repair commits:
-- 9dd3fba887d0b543c21d54f898e2ef423b06bca4 — bounded C0046 -> C0053 IPA/PAS reconstruction replay;
-- 74597be686dd43270002e938f8f9c953f0539f88 — integrated workflow hard gate for C0061_C0059_IPA_PAS_INHERITANCE=PASS.
+Repair history:
+- 9dd3fba887d0b543c21d54f898e2ef423b06bca4 — initial bounded C0046 -> C0053 replay; integrated run 37571219318 proved the first real blocker was importing candidate_0053_build.py, whose module tail auto-starts the historical C0053 build and aborts because Candidate0018 IKCONFIG is not present in the C0061 workspace.
+- 74597be686dd43270002e938f8f9c953f0539f88 / 90894032203d2b0440be09c3eeab060f78a733e4 / 8807914fcbdfb1bc22c5a8b84345a9d30e594ea1 — superseded workflow-edit attempts; invalid before runner allocation because a JavaScript replacement-token expansion corrupted the YAML payload. These are workflow/tooling failures, not kernel evidence.
+- e10d16cb04dc01f38cd4c6688ad54e180effa238 — current repair: pin Candidate0053 blob d3111485e075156687c5eee50546ba42417dd2fa, AST-extract only patch_ipa_pas_metadata_dma_retention() and candidate0053_patch_ipa_pas_shmbridge(), avoid all C0053 module-tail side effects, and restore the last known-valid integrated workflow blob.
+
+Current CI:
+- integrated run 37571503370 / job 112630951523: in progress from e10d16c;
+- Direct-302 provenance scan 37571503382 / job 112630951238: in progress from e10d16c and remains provenance-only, not an intermediate compile/build gate.
 
 Classification:
 - primary failure class: STABLE_UPLIFT;
@@ -489,17 +494,21 @@ Classification:
 ## Current next action
 
 NEXT_ACTION:
-Inspect the newest integrated Candidate0061 workflow triggered by repair commit 74597be686dd43270002e938f8f9c953f0539f88. The first required evidence is C0061_C0059_IPA_PAS_INHERITANCE=PASS during "Recreate frozen Candidate0059 source contract". If that step fails, fix the first concrete reconstruction anchor/blocker and push a bounded repair. If it passes, require the same single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gates again.
+Inspect integrated run 37571503370 from commit e10d16cb04dc01f38cd4c6688ad54e180effa238. The first gate is "Recreate frozen Candidate0059 source contract". The reconstructed source script itself must close every bounded IPA/PAS inheritance gate and emit C0061_C0059_IPA_PAS_INHERITANCE=PASS before it can emit C0059_INHERITED_SOURCE_STACK_RECREATED=PASS. If this step fails, fix only its first concrete anchor/blocker. If it passes, allow this same integrated run to continue through the single 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging sequence.
 
-Acceptance for the repaired integrated run:
+Expected repaired evidence:
+- pinned Candidate0053 blob = d3111485e075156687c5eee50546ba42417dd2fa;
+- no execution of Candidate0053 historical module tail/camera build;
+- C0046 block2mtd + mtdoops synchronous checkpoint prerequisites restored;
+- LISA0046 firmware SHMBridge path restored for yupik_ipa_fws / PAS 0x0f;
+- LISA0053 full 0x8b710000 / 0xA000 memory contract restored;
+- LISA0053 PAS15 dma_alloc_coherent metadata retention restored through auth_and_reset;
 - C0061_C0059_IPA_PAS_INHERITANCE=PASS;
-- Candidate0059 same-run control build PASS;
+- Candidate0059 same-run control PASS;
 - Direct-302 semantic closure remains 34 reviewed / 0 unresolved;
 - integrated 5.4.302 Image/modules/dtbs/modpost PASS;
 - Candidate0059 removed ABI symbols = 0;
-- changed/added ABI remains stable or reviewed MIXED_CONFLICT provenance;
-- exact 5.4.302 Candidate0061 kernel identity PASS;
-- boot static packaging PASS;
-- a new boot artifact is produced.
+- exact kernel identity and boot static packaging PASS;
+- a new boot artifact replaces retired artifact 11437434497.
 
-Do not return to Phase10 device validation until this repaired integrated build is complete. Do not reuse artifact 11437434497.
+Phase10 remains blocked until the repaired integrated artifact is produced. Do not reuse artifact 11437434497 and do not restore the retired 296 -> 299 -> 302 segmented build loop.
