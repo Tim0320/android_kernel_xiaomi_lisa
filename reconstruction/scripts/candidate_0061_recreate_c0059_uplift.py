@@ -12,6 +12,7 @@ def main():
     sys.path.insert(0,str(root/"reconstruction/scripts"))
 
     import candidate_0046_build as c46
+    import candidate_0053_build as c53
     import candidate_0050_proc_abi_patch as proc50
     import candidate_0056_power_patch as power
     import candidate_0059_ownership_patch as ownership
@@ -29,6 +30,45 @@ def main():
 
     c46.ROOT=root; c46.KERNEL=kernel; c46.OUT=kernel/"out"
     c46.patch_qgki_module_abi()
+
+    # Candidate0059 was built through the 0054 -> 0053 -> 0046 lineage.  The
+    # frozen source checkout predates those recipe-time IPA/PAS mutations, so
+    # recreating C0059 must replay the verified Lisa/Yupik runtime contract as
+    # well as the ABI/performance overlays.  Keep the historical builders
+    # pinned and invoke only the bounded prerequisites plus the two C0053 IPA
+    # endpoint adaptations; do not execute a historical build or copy donor
+    # sources wholesale.
+    c46.patch_block2mtd_devpath()
+    c46.patch_mtdoops_persistence()
+    c46.patch_mtdoops_periodic_snapshot()
+    c46.patch_mtdoops_fast_snapshot_io()
+    c46.patch_ipa_pil_stage_trace()
+    c46.patch_ipa_pas_sync_checkpoint()
+
+    c53.ROOT=root; c53.KERNEL=kernel; c53.OUT=kernel/"out"
+    c53.base.ROOT=root; c53.base.KERNEL=kernel; c53.base.OUT=kernel/"out"
+    c53.candidate0053_patch_ipa_pas_shmbridge()
+    c53.patch_ipa_pas_metadata_dma_retention()
+
+    ipa_tz=(kernel/"drivers/soc/qcom/subsys-pil-tz.c").read_text()
+    scm=(kernel/"drivers/firmware/qcom_scm.c").read_text()
+    mtd=(kernel/"drivers/mtd/mtdoops.c").read_text()
+    mounts=(kernel/"init/do_mounts.c").read_text()
+    yupik=(kernel/"arch/arm64/boot/dts/vendor/qcom/yupik.dtsi").read_text()
+    ipa_gates = (
+        ("block2mtd Lisa devpath", "defined(CONFIG_BOARD_XIAOMI_LISA)" in mounts),
+        ("synchronous mtdoops checkpoint", "void lisa_mtdoops_checkpoint(const char *tag)" in mtd),
+        ("PAS pre-auth checkpoint", 'lisa_mtdoops_checkpoint("ipa_before_pas_auth_reset");' in ipa_tz),
+        ("firmware SHMBridge", "qtee_shmbridge_register(d->lisa_ipa_fw_addr" in ipa_tz),
+        ("C0053 full-region endpoint", "LISA0053_IPA_REGION stage=mem_setup_full" in ipa_tz),
+        ("PAS15 metadata retention", "LISA0053_IPA_METADATA stage=after_auth_reset" in scm),
+        ("Yupik IPA reserved region", "reg = <0x0 0x8b710000 0x0 0xa000>;" in yupik),
+        ("Yupik IPA firmware identity", 'qcom,firmware-name = "yupik_ipa_fws";' in yupik),
+    )
+    missing = [name for name, ok in ipa_gates if not ok]
+    if missing:
+        raise RuntimeError("Candidate0059 IPA/PAS inheritance gate missing: " + ", ".join(missing))
+    print("C0061_C0059_IPA_PAS_INHERITANCE=PASS")
     proc50.apply(root,kernel)
     ownership.retained=lambda _root: SimpleNamespace(apply=lambda _r,_k: None)
     ownership.apply(root,kernel)
