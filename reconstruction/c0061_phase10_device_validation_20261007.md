@@ -8,23 +8,26 @@ Frozen comparison reference: Candidate0059 r43da7c5
 
 ## Static-verified Candidate0061 under test
 
-- Build commit: `55105aacd809e748de41230c3ad11ca98ef8cd05`
-- Integrated run: `37513703360`
-- Kernel release: `5.4.302-qgki-lisa-c0061-r55105aa-by-Tim0320`
-- Static-verified boot artifact: `11437434497`
+- Build commit: `803b05f1932d3109f7ec1f4f301c20f911de167d`
+- Integrated run: `37571737761`
+- Kernel release: `5.4.302-qgki-lisa-c0061-r803b05f-by-Tim0320`
+- Static-verified boot artifact: `11462052521`
 - Artifact name: `lisa-c0061-5.4.302-static-verified-pending-device-a1`
-- boot.img SHA256: `65e94493f1b41cc889074b3ccc9c19bfea6977c50b0a56754c535aeb9889f8d4`
-- Kernel Image SHA256: `542c80563f11f759ce8837fd8526acb751af701097042e6bc8033fa12d1a77a6`
+- boot.img SHA256: `ffcad0916bd53d17d6c8bd8f336dab878a2862404846e390fc00c7bb48bb38e7`
+- Kernel Image SHA256: `5b3bd0f7e12ee729da7c83b78909c90696cfc22ef5a9b543224c7b8ceec84e3f`
 
 ## Automated gates already complete
 
-Run 37513703360 passed:
+Run 37571737761 passed:
+- repaired Candidate0059 IPA/PAS inheritance: PASS
 - Direct-302 semantic closure: 34 reviewed / 0 unresolved
 - Phase7A TOUCH_PERF_ONLY overlay
 - Image/modules/dtbs/modpost
 - ABI/KMI with removed symbols = 0
 - exact kernel identity
 - boot static packaging and metadata preservation
+
+Artifact 11437434497 is retired because it failed with a one-screen reset before System and was later shown to have an incomplete Candidate0059 IPA/PAS reconstruction. Artifact 11462052521 is the repaired Phase10 candidate.
 
 No additional kernel source change is justified until runtime evidence exists.
 
