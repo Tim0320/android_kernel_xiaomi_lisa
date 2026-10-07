@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_7_TOUCH_JANK_HOTPATH_CORRECTION",
+  "current_phase": "PHASE_10_CANDIDATE0061_A16_VALIDATION",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -48,10 +48,10 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "ACTIVE_PHASE7A_PAUSE_DECOUPLED_RERUN_QUEUED",
+    "phase_7_touch_jank_hotpath_correction": "DONE_STATIC_ABI_IDENTITY_PACKAGING_PASS_DEVICE_EFFECT_PENDING",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
-    "phase_10_candidate0061_a16_validation": "NOT_STARTED",
+    "phase_10_candidate0061_a16_validation": "DEVICE_VALIDATION_PENDING",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "DIRECT_302_FULL_SCAN_PASS_33_RAW_SEMANTIC_PATHS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
@@ -101,23 +101,27 @@
   "gates": {
     "stable_uplift_gate": "PASS",
     "abi_module_gate": "PASS_C0061_REMOVED_0",
-    "touch_latency_gate": "FAIL_ON_C0059_USERB",
-    "performance_retention_gate": "PASS_SUBJECTIVE_ON_C0059_USERB",
+    "touch_latency_gate": "PENDING_C0061_DEVICE_VALIDATION",
+    "performance_retention_gate": "PENDING_C0061_DEVICE_VALIDATION",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "55105aacd809e748de41230c3ad11ca98ef8cd05",
+  "last_checked_commit": "5ef75c195bbf229a24533e46f146358da1062673",
   "last_checked_run": 37513703360,
-  "blocker": "NONE_PHASE7A_PAUSE_DECOUPLED_RUN_37513703360_QUEUED",
-  "next_action": "Inspect integrated run 37513703360 from commit 55105aa. Run 37508028472 already proved the Phase7A overlay can pass apply, compile/modpost, ABI removed=0, exact identity and boot packaging, but that boot is static evidence only because the first pause implementation called package_runtime_should_stop(), whose Stage9 strong implementation maps to migt_boost_policy==0 and could pause package-runtime accounting by default. Commit 55105aa replaces that with an internal weak c0061_pkg_runtime_should_pause() default false, fully decoupled from MIGT boost_policy, while preserving system_long_wq deferred user-history rolling, task history, and migt_hook accounting. Require the same full integrated gates to PASS again before labeling the boot device-validation-pending.",
+  "blocker": "DEVICE_RUNTIME_EVIDENCE_PENDING",
+  "next_action": "Test Candidate0061 static-verified boot artifact 11437434497 from run 37513703360 on the active HyperOS 3.0.9 / Android 16 baseline. Expected kernel release is 5.4.302-qgki-lisa-c0061-r55105aa-by-Tim0320 and boot SHA256 is 65e94493f1b41cc889074b3ccc9c19bfea6977c50b0a56754c535aeb9889f8d4. Confirm boot stability, SELinux Enforcing, Wi-Fi, battery/charging and UFS/data; reproduce the Candidate0059 touch workload; run reconstruction/tools/collect_lisa_touch_runtime.ps1 and provide the resulting zip. If touch still regresses with normal Goodix IRQ delivery, enter Phase 8 FREQ_QOS/Qualcomm touch-boost isolation. Do not modify kernel source before runtime evidence.",
   "next_expected_evidence": [
-    "Run 37513703360 reaches runner and Phase7 overlay apply PASS",
-    "C0061_TOUCH_JANK_HOTPATH=PASS with pause_decoupled_from_migt_boost_policy=true",
-    "no reference from Phase7 overlay to package_runtime_should_stop or migt_boost_policy",
-    "integrated 5.4.302 compile/modpost PASS",
-    "ABI/KMI removed_symbol_count=0",
-    "exact identity PASS",
-    "boot static packaging PASS and new artifact uploaded"
+    "actual kernel release exactly 5.4.302-qgki-lisa-c0061-r55105aa-by-Tim0320",
+    "sys.boot_completed=1 and stable runtime",
+    "SELinux Enforcing",
+    "Wi-Fi PASS",
+    "battery reporting and charging PASS",
+    "UFS/data PASS",
+    "no new panic/oops/watchdog/RCU stall",
+    "Goodix IRQ rate/affinity/spurious evidence under repeatable touch workload",
+    "MIGT/package-runtime and cpufreq state capture",
+    "touch result versus Candidate0059 User B",
+    "jank/performance retention result versus Candidate0059 User B"
   ],
   "forbidden": [
     "global frequency pin",
@@ -442,7 +446,12 @@
     "Run 37508028472 completed SUCCESS through Phase7A overlay apply, compile/modpost, ABI removed=0, identity and boot static packaging; artifact 11436515059 produced but held as static evidence only due pause/MIGT semantic coupling",
     "Phase7A semantic audit found package_runtime_should_stop is strongly implemented by Stage9 as migt_boost_policy==0, which could pause package-runtime accounting at default boost_policy=0",
     "Commit 55105aacd809e748de41230c3ad11ca98ef8cd05 decouples Phase7 pause using internal weak c0061_pkg_runtime_should_pause() default false while preserving deferred system_long_wq history roll and task/MIGT accounting",
-    "Integrated rerun 37513703360 queued from 55105aa"
+    "Integrated rerun 37513703360 queued from 55105aa",
+    "Integrated run 37513703360 completed SUCCESS from 55105aa: Phase7A overlay, compile/modpost, ABI removed=0, exact identity and boot packaging all PASS",
+    "Final Candidate0061 Phase7A static-verified boot artifact 11437434497 produced; boot SHA256 65e94493f1b41cc889074b3ccc9c19bfea6977c50b0a56754c535aeb9889f8d4; Image SHA256 542c80563f11f759ce8837fd8526acb751af701097042e6bc8033fa12d1a77a6",
+    "Phase10 device validation manifest added at reconstruction/c0061_phase10_device_validation_20261007.md",
+    "Phase10 runtime collector expanded at reconstruction/tools/collect_lisa_touch_runtime.ps1 to capture kernel identity, SELinux, Wi-Fi, battery/charging, UFS/data, Goodix IRQ, cpufreq, MIGT/package-runtime, logcat and dmesg",
+    "No further kernel source change is justified until Candidate0061 runtime evidence is captured"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
