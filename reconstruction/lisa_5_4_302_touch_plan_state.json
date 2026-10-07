@@ -108,19 +108,18 @@
     "identity_gate": "PASS_R60F98E6",
     "packaging_gate": "PASS_FIXED_REGION"
   },
-  "last_checked_commit": "e80d6950c548a8c21250283b6321ec3ad0931417",
-  "last_checked_run": 37595343926,
-  "blocker": "DEVICE_OOPS_NFC_CDEV_NULL_RACE_AT_41S",
-  "next_action": "Rebuild pure Direct-302 C0061 with a target-only NFC cdev guard after the C0059/runtime-contract gates. Require C0061_NFC_CDEV_GUARD=PASS, compile/modpost, ABI removed=0 with strict provenance, exact identity and fixed-region packaging. Device retest must confirm the nfc_dev_open fault at ffffffffffffffc8 disappears; use fresh oops delta for any next blocker.",
+  "last_checked_commit": "20b187cdd1acd4782fba166ad7e9f7d5230007ae",
+  "last_checked_run": 37617885939,
+  "blocker": "CI_IN_PROGRESS_NFC_CDEV_RUNTIME_FIX",
+  "next_action": "Inspect integrated run 37617885939 / job 112780569976. Require the target-only NFC cdev guard to pass before target config/build, then require compile/modpost, strict ABI provenance with removed=0, exact identity and fixed-region packaging. If the run fails, fix only the first concrete blocker. If it succeeds, publish the new boot for device retest and verify the nfc_dev_open fault at ffffffffffffffc8 disappears.",
   "next_expected_evidence": [
     "C0061_NFC_CDEV_GUARD=PASS",
-    "nfc_dev_open validates inode->i_cdev before container_of",
-    "nfc_dev_close prefers filp->private_data and safely returns -ENODEV if unavailable",
-    "5.4.302 compile/modpost PASS",
+    "target 5.4.302 compile/modpost PASS",
     "strict ABI provenance removed=0",
-    "identity and fixed-region packaging PASS",
-    "device retest has no nfc_dev_open/mutex_lock fault at ffffffffffffffc8",
-    "fresh oops/sda17 evidence if another blocker remains"
+    "exact Candidate0061 identity PASS",
+    "fixed-region AVB packaging PASS",
+    "new device boot artifact",
+    "device retest has no nfc_dev_open/mutex_lock fault at ffffffffffffffc8"
   ],
   "forbidden": [
     "global frequency pin",
@@ -518,7 +517,9 @@
     "Fresh Oops identifies exact running kernel 5.4.302-qgki-lisa-c0061-r4f85557-by-Tim0320 and Android userspace activity around 40 seconds.",
     "First concrete runtime Oops: PID 2145 nqnfcinfo, fault ffffffffffffffc8, ESR 96000005, pc mutex_lock+0x18/0x40, lr nfc_dev_open+0x30/0xf0 [nfc_i2c].",
     "Source analysis proves container_of(NULL inode->i_cdev, nfc_dev.c_dev) maps dev_ref_mutex to the observed negative 0x38 address; target-only guard will return -ENODEV instead of crashing.",
-    "IPA PAS15 still returns -22 in the fresh log but is not the first blocker because the device proceeds into Android userspace."
+    "IPA PAS15 still returns -22 in the fresh log but is not the first blocker because the device proceeds into Android userspace.",
+    "Commit 20b187cdd1acd4782fba166ad7e9f7d5230007ae adds the target-only NFC cdev guard derived from the r4f85557 device Oops.",
+    "New integrated run 37617885939 / job 112780569976 started from 20b187c."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
