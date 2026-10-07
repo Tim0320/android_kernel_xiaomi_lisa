@@ -108,20 +108,20 @@
     "identity_gate": "PASS_R60F98E6",
     "packaging_gate": "PASS_FIXED_REGION_NOT_SUFFICIENT"
   },
-  "last_checked_commit": "90137499edada3efae413f70ef625debe4450e24",
-  "last_checked_run": 37594316840,
-  "blocker": "C0059_WATCHDOG_KCONFIG_RANGE_INHERITANCE_MISSING",
-  "next_action": "Inspect the new pure Phase6 run after replaying Candidate0046 patch_stock_watchdog_timings(). Require qxm_ipa + watchdog reconstruction markers, control config 20000/15000, post-302 qxm_ipa plus watchdog default/range runtime-contract PASS, then compile/modpost, ABI provenance, identity and fixed-region packaging.",
+  "last_checked_commit": "4f855572394924e506bc10eb369bd1327997c891",
+  "last_checked_run": 37595343926,
+  "blocker": "CI_IN_PROGRESS_C0059_WATCHDOG_KCONFIG_REPAIR",
+  "next_action": "Inspect integrated run 37595343926 / job 112706501518. Require Candidate0059 reconstruction to pass qxm_ipa and stock-watchdog Kconfig inheritance gates, then verify control olddefconfig retains bark=20000 pet=15000. Continue through post-Direct-302 qxm_ipa/watchdog runtime-contract gates and the normal Direct-302 compile/ABI/identity/fixed-region packaging gates. Fix only the first concrete blocker if it fails.",
   "next_expected_evidence": [
     "C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS",
     "C0061_C0059_STOCK_WATCHDOG_KCONFIG_INHERITANCE=PASS",
     "C0061_C0059_STOCK_WATCHDOG_FINAL_GATE=PASS",
-    "control bark=20000 pet=15000 survives olddefconfig",
-    "post-302 qxm_ipa runtime-contract PASS",
-    "post-302 watchdog default/range runtime-contract PASS",
+    "control olddefconfig bark=20000 pet=15000",
+    "post-302 qxm_ipa and watchdog runtime-contract PASS",
     "Direct-302 semantic closure 34 reviewed / 0 unresolved",
     "5.4.302 compile/modpost PASS",
-    "strict ABI provenance and fixed-region packaging PASS"
+    "strict ABI provenance 16/16 removed=0",
+    "identity and fixed-region packaging PASS"
   ],
   "forbidden": [
     "global frequency pin",
@@ -511,7 +511,10 @@
     "Run 37594316840 failed at Prepare Candidate0059 same-run control config before control compilation.",
     "qxm_ipa reconstruction itself passed in failed run 37594316840: C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS.",
     "Frozen 5.4.289 Kconfig hard-ranges watchdog bark=11000..11000 and pet=9360..9360, so olddefconfig rejected direct scripts/config requests for 20000/15000.",
-    "Real Candidate0046->0059 recipe uses patch_stock_watchdog_timings() to widen defaults/ranges before olddefconfig; C0061 reconstruction had omitted this bounded recipe layer."
+    "Real Candidate0046->0059 recipe uses patch_stock_watchdog_timings() to widen defaults/ranges before olddefconfig; C0061 reconstruction had omitted this bounded recipe layer.",
+    "Commit 4f855572394924e506bc10eb369bd1327997c891 restores Candidate0046 patch_stock_watchdog_timings() into bounded C0059 reconstruction.",
+    "New integrated run 37595343926 / job 112706501518 started from 4f85557.",
+    "New Direct-302 scan run 37595344060 queued from 4f85557 as provenance evidence only."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
