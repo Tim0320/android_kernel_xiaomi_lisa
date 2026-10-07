@@ -108,7 +108,7 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "0a8b115394cce4f1c5775e53322634682811d96a",
+  "last_checked_commit": "23154b60c5f5e51d5bec9e70ef541ab34354aaba",
   "last_checked_run": 37655937871,
   "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN_UPDATE",
   "next_action": "Retry collector v1.3.6 strict-read-only hardening and canonical plan alignment. Keep Phase7/WALT/MIGT/FREQ_QOS/Goodix/PAS15 frozen. When hardening lands, use the collector on HyperOS 3.0.9 A16 to prove the actual runtime nfc_i2c.ko path, SHA256, vermagic and NFC cdev guard marker; accept Phase6 runtime only after a fresh boot has no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault.",
@@ -564,7 +564,13 @@
     "2026-10-08 05:04+08 fresh audit: repo head 0a8b115; run 37655937871 / job 112910508641 re-read and remains SUCCESS. Artifacts 11499874761, 11500359180 and 11501530106 are unexpired through 2026-10-21.",
     "Fresh job-log verification reconfirmed C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS, nfc_i2c.ko vermagic 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320, ABI/KMI removed=0, and provenance covered=16 stable=15 mixed=1.",
     "Collector v1.3.6 hardening write retried: planned change removes generic mount -o ro and permits only ext4 ro,noload or EROFS ro while recording mount mode; GitHub write was blocked by safety review.",
-    "Canonical plan alignment write retried to mark Phase6 matched NFC runtime deployment gate and Phase7 blocked; GitHub write was blocked by safety review. No kernel source or Phase7 change made."
+    "Canonical plan alignment write retried to mark Phase6 matched NFC runtime deployment gate and Phase7 blocked; GitHub write was blocked by safety review. No kernel source or Phase7 change made.",
+    "2026-10-08 05:46+08 fresh audit: repo head 23154b60; latest accepted Direct-302 Actions run remains 37655937871 / job 112910508641 and all 36 job steps re-read as SUCCESS.",
+    "Fresh job-log audit reconfirmed C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS, target release 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320, boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6, ABI removed=0 and provenance covered=16 stable=15 mixed=1.",
+    "Run 37655937871 artifacts 11499874761, 11500359180 and 11501530106 are unexpired through 2026-10-21.",
+    "Repo-wide search found no committed vendor_dlkm image/build recipe; stock vendor_boot.img is a 100663296-byte Git LFS object, so runtime NFC module location must not be assumed from repository packaging alone.",
+    "AOSP module-layout audit confirms second-stage vendor kernel modules are consumed via /vendor/lib/modules and may be backed by vendor_dlkm; this supports validating the actual runtime module before any bounded deployment.",
+    "Collector v1.3.6 write retry and canonical plan alignment write retry were both blocked by OpenAI safety review this round; no kernel source, Phase7, WALT, MIGT/FREQ_QOS, Goodix or PAS15 change was made."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
