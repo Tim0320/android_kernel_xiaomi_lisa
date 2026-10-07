@@ -39,6 +39,13 @@ def main():
     c46.patch_yupik()
     print("C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS")
 
+    # Candidate0046->0059 also rewrites the fixed 11s/9.36s Kconfig ranges to
+    # the healthy-stock 20s/15s envelope before olddefconfig. Merely calling
+    # scripts/config is insufficient because the original range constraints
+    # force the values back to 11000/9360.
+    c46.patch_stock_watchdog_timings()
+    print("C0061_C0059_STOCK_WATCHDOG_KCONFIG_INHERITANCE=PASS")
+
     # Candidate0059 was built through the 0054 -> 0053 -> 0046 lineage.  The
     # frozen source checkout predates those recipe-time IPA/PAS mutations, so
     # recreating C0059 must replay the verified Lisa/Yupik runtime contract as
@@ -122,6 +129,17 @@ def main():
     missing = [name for name, ok in ipa_gates if not ok]
     if missing:
         raise RuntimeError("Candidate0059 IPA/PAS inheritance gate missing: " + ", ".join(missing))
+    kconfig=(kernel/"drivers/soc/qcom/Kconfig").read_text()
+    watchdog_gates = (
+        ("watchdog bark default", "default 20000" in kconfig),
+        ("watchdog bark range", "range 11000 20000" in kconfig),
+        ("watchdog pet default", "default 15000" in kconfig),
+        ("watchdog pet range", "range 9360 15000" in kconfig),
+    )
+    watchdog_missing = [name for name, ok in watchdog_gates if not ok]
+    if watchdog_missing:
+        raise RuntimeError("Candidate0059 watchdog Kconfig inheritance gate missing: " + ", ".join(watchdog_missing))
+    print("C0061_C0059_STOCK_WATCHDOG_FINAL_GATE=PASS")
     print("C0061_C0059_IPA_PAS_INHERITANCE=PASS")
 
     raw_fault=(kernel/"arch/arm64/mm/fault.c").read_text()

@@ -613,7 +613,29 @@ Repair:
 
 Classification: MIXED_CONFLICT / C0059_RUNTIME_EQUIVALENCE.
 
+## 2026-10-07 16:33 qxm-IPA rebuild CI failure: watchdog Kconfig recipe inheritance missing
+
+Run 37594316840 failed at Prepare Candidate0059 same-run control config before any kernel build.
+
+First concrete blocker:
+- scripts/config requested QCOM_WATCHDOG_BARK_TIME=20000 and PET_TIME=15000;
+- frozen 5.4.289 drivers/soc/qcom/Kconfig constrains bark to default/range 11000..11000 and pet to 9360..9360;
+- olddefconfig therefore correctly normalized the requested values back to 11000/9360 and the new equivalence grep failed.
+
+This is another bounded Candidate0046->0059 recipe inheritance omission, not a new kernel failure:
+- Candidate0046 patch_stock_watchdog_timings() changes bark default to 20000 with range 11000..20000;
+- changes pet default to 15000 with range 9360..15000;
+- then writes the healthy-stock values to .config;
+- real Candidate0059 inherits that recipe.
+
+Repair:
+- replay c46.patch_stock_watchdog_timings() immediately after c46.patch_yupik() in bounded Candidate0059 reconstruction;
+- require pre-build watchdog Kconfig inheritance markers;
+- require post-Direct-302 runtime-contract preservation of all four watchdog default/range invariants;
+- retain qxm_ipa hard-disable as the primary early-runtime repair;
+- do not treat watchdog timing alone as root cause because Candidate0011 already disproved that.
+
 ## Current next action
 
 NEXT_ACTION:
-Inspect the new pure Direct-302 Phase6 run triggered by this repair. Require C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS before the control build; require Candidate0059 watchdog 20000/15000 in control and target; require post-302 qxm_ipa hard-disable/qosbox NULL/runtime marker PASS before target compilation; then require 34/34 semantic closure, compile/modpost, strict 16/16 ABI provenance, identity, fixed-region AVB packaging, and a new device artifact. If the new boot still fails, compare the next persistent evidence specifically against Candidate0018/0019 early-Linux interconnect fault lineage before changing PAS, touch, or frequency controls.
+Inspect the new pure Direct-302 Phase6 run triggered by the watchdog-Kconfig inheritance repair. Require both qxm_ipa and stock-watchdog reconstruction markers before control config; require control olddefconfig to retain 20000/15000; after Direct-302 require qxm_ipa and all four watchdog Kconfig runtime-contract markers; then proceed through semantic closure, compile/modpost, strict ABI provenance, identity and fixed-region packaging. If another CI step fails, fix only the first concrete blocker.

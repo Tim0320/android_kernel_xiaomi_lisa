@@ -121,6 +121,8 @@ jobs:
             2>&1 | tee candidate-0061-direct-302-c0059-source.log
           grep -q '^C0061_C0059_IPA_PAS_INHERITANCE=PASS$' candidate-0061-direct-302-c0059-source.log
           grep -q '^C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS$' candidate-0061-direct-302-c0059-source.log
+          grep -q '^C0061_C0059_STOCK_WATCHDOG_KCONFIG_INHERITANCE=PASS$' candidate-0061-direct-302-c0059-source.log
+          grep -q '^C0061_C0059_STOCK_WATCHDOG_FINAL_GATE=PASS$' candidate-0061-direct-302-c0059-source.log
           grep -q '^C0061_C0059_RAW_LATCH_INHERITANCE=PASS$' candidate-0061-direct-302-c0059-source.log
           grep -q '^C0061_C0059_RAW_LATCH_FINAL_GATE=PASS$' candidate-0061-direct-302-c0059-source.log
           grep -q '^C0059_INHERITED_SOURCE_STACK_RECREATED=PASS$' candidate-0061-direct-302-c0059-source.log
@@ -293,6 +295,10 @@ jobs:
           grep -q '^RUNTIME_CONTRACT_qxm_ipa_qos_hard_disabled=1$' candidate-0061-post-302-runtime-contract.log
           grep -q '^RUNTIME_CONTRACT_qxm_ipa_qosbox_null=1$' candidate-0061-post-302-runtime-contract.log
           grep -q '^RUNTIME_CONTRACT_qxm_ipa_runtime_marker=1$' candidate-0061-post-302-runtime-contract.log
+          grep -q '^RUNTIME_CONTRACT_watchdog_bark_default_20000=1$' candidate-0061-post-302-runtime-contract.log
+          grep -q '^RUNTIME_CONTRACT_watchdog_bark_range_11000_20000=1$' candidate-0061-post-302-runtime-contract.log
+          grep -q '^RUNTIME_CONTRACT_watchdog_pet_default_15000=1$' candidate-0061-post-302-runtime-contract.log
+          grep -q '^RUNTIME_CONTRACT_watchdog_pet_range_9360_15000=1$' candidate-0061-post-302-runtime-contract.log
           git -C kernel diff --check
 
       - name: Prepare integrated 5.4.302 target config

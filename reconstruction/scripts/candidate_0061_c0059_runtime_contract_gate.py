@@ -21,6 +21,13 @@ def main() -> int:
     checks = {
         "source_identity_5_4_302": contains(k / "Makefile", "SUBLEVEL = 302\n"),
 
+        # Real Candidate0059 carries Candidate0046 healthy-stock watchdog
+        # Kconfig semantics; Direct-302 must not erase those range/default edits.
+        "watchdog_bark_default_20000": contains(k / "drivers/soc/qcom/Kconfig", "default 20000"),
+        "watchdog_bark_range_11000_20000": contains(k / "drivers/soc/qcom/Kconfig", "range 11000 20000"),
+        "watchdog_pet_default_15000": contains(k / "drivers/soc/qcom/Kconfig", "default 15000"),
+        "watchdog_pet_range_9360_15000": contains(k / "drivers/soc/qcom/Kconfig", "range 9360 15000"),
+
         # Candidate0054 raw first-fault persistence inherited by real C0059.
         "raw_fault_capture": contains(k / "arch/arm64/mm/fault.c", "lisa_arm64_capture_first_fault(addr, esr, regs);"),
         "raw_fault_marker": contains(k / "arch/arm64/mm/fault.c", "LISA0054_RAW_FAULT saved=1"),
