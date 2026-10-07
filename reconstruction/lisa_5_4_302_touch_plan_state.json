@@ -55,7 +55,7 @@
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "PURE_BASE_REVALIDATION_QUEUED_RUN_37576020824"
+    "phase_6_direct_302_integrated_static_abi_gate": "PURE_BASE_REVALIDATION_IN_PROGRESS_RUN_37576020824"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,26 +99,26 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "PURE_PHASE6_REVALIDATION_QUEUED",
-    "abi_module_gate": "PURE_PHASE6_REVALIDATION_QUEUED",
+    "stable_uplift_gate": "PURE_PHASE6_REVALIDATION_IN_PROGRESS",
+    "abi_module_gate": "PURE_PHASE6_REVALIDATION_IN_PROGRESS",
     "touch_latency_gate": "BLOCKED_ON_ORDERED_PHASE7_DEVICE_ARTIFACT",
     "performance_retention_gate": "BLOCKED_ON_ORDERED_PHASE7_DEVICE_ARTIFACT",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "bbe3c33ad40a88da812f08afa276649aa99f6bc0",
+  "last_checked_commit": "b81a0e2c4d99358ba8b8a626a28d84bdcf161a15",
   "last_checked_run": 37576020824,
-  "blocker": "CI_QUEUED_PURE_PHASE6_RUN_37576020824",
-  "next_action": "Inspect run 37576020824 from workflow commit a8fb21ad55f98453c88d1e43de46514f7073f513. This is the canonical pure Direct-302 Phase6 gate with the Phase7 hot-path step removed. Require repaired C0059 IPA/PAS inheritance PASS, Direct-302 semantic closure 34/34/0, 5.4.302 compile/modpost PASS, removed ABI symbols=0, changed/added symbols limited to the reviewed provenance set, exact identity PASS and boot packaging PASS. If it fails, fix only the first concrete Phase6 blocker. If it passes, then and only then launch a separate Phase7 rebuild and re-run static/ABI/identity/packaging before Phase10 device validation.",
+  "blocker": "CI_IN_PROGRESS_PURE_PHASE6_C0059_CONTROL_BUILD",
+  "next_action": "Inspect pure Phase6 run 37576020824 / job 112644987705. The runner step list confirms there is no Phase7 hot-path application step; repaired C0059 source reconstruction has PASS and the active step is Build Candidate0059 same-run ABI control. If the control build fails, repair only the first concrete Phase6 compile/modpost blocker. If it passes, continue this same run through ABI compatibility, Direct-302 semantic closure, 5.4.302 materialization, target compile/modpost, removed ABI symbols=0, identity and boot packaging. Do not launch Phase7 until this pure Phase6 run is fully PASS.",
   "next_expected_evidence": [
-    "run 37576020824 reaches runner with no Phase7 hot-path application step",
+    "pure Phase6 run 37576020824 contains no candidate_0061_touch_jank_hotpath application step",
+    "Candidate0059 same-run control Image/modules/dtbs/modpost PASS",
     "C0061_C0059_IPA_PAS_INHERITANCE=PASS",
     "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
     "Direct-302 semantic closure 34 reviewed / 0 unresolved",
     "pure 5.4.302 Image/modules/dtbs/modpost PASS",
     "Candidate0059 removed ABI symbols = 0",
-    "changed CRC set remains reviewed stable xHCI set",
-    "added symbol set remains reviewed stable/MIXED_CONFLICT provenance set",
+    "changed/added ABI set remains within reviewed stable/MIXED_CONFLICT provenance",
     "exact Candidate0061 identity PASS",
     "pure Phase6 boot static packaging PASS"
   ],
@@ -466,7 +466,10 @@
     "ABI provenance recorded in reconstruction/c0061_repaired_ipa_pas_abi_provenance_20261007.md",
     "Ordering audit invalidated run 37571737761 as canonical Phase6 because candidate_0061_touch_jank_hotpath.py was applied before the target base build",
     "Commit a8fb21ad55f98453c88d1e43de46514f7073f513 removes all Phase7 trigger/application/report references from the integrated Phase6 workflow",
-    "Pure Direct-302 Phase6 revalidation run 37576020824 queued from a8fb21a"
+    "Pure Direct-302 Phase6 revalidation run 37576020824 queued from a8fb21a",
+    "Pure Phase6 run 37576020824 reached the runner from a8fb21a and its step list contains no Phase7 WALT/touch hot-path application step.",
+    "Run 37576020824 passed Candidate0059 source reconstruction and is currently building the Candidate0059 same-run ABI control.",
+    "Commit a733a35 blocks Phase10 documentation until pure Phase6 plus ordered Phase7 gates pass; commit b81a0e2 blocks the runtime collector default kernel identity until the ordered Phase7 artifact exists."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
