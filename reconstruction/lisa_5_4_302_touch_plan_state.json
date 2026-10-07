@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-07",
+  "updated_at": "2026-10-08",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_7_PACKAGE_RUNTIME_WALT_TOUCH_JANK_CORRECTION",
+  "current_phase": "PHASE_6_RUNTIME_NFC_MODULE_DEPLOYMENT_REPAIR",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -48,14 +48,14 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_RUNTIME_STABILITY_AND_FRESH_USERSPACE_FAILURE_EVIDENCE",
+    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_NFC_RUNTIME_MODULE_DEPLOYMENT",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "R20B187C_REACHES_SYSTEM_USERSPACE_BUT_BOOT_NOT_COMPLETED_NO_FRESH_PANIC_CAPTURED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "PASS_R20B187C_STATIC_ABI_IDENTITY_PACKAGING_DEVICE_REACHES_SYSTEM_USERSPACE"
+    "phase_6_direct_302_integrated_static_abi_gate": "STATIC_PASS_DEVICE_RUNTIME_FAIL_NFC_MODULE_GUARD_NOT_DEPLOYED"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,31 +99,26 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "PASS_R20B187C_DEVICE_REACHES_SYSTEM_USERSPACE",
+    "stable_uplift_gate": "STATIC_PASS_RUNTIME_BLOCKED_BY_STALE_NFC_MODULE",
     "abi_module_gate": "PASS_R20B187C_REMOVED_0",
-    "touch_latency_gate": "BLOCKED_ON_BOOT_COMPLETION",
-    "performance_retention_gate": "BLOCKED_ON_BOOT_COMPLETION",
+    "touch_latency_gate": "BLOCKED_ON_NFC_MODULE_RUNTIME_FIX",
+    "performance_retention_gate": "BLOCKED_ON_NFC_MODULE_RUNTIME_FIX",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED",
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "ce002f863d9752b507b3078851c6a137d67d8cf9",
+  "last_checked_commit": "608eb2bde8ab2fd4c85cbf24f903c82da13e449c",
   "last_checked_run": 37644375324,
-  "blocker": "WRITE_PERMISSION_BLOCKED_PHASE7_WORKFLOW_REBASE",
-  "next_action": "Retry rebasing .github/workflows/build-lisa-candidate-0061-phase7-touch-jank.yml onto accepted Phase6 run 37644375324 / ce002f8. Preserve the post-Direct-302 Candidate0059 runtime contract, NFC cdev race guard, strict ABI provenance, KMI-neutral Phase7-vs-Phase6 gate, and fixed-region AVB-preserving boot packaging before triggering the Phase7 build. Do not advance to MIGT/FREQ_QOS or Goodix changes unless the ordered WALT package-runtime correction fails device validation.",
+  "blocker": "NFC_GUARD_COMPILED_BUT_NOT_DEPLOYED_IN_BOOT_ONLY_ARTIFACT",
+  "next_action": "Rework Candidate0061 integrated/runtime packaging so the rebuilt QTI NFC module containing candidate_0061_nfc_cdev_guard.py is actually deployed with the tested kernel, rather than shipping only boot.img/Image. First identify the produced nfc_i2c.ko and its installed vendor_dlkm/module path, preserve Candidate0059 ABI/KMI semantics, verify module vermagic/dependency compatibility, then produce a bounded boot+module or vendor_dlkm test artifact. Do not enter Phase7 WALT/MIGT/FREQ_QOS/Goodix work until the fresh ffffffffffffffc8 nfc_dev_open fault disappears on device.",
   "next_expected_evidence": [
-    "Phase7 workflow downloads lisa-c0061-integrated-302-evidence-a1 from run 37644375324",
-    "Phase6 baseline identity 5.4.302-qgki-lisa-c0061-rce002f8-by-Tim0320",
-    "Phase6 baseline boot sha256 3d329e9614a4cb0dda2bf44fb053fd105afbdf5fcada1466495532f99debe070",
-    "C0061_POST_302_C0059_RUNTIME_CONTRACT=PASS before Phase7 overlay",
-    "C0061_NFC_CDEV_GUARD=PASS before Phase7 overlay",
-    "C0061_TOUCH_JANK_HOTPATH=PASS CLASSIFICATION=TOUCH_PERF_ONLY",
-    "C0061_INTEGRATED_ABI_KMI_GATE=PASS removed=0",
-    "C0061_ABI_PROVENANCE_GATE=PASS",
-    "C0061_PHASE7_VS_PHASE6_ABI_GATE=PASS changed=0 removed=0 added=0",
-    "C0061_FIXED_REGION_BOOT_GATE=PASS with AVB0/AVBf metadata preserved",
-    "Phase7 boot artifact for A16 device validation"
+    "Fresh module inventory proving which built .ko contains drivers/nfc/qti/nfc_common.c and the runtime module name/path",
+    "Rebuilt nfc_i2c module contains the NFC cdev unavailable guard",
+    "Module vermagic/dependency/KMI compatibility PASS against 5.4.302-qgki-lisa-c0061-rce002f8-by-Tim0320",
+    "Packaging/deployment artifact includes the rebuilt NFC module instead of only Image/boot.img",
+    "Device retest no longer records LISA0054_RAW_FAULT addr=ffffffffffffffc8 from nfc_dev_open",
+    "Only after NFC runtime stability: resume Phase7 package-runtime/WALT correction"
   ],
   "forbidden": [
     "global frequency pin",
@@ -554,7 +549,10 @@
     "Direct-302 runtime contract PASS with watchdog 20000/15000 and reset/TZ diagnostic markers retained.",
     "Direct-302 NFC cdev race guard PASS with no fake success.",
     "Direct-302 fixed-region boot packaging PASS with AVB metadata preserved; boot sha256 3d329e9614a4cb0dda2bf44fb053fd105afbdf5fcada1466495532f99debe070.",
-    "Phase7 workflow audit found stale Phase6 baseline run 37576020824 and legacy non-AVB-preserving packaging; rebase patch prepared but GitHub workflow write was blocked by safety review."
+    "Phase7 workflow audit found stale Phase6 baseline run 37576020824 and legacy non-AVB-preserving packaging; rebase patch prepared but GitHub workflow write was blocked by safety review.",
+    "Device capture lisa-twrp-iter-0001_20261008-005639_boot_3d329e9614a4.zip inspected for accepted Direct-302 boot SHA256 3d329e9614a4cb0dda2bf44fb053fd105afbdf5fcada1466495532f99debe070.",
+    "Fresh current-session mtdoops sequence around 41.816s records LISA0054_RAW_FAULT addr=ffffffffffffffc8 followed by kernel paging request, reproducing the prior nfc_dev_open negative-pointer crash despite the CI NFC guard gate.",
+    "Integrated workflow audit proves the NFC source guard is applied before compile, but final packaging uploads boot.img/Image only and does not package rebuilt modules/vendor_dlkm. The runtime [nfc_i2c] module can therefore remain stale, explaining why the source guard passed CI but did not affect device behavior."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
