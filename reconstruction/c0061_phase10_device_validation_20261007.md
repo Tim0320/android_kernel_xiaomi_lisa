@@ -1,5 +1,7 @@
 # Candidate0061 Phase 10 device validation
 
+> **Current status:** Phase10 device testing is temporarily blocked. Artifact `11462052521` / release `r803b05f` proves the repaired IPA/PAS reconstruction but is not the canonical test artifact because its workflow applied Phase7 before the pure Phase6 base gate. Wait for pure Phase6 run `37576020824` to pass and for a separate ordered Phase7 rebuild to produce the next device-test artifact.
+
 Date: 2026-10-07
 Active device baseline: HyperOS 3.0.9 / Android 16
 Device: Xiaomi lisa
