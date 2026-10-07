@@ -195,7 +195,7 @@ Important:
 - It remains a trusted reference for reconstruction, ABI policy, and provenance classification.
 
 ### Phase 4 - Direct Candidate0061 Linux 5.4.302 uplift
-Status: DONE
+Status: REOPENED - C0059 SOURCE RECONSTRUCTION CONTRACT REPAIR
 
 Target:
 - Candidate0059/Lisa 5.4.289 -> Linux 5.4.302 in one integrated source/build gate.
@@ -281,7 +281,7 @@ Exit:
 - integrated compile exposed one textually-clean but semantically incompatible runtime-PM path; `drivers/base/power/runtime.c` is now the 34th reviewed path, classified MIXED_CONFLICT for Segments B+C: keep the Segment-B timer-expiry `<=` stable fix, but reject the Segment-C `needs_force_resume` reinit write because frozen Lisa intentionally retains `pm_runtime_need_not_resume()` and no `dev_pm_info.needs_force_resume` field.
 
 ### Phase 6 - Direct-302 integrated static/ABI gate
-Status: DONE
+Status: REVALIDATION REQUIRED AFTER C0059 RECONSTRUCTION REPAIR
 
 Run one target build after Phase 5 conflict closure.
 
@@ -373,7 +373,7 @@ identify whether latency is:
 - render/present.
 
 ### Phase 10 - Candidate0061 integrated A16 validation
-Status: DEVICE VALIDATION PENDING
+Status: BLOCKED ON REPAIRED DIRECT-302 REBUILD
 
 Candidate0061 can progress only if all are PASS:
 - Linux 5.4.302 stable provenance;
@@ -463,38 +463,43 @@ At the end of every execution:
 - set next_expected_evidence;
 - commit the state change.
 
+## 2026-10-07 Candidate0059 reconstruction correction
+
+Runtime evidence from the first Candidate0061 device test invalidated the previous Phase10 entry:
+- artifact 11437434497 / boot SHA256 65e94493f1b41cc889074b3ccc9c19bfea6977c50b0a56754c535aeb9889f8d4 showed one-screen boot then reset before System;
+- re-audit of integrated run 37513703360 confirmed the reconstruction step printed C0059_INHERITED_SOURCE_STACK_RECREATED=PASS but did not contain LISA0046_IPA, LISA0053_IPA, yupik_ipa_fws, ipa_before_pas_auth_reset, or ipa_after_pas_auth_reset markers;
+- frozen source 6e568aabc77a06fa787baec1d9e60e4b559874a3 predates the Candidate0046/Candidate0053 recipe-time IPA/PAS runtime contract, while the actual Candidate0059 lineage inherits it through 0054 -> 0053 -> 0046.
+
+Decision:
+- retire artifact 11437434497 as a Phase10 candidate;
+- keep Candidate0059 r43da7c5 frozen;
+- keep the DIRECT 5.4.289 -> 5.4.302 strategy;
+- do not restore Batch C/D builds;
+- replay only the pinned Candidate0046 prerequisites plus Candidate0053 IPA full-region and PAS15 metadata-retention endpoints inside the C0061 Candidate0059 reconstruction path;
+- require C0061_C0059_IPA_PAS_INHERITANCE=PASS before the integrated compile/static/ABI/identity/packaging gate can be accepted again.
+
+Repair commits:
+- 9dd3fba887d0b543c21d54f898e2ef423b06bca4 — bounded C0046 -> C0053 IPA/PAS reconstruction replay;
+- 74597be686dd43270002e938f8f9c953f0539f88 — integrated workflow hard gate for C0061_C0059_IPA_PAS_INHERITANCE=PASS.
+
+Classification:
+- primary failure class: STABLE_UPLIFT;
+- implementation provenance: reviewed MIXED_CONFLICT preserving Lisa/Yupik Candidate0059 runtime semantics across the Direct-302 reconstruction.
+
 ## Current next action
 
 NEXT_ACTION:
-Run Candidate0061 Phase 10 device validation on HyperOS 3.0.9 / Android 16 using the static-verified boot from integrated run 37513703360.
+Inspect the newest integrated Candidate0061 workflow triggered by repair commit 74597be686dd43270002e938f8f9c953f0539f88. The first required evidence is C0061_C0059_IPA_PAS_INHERITANCE=PASS during "Recreate frozen Candidate0059 source contract". If that step fails, fix the first concrete reconstruction anchor/blocker and push a bounded repair. If it passes, require the same single integrated 5.4.302 olddefconfig/Image/modules/dtbs/modpost/static/ABI/KMI/identity/packaging gates again.
 
-Candidate under test:
-- build commit: 55105aacd809e748de41230c3ad11ca98ef8cd05
-- kernel release: 5.4.302-qgki-lisa-c0061-r55105aa-by-Tim0320
-- boot artifact: 11437434497
-- boot SHA256: 65e94493f1b41cc889074b3ccc9c19bfea6977c50b0a56754c535aeb9889f8d4
-- Image SHA256: 542c80563f11f759ce8837fd8526acb751af701097042e6bc8033fa12d1a77a6
+Acceptance for the repaired integrated run:
+- C0061_C0059_IPA_PAS_INHERITANCE=PASS;
+- Candidate0059 same-run control build PASS;
+- Direct-302 semantic closure remains 34 reviewed / 0 unresolved;
+- integrated 5.4.302 Image/modules/dtbs/modpost PASS;
+- Candidate0059 removed ABI symbols = 0;
+- changed/added ABI remains stable or reviewed MIXED_CONFLICT provenance;
+- exact 5.4.302 Candidate0061 kernel identity PASS;
+- boot static packaging PASS;
+- a new boot artifact is produced.
 
-Automated evidence is complete:
-- Direct-302 semantic closure: 34 reviewed / 0 unresolved
-- Phase7A TOUCH_PERF_ONLY overlay: PASS
-- Image/modules/dtbs/modpost: PASS
-- ABI/KMI: removed=0
-- exact kernel identity: PASS
-- boot static packaging: PASS
-- Phase7 pause is decoupled from Stage9 migt_boost_policy
-
-No further kernel source change is justified until device runtime evidence is available.
-
-Device validation:
-1. flash/test artifact 11437434497 on the active HyperOS 3.0.9 / Android 16 baseline;
-2. confirm exact kernel identity, boot stability and SELinux Enforcing;
-3. validate Wi-Fi, battery/charging and UFS/data;
-4. reproduce the Candidate0059 touch workload;
-5. collect evidence with reconstruction/tools/collect_lisa_touch_runtime.ps1;
-6. compare touch latency/jank behavior against Candidate0059/User B and the known-good control.
-
-Routing:
-- if Phase10 passes, close Candidate0061 A16 validation and unblock the later Candidate0062/A17 overlay;
-- if touch remains regressed with normal Goodix IRQ delivery, enter Phase 8 FREQ_QOS / Qualcomm touch-boost isolation;
-- if Goodix IRQ delivery is abnormal, investigate IRQ scheduling/affinity/rate before changing touchscreen firmware or driver.
+Do not return to Phase10 device validation until this repaired integrated build is complete. Do not reuse artifact 11437434497.
