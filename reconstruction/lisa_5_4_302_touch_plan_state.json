@@ -106,21 +106,15 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED"
   },
-  "last_checked_commit": "b81a0e2c4d99358ba8b8a626a28d84bdcf161a15",
+  "last_checked_commit": "68439b04b98a4dfd64a14125643df9a2fb171827",
   "last_checked_run": 37576020824,
-  "blocker": "CI_IN_PROGRESS_PURE_PHASE6_C0059_CONTROL_BUILD",
-  "next_action": "Inspect pure Phase6 run 37576020824 / job 112644987705. The runner step list confirms there is no Phase7 hot-path application step; repaired C0059 source reconstruction has PASS and the active step is Build Candidate0059 same-run ABI control. If the control build fails, repair only the first concrete Phase6 compile/modpost blocker. If it passes, continue this same run through ABI compatibility, Direct-302 semantic closure, 5.4.302 materialization, target compile/modpost, removed ABI symbols=0, identity and boot packaging. Do not launch Phase7 until this pure Phase6 run is fully PASS.",
+  "blocker": "WRITE_PERMISSION_BLOCKED",
+  "next_action": "Recheck run 37576020824. Pure Phase6 has passed Candidate0059 control, ABI restore, semantic closure, Direct-302 materialization, KMI restore and target config; integrated 5.4.302 Image/modules/dtbs compile is in progress. Retry state write when permitted. If compile passes, continue ABI/KMI, identity and packaging gates before any Phase7 rebuild.",
   "next_expected_evidence": [
-    "pure Phase6 run 37576020824 contains no candidate_0061_touch_jank_hotpath application step",
-    "Candidate0059 same-run control Image/modules/dtbs/modpost PASS",
-    "C0061_C0059_IPA_PAS_INHERITANCE=PASS",
-    "C0059_INHERITED_SOURCE_STACK_RECREATED=PASS",
-    "Direct-302 semantic closure 34 reviewed / 0 unresolved",
-    "pure 5.4.302 Image/modules/dtbs/modpost PASS",
+    "pure 5.4.302 compile/modpost PASS",
     "Candidate0059 removed ABI symbols = 0",
-    "changed/added ABI set remains within reviewed stable/MIXED_CONFLICT provenance",
     "exact Candidate0061 identity PASS",
-    "pure Phase6 boot static packaging PASS"
+    "pure Phase6 boot packaging PASS"
   ],
   "forbidden": [
     "global frequency pin",
