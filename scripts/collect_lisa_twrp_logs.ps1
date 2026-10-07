@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScriptVersion = "1.3.2"
+$ScriptVersion = "1.3.3"
 $SchemaVersion = 1
 
 function Write-Step {
@@ -519,7 +519,8 @@ $commands = @(
     @{ File = "15_cache_recovery_last_log.txt"; Command = "if [ -r /cache/recovery/last_log ]; then cat /cache/recovery/last_log; else echo NO_CACHE_RECOVERY_LAST_LOG; fi" },
     @{ File = "16_boot_reason_sources.txt"; Command = 'echo ro.boot.bootreason=$(getprop ro.boot.bootreason); echo sys.boot.reason=$(getprop sys.boot.reason); echo ro.bootmode=$(getprop ro.bootmode); echo ro.boot.slot_suffix=$(getprop ro.boot.slot_suffix); echo ro.boot.verifiedbootstate=$(getprop ro.boot.verifiedbootstate); echo ro.boot.vbmeta.device_state=$(getprop ro.boot.vbmeta.device_state)' },
     @{ File = "17_kernel_message_sources.txt"; Command = 'for p in /sys/fs/pstore /data/vendor/ramoops /cache/recovery /tmp; do echo "===== $p ====="; ls -la "$p" 2>&1 || true; done' },
-    @{ File = "21_userspace_failure_sources.txt"; Command = 'echo "===== data mount ====="; grep " /data " /proc/mounts 2>/dev/null || echo NO_DATA_MOUNT_LINE; echo; for p in /data/system/dropbox /data/tombstones /data/anr; do echo "===== $p ====="; if [ -d "$p" ]; then ls -lat "$p" 2>&1 | head -n 80; else echo MISSING_OR_LOCKED; fi; echo; done' }
+    @{ File = "21_userspace_failure_sources.txt"; Command = 'echo "===== data mount ====="; grep " /data " /proc/mounts 2>/dev/null || echo NO_DATA_MOUNT_LINE; echo; for p in /data/system/dropbox /data/tombstones /data/anr; do echo "===== $p ====="; if [ -d "$p" ]; then ls -lat "$p" 2>&1 | head -n 80; else echo MISSING_OR_LOCKED; fi; echo; done' },
+    @{ File = "22_adbd_debug_provenance.txt"; Command = 'echo "===== static property sources ====="; for f in /system/etc/prop.default /system/system/etc/prop.default /system/build.prop /system/system/build.prop /system_ext/build.prop /system_ext/etc/build.prop /product/build.prop /product/etc/build.prop /vendor/default.prop /vendor/build.prop /odm/build.prop /odm/etc/build.prop; do if [ -f "$f" ]; then echo "---- $f ----"; grep -nE "^(ro\\.debuggable|ro\\.force\\.debuggable|ro\\.secure|ro\\.adb\\.secure)=" "$f" 2>/dev/null || true; fi; done; echo; echo "===== debug/root marker files ====="; for p in /force_debuggable /adb_debug.prop /userdebug_plat_sepolicy.cil /debug_ramdisk /first_stage_ramdisk; do ls -ladZ "$p" 2>&1 || true; done; echo; echo "===== init adbd/root references ====="; for d in /system/etc/init /system/system/etc/init /system_ext/etc/init /product/etc/init /vendor/etc/init /odm/etc/init; do if [ -d "$d" ]; then echo "---- $d ----"; grep -RnsE "service[[:space:]]+adbd|root_seclabel|service\\.adb\\.root|u:r:su:s0" "$d" 2>/dev/null | head -n 160; fi; done; echo; echo "===== data adb/root indicators ====="; ls -ladZ /data/adb /data/adb/modules /data/property 2>&1 || true; if [ -d /data/adb ]; then find /data/adb -maxdepth 2 -type f \( -name "*.prop" -o -name "module.prop" -o -name "*.rc" \) -print 2>/dev/null | head -n 120; fi; echo; echo "===== persistent property strings ====="; if [ -f /data/property/persistent_properties ]; then strings /data/property/persistent_properties 2>/dev/null | grep -Ei "debuggable|force.debuggable|ro.secure|adb.secure|service.adb.root|root_access|magisk|kernelsu|apatch" | head -n 160 || true; else echo NO_PERSISTENT_PROPERTIES_FILE; fi' }
 )
 
 foreach ($entry in $commands) {
@@ -684,14 +685,15 @@ $summary = @(
     "11. pulled/userspace_failure/dropbox (up to 8 newest files, <=2 MiB each)",
     "12. pulled/userspace_failure/tombstones (up to 8 newest files, <=2 MiB each)",
     "13. pulled/userspace_failure/anr (up to 8 newest files, <=2 MiB each)",
+    "14. raw/22_adbd_debug_provenance.txt (read-only property/init/root provenance)",
     "",
     "Recovery history (context only):",
-    "14. pulled/cache_recovery_history/last_kmsg*",
-    "15. pulled/cache_recovery_history/last_log*",
+    "15. pulled/cache_recovery_history/last_kmsg*",
+    "16. pulled/cache_recovery_history/last_log*",
     "",
     "Additional dump inventory:",
-    "16. raw/20_dump_partition_inventory.txt",
-    "17. rawdump is captured only when -IncludeRawDump is explicitly supplied"
+    "17. raw/20_dump_partition_inventory.txt",
+    "18. rawdump is captured only when -IncludeRawDump is explicitly supplied"
 )
 $summary | Set-Content -LiteralPath (Join-Path $iterationDir "SUMMARY.txt") -Encoding utf8
 
