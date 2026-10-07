@@ -108,18 +108,18 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "5b5ce159ebb8447cb7b7a93161d030790995c753",
+  "last_checked_commit": "78020deb82e19a5245d2e9bb3317227885cb3b31",
   "last_checked_run": 37655937871,
-  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_HARDENING_AND_MATCHED_NFC_DEVICE_VALIDATION",
-  "next_action": "Retry the collector v1.3.6 hardening write: remove generic vendor_dlkm 'mount -o ro' and permit only EROFS ro or ext4 ro,noload. Then use the hardened collector to prove the runtime nfc_i2c.ko path/SHA256/vermagic/guard on HyperOS 3.0.9 A16. Do not start Phase7 WALT/MIGT/FREQ_QOS/Goodix work until the matched module is proven on-device and a fresh boot no longer faults at ffffffffffffffc8 / nfc_dev_open.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN_UPDATE",
+  "next_action": "Retry the collector v1.3.6 hardening and canonical plan alignment writes. Keep Phase7 frozen. After the collector hardening is committed, use it on HyperOS 3.0.9 A16 to prove the actual runtime nfc_i2c.ko path, SHA256, vermagic and guard marker, then require a fresh boot with no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault before any WALT/MIGT/FREQ_QOS/Goodix work.",
   "next_expected_evidence": [
-    "Collector v1.3.6 is committed with no generic mount -o ro vendor_dlkm fallback",
-    "Run 37655937871 remains SUCCESS and C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
+    "Collector v1.3.6 committed with strict read-only vendor_dlkm fallback and no generic read-only mount",
+    "Canonical plan records Phase6 runtime NFC deployment gate and Phase7 frozen status",
+    "Run 37655937871 remains SUCCESS with C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
     "Candidate0061 boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6",
-    "Guarded nfc_i2c.ko runtime artifact SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
-    "Device collector reports the actual loaded/vendor module path, SHA256, vermagic and NFC cdev unavailable guard marker",
-    "Fresh device evidence no longer contains ffffffffffffffc8 / nfc_dev_open [nfc_i2c]",
-    "Phase7 remains frozen until the NFC runtime deployment gate passes"
+    "Guarded nfc_i2c.ko SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "Device evidence proves actual runtime module path/hash/vermagic/guard",
+    "Fresh boot has no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault"
   ],
   "forbidden": [
     "global frequency pin",
@@ -559,7 +559,8 @@
     "Run 37655937871 / job 112910508641 rechecked on 2026-10-08: every step completed SUCCESS, including NFC runtime module inventory, Direct-302 compile/modpost, ABI/KMI removed=0 and provenance covered=16 stable=15 mixed=1.",
     "Run 37655937871 log reconfirmed target release 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320 and boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6.",
     "Collector v1.3.5 audit found an unsafe generic vendor_dlkm fallback using mount -o ro before the ext4 ro,noload / EROFS ro attempts; strict read-only hardening is required before using that fallback as evidence.",
-    "Attempt to commit collector v1.3.6 hardening was blocked by write safety review; record WRITE_PERMISSION_BLOCKED and keep kernel/Phase7 changes frozen."
+    "Attempt to commit collector v1.3.6 hardening was blocked by write safety review; record WRITE_PERMISSION_BLOCKED and keep kernel/Phase7 changes frozen.",
+    "2026-10-08 fresh audit: repo head is 78020deb; latest Actions run remains 37655937871 SUCCESS. Collector v1.3.6 and canonical plan alignment writes were retried but blocked by safety review; no kernel source or Phase7 change was made."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
