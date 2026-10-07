@@ -28,6 +28,17 @@ def main() -> int:
         "watchdog_pet_default_15000": contains(k / "drivers/soc/qcom/Kconfig", "default 15000"),
         "watchdog_pet_range_9360_15000": contains(k / "drivers/soc/qcom/Kconfig", "range 9360 15000"),
 
+        # Candidate0046->0059 reset/TZ diagnostic equivalence. These markers
+        # preserve observability only; they do not alter restart policy,
+        # watchdog timing, SELinux policy, or PAS return handling.
+        "tz_hyp_secure_state_marker": contains(k / "drivers/firmware/qcom/tz_log.c", "LISA0046: secure_state hyplog=%d hyp_ok=%d enc=%d"),
+        "tz_hyp_delayed_worker_marker": contains(k / "drivers/firmware/qcom/tz_log.c", "LISA0046: secure TZ/HYP diagnostic armed at +8000ms"),
+        "kernel_restart_marker": contains(k / "kernel/reboot.c", "LISA0046: kernel_restart entry cmd=%s"),
+        "emergency_restart_marker": contains(k / "kernel/reboot.c", "LISA0046: emergency_restart entry"),
+        "msm_restart_marker": contains(k / "drivers/power/reset/msm-poweroff.c", "LISA0046: do_msm_restart action=%lu cmd=%s"),
+        "ps_hold_marker": contains(k / "drivers/power/reset/msm-poweroff.c", "LISA0046: deassert_ps_hold reached"),
+        "restart_kmsg_dump": contains(k / "drivers/power/reset/msm-poweroff.c", "kmsg_dump(KMSG_DUMP_RESTART);"),
+
         # Candidate0054 raw first-fault persistence inherited by real C0059.
         "raw_fault_capture": contains(k / "arch/arm64/mm/fault.c", "lisa_arm64_capture_first_fault(addr, esr, regs);"),
         "raw_fault_marker": contains(k / "arch/arm64/mm/fault.c", "LISA0054_RAW_FAULT saved=1"),
