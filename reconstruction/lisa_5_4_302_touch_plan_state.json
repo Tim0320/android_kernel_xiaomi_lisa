@@ -108,16 +108,17 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "78b924a0b62a43a858f4f511be03d2af25f47d37",
+  "last_checked_commit": "da92e26c7838eafc1b4a81373a561d6a33c2af25",
   "last_checked_run": 37617885939,
-  "blocker": "DEVICE_RECAPTURE_REQUIRED_COLLECTOR_V1_3_1",
-  "next_action": "Update the local repository, run scripts/collect_lisa_twrp_logs.ps1 v1.3.1 (not any stale root-level local copy), verify ScriptVersion=1.3.1, and collect the current r20b187c TWRP userspace evidence. v1.3.1 fixes PowerShell iteration formatting by keeping the iteration counter numeric and using Int32.ToString(\"D4\", InvariantCulture). Do not change kernel source before fresh userspace failure content is captured.",
+  "blocker": "DEVICE_RECAPTURE_REQUIRED_COLLECTOR_V1_3_2_RECOVERY_TRANSPORT_FIX",
+  "next_action": "Refresh local scripts/collect_lisa_twrp_logs.ps1 to repository v1.3.2 (commit da92e26), verify ScriptVersion=1.3.2, and run it while the phone remains in TWRP/recovery. v1.3.2 accepts ADB get-state values 'recovery' or 'device' and does not call adb wait-for-device, which blocked indefinitely on the user's TWRP transport. Do not change kernel source before fresh userspace failure payloads are captured.",
   "next_expected_evidence": [
-    "collector_version=1.3.1",
-    "new iteration ZIP completes without Format specifier error",
-    "raw/21_userspace_failure_sources.txt",
-    "bounded dropbox/tombstone/anr payloads or explicit empty proof",
-    "first fresh userspace failure classification"
+    "collector_version=1.3.2",
+    "collector prints ADB transport ready: recovery",
+    "new ZIP completes successfully",
+    "raw/21_userspace_failure_sources.txt present",
+    "bounded userspace_failure/dropbox, tombstones and anr payloads or explicit empty proof",
+    "first fresh boot-completion failure classified before any kernel patch"
   ],
   "forbidden": [
     "global frequency pin",
@@ -533,7 +534,8 @@
     "Package collector is stale v1.2.0, not repository v1.3.0, and therefore omitted actual bounded dropbox/tombstone/anr payloads.",
     "Persistent crash partitions did not refresh between 20:57 and 22:10 captures: oops SHA256 72745e4797692a40882417833e66e87628328987eec8740ece67fc8aaa914672, minidump SHA256 40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d, logfs SHA256 8be0f9461bd3aa7f03a8c995f158ded75b69312a9a7c15c9803fff580034cdb2.",
     "pstore remained empty and no new r20b187c persistent kernel crash record was captured; kernel changes remain frozen pending userspace evidence.",
-    "Collector v1.3.1 commit 78b924a fixes PowerShell invalid {0:D4} iteration formatting by explicit Int32 handling and ToString(\"D4\", InvariantCulture)."
+    "Collector v1.3.1 commit 78b924a fixes PowerShell invalid {0:D4} iteration formatting by explicit Int32 handling and ToString(\"D4\", InvariantCulture).",
+    "Collector v1.3.2 commit da92e26 removes adb wait-for-device and accepts recovery/device ADB states, fixing indefinite blocking when adb get-state returns recovery in TWRP."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
