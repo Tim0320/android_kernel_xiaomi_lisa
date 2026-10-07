@@ -38,6 +38,11 @@ def main() -> int:
         "yupik_ipa_region": contains(k / "arch/arm64/boot/dts/vendor/qcom/yupik.dtsi", "reg = <0x0 0x8b710000 0x0 0xa000>;"),
         "yupik_ipa_firmware": contains(k / "arch/arm64/boot/dts/vendor/qcom/yupik.dtsi", 'qcom,firmware-name = "yupik_ipa_fws";'),
 
+        # Candidate0019->0046 early-runtime fix.
+        "qxm_ipa_qos_hard_disabled": contains(k / "drivers/interconnect/qcom/yupik.c", "Lisa Candidate 0046 diagnostic: never touch inaccessible IPA QoS MMIO."),
+        "qxm_ipa_qosbox_null": contains(k / "drivers/interconnect/qcom/yupik.c", ".qosbox = NULL,"),
+        "qxm_ipa_runtime_marker": contains(k / "drivers/interconnect/qcom/yupik.c", "Lisa Candidate 0046: qxm_ipa QoS fully disabled"),
+
         # Other verified Candidate0059 inherited runtime layers.
         "proc_create_legacy_abi": contains(k / "fs/proc/generic.c", "Lisa Candidate 0050: legacy proc_create(file_operations) ABI bridge active"),
         "ufs_registry_hook": contains(k / "drivers/scsi/ufs/ufshcd.c", "set_ufs_hba_data(sdev);"),

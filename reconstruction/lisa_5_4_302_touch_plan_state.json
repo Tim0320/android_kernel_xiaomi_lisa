@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_10_FIXED_REGION_DEVICE_VALIDATION",
+  "current_phase": "PHASE_6_QXM_IPA_RUNTIME_EQUIVALENCE_REPAIR",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -48,14 +48,14 @@
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
     "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
     "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_FIXED_REGION_PHASE6_DEVICE_RESULT",
+    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_QXM_IPA_PHASE6_DEVICE_VALIDATION",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
-    "phase_10_candidate0061_a16_validation": "DEVICE_TEST_PENDING_ARTIFACT_11467702252",
+    "phase_10_candidate0061_a16_validation": "FAILED_9309F5F_AFTER_START_EBS_REBUILD_REQUIRED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "SOURCE_STATIC_PASS_RUN_37583148751_FIXED_REGION_PACKAGE_RECOVERY_PASS_RUN_37588835162"
+    "phase_6_direct_302_integrated_static_abi_gate": "REOPENED_QXM_IPA_RUNTIME_EQUIVALENCE_REPAIR"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,24 +99,29 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "PASS_SOURCE_STATIC_RUN_37583148751",
-    "abi_module_gate": "PASS_STRICT_PROVENANCE_16_OF_16_REMOVED_0_RUN_37588835162",
+    "stable_uplift_gate": "REVALIDATION_REQUIRED_QXM_IPA_RUNTIME_EQUIVALENCE",
+    "abi_module_gate": "REVALIDATION_REQUIRED_AFTER_QXM_IPA_REPAIR",
     "touch_latency_gate": "BLOCKED_ON_BOOT_TO_SYSTEM",
     "performance_retention_gate": "BLOCKED_ON_BOOT_TO_SYSTEM",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED",
     "identity_gate": "PASS_R60F98E6",
-    "packaging_gate": "PASS_FIXED_REGION_AVB_RUN_37588835162"
+    "packaging_gate": "PASS_FIXED_REGION_NOT_SUFFICIENT"
   },
-  "last_checked_commit": "9309f5f49d6a0c5930f0e8f7cab476d02e8d83cf",
-  "last_checked_run": 37588835162,
-  "blocker": "DEVICE_RUNTIME_EVIDENCE_PENDING_FIXED_REGION_BOOT",
-  "next_action": "Flash artifact 11467702252 (lisa-c0061-r60f98e6-fixed-region-avb-pending-device-a1), boot SHA256 ba66e9d0317cb0bc781bd2d07e60fde40904523a4b5a868b3b7e42dbe97c3e6d, on the unchanged HyperOS 3.0.9 / Android16 baseline. This uses the exact r60f98e6 Image from run 37583148751 but restores the verified Candidate0046/Candidate0059 fixed stock kernel region, ramdisk placement, AVB0 and AVBf bytes. If it still one-screen resets, collect the next TWRP deep bundle immediately before changing another partition. In parallel continue inspecting corrected integrated run 37588835164.",
+  "last_checked_commit": "ee43b77c8fca408fb6af8c387ec78d3f4d3fb0b3",
+  "last_checked_run": 37588835164,
+  "blocker": "C0061_RECONSTRUCTION_MISSING_C0046_QXM_IPA_QOS_HARD_DISABLE",
+  "next_action": "Inspect the new pure Phase6 build after replaying Candidate0046 patch_yupik() and restoring true Candidate0059 watchdog 20000/15000. Require qxm_ipa inheritance before control build, qxm_ipa hard-disable/qosbox NULL/runtime marker after Direct-302 materialization, then compile/modpost, 16/16 ABI provenance, identity and fixed-region packaging.",
   "next_expected_evidence": [
-    "device reaches Linux/System with fixed-region boot artifact 11467702252",
-    "or fresh persistent evidence that differs from the morning oops/minidump/rawdump hashes",
-    "corrected integrated workflow run 37588835164 completes strict ABI provenance and fixed-region packaging gates",
-    "if device boot succeeds, proceed to ordered Phase7 touch/jank artifact only after recording kernel identity"
+    "C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS",
+    "control CONFIG_QCOM_WATCHDOG_BARK_TIME=20000 and PET_TIME=15000",
+    "post-302 RUNTIME_CONTRACT_qxm_ipa_qos_hard_disabled=1",
+    "post-302 RUNTIME_CONTRACT_qxm_ipa_qosbox_null=1",
+    "post-302 RUNTIME_CONTRACT_qxm_ipa_runtime_marker=1",
+    "Direct-302 semantic closure 34 reviewed / 0 unresolved",
+    "5.4.302 compile/modpost PASS",
+    "strict ABI provenance 16/16 with removed=0",
+    "fixed-region AVB packaging PASS and new boot artifact"
   ],
   "forbidden": [
     "global frequency pin",
@@ -494,7 +499,12 @@
     "Strict ABI provenance gate PASS: covered=16, stable=15, mixed=1, removed=0.",
     "Fixed-region packaging gate PASS with stock header page byte-exact, fixed kernel region 51436032 bytes, ramdisk offset 51441664, fixed logical end 71327744, embedded AVB0 vbmeta offset 71327744 size 896, and AVBf footer byte-exact.",
     "New fixed-region boot artifact 11467702252 has boot SHA256 ba66e9d0317cb0bc781bd2d07e60fde40904523a4b5a868b3b7e42dbe97c3e6d.",
-    "Artifact 11467702252 reuses exact r60f98e6 Image SHA256 065b762f369a18fa5d427e71dae0754bad253be2e8848ce568e73bdb6c1cf9f5; only packaging semantics changed from rejected dynamic boot abc3568d...."
+    "Artifact 11467702252 reuses exact r60f98e6 Image SHA256 065b762f369a18fa5d427e71dae0754bad253be2e8848ce568e73bdb6c1cf9f5; only packaging semantics changed from rejected dynamic boot abc3568d....",
+    "Device capture lisa-twrp-deep-20261007-162206.zip proves the 9309f5f fixed-region boot was flashed successfully but still resets after Start EBS with no fresh oops/minidump/rawdump.",
+    "Historical Candidate0011 and Candidate0012 already ruled out watchdog-only and fixed-region/AVB-only fixes as sufficient.",
+    "Historical Candidate0018 Linux entry faulted at qcom_icc_set_qos -> qnoc_probe on qxm_ipa QoS MAINCTL 0x10008; Candidate0020->0046 hard-disabled qxm_ipa.qosbox.",
+    "C0061 reconstruction omitted c46.patch_yupik(), so current C0061 builds lacked the real Candidate0059 qxm_ipa early-runtime hard-disable.",
+    "Same-run C0059 control also drifted to watchdog 11000/9360; repair restores 20000/15000 for baseline fidelity."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",

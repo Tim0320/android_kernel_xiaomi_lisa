@@ -31,6 +31,14 @@ def main():
     c46.ROOT=root; c46.KERNEL=kernel; c46.OUT=kernel/"out"
     c46.patch_qgki_module_abi()
 
+    # Real Candidate0059 inherits the Candidate0020->0046 Lisa/Yupik
+    # qxm_ipa QoS hard-disable. Candidate0018 historical minidump showed a
+    # synchronous external abort in qcom_icc_set_qos -> qnoc_probe while
+    # accessing aggre2_noc@1700000 + 0x10008. Recreate that bounded Lisa
+    # runtime-equivalence patch; do not copy a donor interconnect tree.
+    c46.patch_yupik()
+    print("C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS")
+
     # Candidate0059 was built through the 0054 -> 0053 -> 0046 lineage.  The
     # frozen source checkout predates those recipe-time IPA/PAS mutations, so
     # recreating C0059 must replay the verified Lisa/Yupik runtime contract as
@@ -97,6 +105,7 @@ def main():
     mtd=(kernel/"drivers/mtd/mtdoops.c").read_text()
     mounts=(kernel/"init/do_mounts.c").read_text()
     yupik=(kernel/"arch/arm64/boot/dts/vendor/qcom/yupik.dtsi").read_text()
+    yupik_icc=(kernel/"drivers/interconnect/qcom/yupik.c").read_text()
     ipa_gates = (
         ("block2mtd Lisa devpath", "defined(CONFIG_BOARD_XIAOMI_LISA)" in mounts),
         ("synchronous mtdoops checkpoint", "void lisa_mtdoops_checkpoint(const char *tag)" in mtd),
@@ -106,6 +115,9 @@ def main():
         ("PAS15 metadata retention", "LISA0053_IPA_METADATA stage=after_auth_reset" in scm),
         ("Yupik IPA reserved region", "reg = <0x0 0x8b710000 0x0 0xa000>;" in yupik),
         ("Yupik IPA firmware identity", 'qcom,firmware-name = "yupik_ipa_fws";' in yupik),
+        ("Yupik qxm_ipa QoS hard-disable", "Lisa Candidate 0046 diagnostic: never touch inaccessible IPA QoS MMIO." in yupik_icc),
+        ("Yupik qxm_ipa qosbox NULL", ".qosbox = NULL," in yupik_icc),
+        ("Yupik qxm_ipa runtime marker", "Lisa Candidate 0046: qxm_ipa QoS fully disabled" in yupik_icc),
     )
     missing = [name for name, ok in ipa_gates if not ok]
     if missing:

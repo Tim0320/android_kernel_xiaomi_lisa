@@ -584,7 +584,36 @@ Decision:
 
 Classification: BOOT_PACKAGING_REPAIR. The Direct-302 source/ABI result remains static evidence; device runtime validity is pending the corrected fixed-region boot.
 
+## 2026-10-07 16:22 fixed-region retest: qxm_ipa Candidate0059 runtime inheritance missing
+
+Latest device capture: lisa-twrp-deep-20261007-162206.zip.
+
+Observed sequence:
+- fastboot records flash:boot_a -> flash image status: Success -> reboot;
+- subsequent mission boot loads vbmeta_a / boot_a / dtbo_a / vendor_boot_a and reaches Start EBS;
+- oops/sda17 SHA256 remains 402b53f3583612c3cdd0a08a764535426645cff5ac2a8d24bff16d567b511351;
+- minidump SHA256 remains 40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d;
+- rawdump SHA256 remains 605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c;
+- fixed-region/AVB packaging therefore did not restore Linux runtime evidence.
+
+Historical controls prevent two false conclusions:
+- Candidate0011 already tested watchdog 20000/15000 and still failed; restoring those values is required for a truthful C0059 control but is not claimed as the root cause.
+- Candidate0012 already tested fixed-region/AVB preservation and still failed; packaging remains correct but is not sufficient.
+
+The relevant historical breakthrough is Candidate0018: its exact Linux session reached about 0.954 s and faulted with synchronous external abort 0x96000010 in regmap_mmio_read32le, call path qcom_icc_set_qos -> qnoc_probe, at qxm_ipa QoS MAINCTL aggre2_noc@1700000 + 0x10008. Candidate0020 onward and Candidate0046 therefore keep qxm_ipa.qosbox=NULL and never touch that inaccessible MMIO.
+
+C0061 reconstruction audit found that candidate_0061_recreate_c0059_uplift.py replayed selected Candidate0046 helpers but omitted c46.patch_yupik(). The post-302 runtime-contract gate also omitted this qxm_ipa invariant. Thus current C0061 did not actually reconstruct the real Candidate0059 early-runtime contract.
+
+Repair:
+- replay bounded c46.patch_yupik() only; no wholesale donor copy;
+- hard-gate qxm_ipa.qosbox=NULL plus Candidate0046 runtime marker before and after Direct-302 materialization;
+- restore Candidate0059 watchdog 20000/15000 to both control and target configs for equivalence;
+- keep Direct-302 semantic strategy, strict ABI provenance, and fixed-region packaging unchanged;
+- keep Phase7 blocked.
+
+Classification: MIXED_CONFLICT / C0059_RUNTIME_EQUIVALENCE.
+
 ## Current next action
 
 NEXT_ACTION:
-Run the dedicated fixed-region package-only workflow using source run 37583148751. Require C0061_ABI_PROVENANCE_GATE=PASS with changed=5, added=11, removed=0 and full 16/16 provenance coverage. Require C0061_FIXED_REGION_BOOT_GATE=PASS with header page byte-exact, stock 51,436,032-byte kernel region retained, stock ramdisk byte-exact at the stock offset, zero changes outside the kernel region, AVB0 metadata byte-exact and AVBf footer byte-exact. The resulting artifact is the next device diagnostic boot. In parallel, the integrated workflow is corrected to use the same packaging contract. Do not use abc3568d8c18899d30186c34ccd2198cf2def92f2f1d0809224524551bb6b462 again.
+Inspect the new pure Direct-302 Phase6 run triggered by this repair. Require C0061_C0059_QXM_IPA_QOS_INHERITANCE=PASS before the control build; require Candidate0059 watchdog 20000/15000 in control and target; require post-302 qxm_ipa hard-disable/qosbox NULL/runtime marker PASS before target compilation; then require 34/34 semantic closure, compile/modpost, strict 16/16 ABI provenance, identity, fixed-region AVB packaging, and a new device artifact. If the new boot still fails, compare the next persistent evidence specifically against Candidate0018/0019 early-Linux interconnect fault lineage before changing PAS, touch, or frequency controls.
