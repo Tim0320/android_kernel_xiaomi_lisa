@@ -24,6 +24,7 @@ Related evidence:
 - reconstruction/lisa_runtime_baseline_hyperos_3_0_9_a16_20261005.md
 - reconstruction/c0061_linux_5_4_302_uplift_plan_20261005.md
 - reconstruction/tools/collect_lisa_touch_runtime.ps1
+- reconstruction/c0061_phase10_device_validation_20261007.md
 
 ## Current observed state
 
@@ -293,7 +294,7 @@ Exit:
 - then proceed to Phase 7 touch/jank correction.
 
 ### Phase 7 - Touch/jank hot-path correction on 5.4.302
-Status: ACTIVE
+Status: DONE - STATIC/ABI/IDENTITY/PACKAGING PASS; DEVICE EFFECT PENDING
 
 Do this on top of the established 5.4.302 semantic base.
 
@@ -372,7 +373,7 @@ identify whether latency is:
 - render/present.
 
 ### Phase 10 - Candidate0061 integrated A16 validation
-Status: NOT STARTED
+Status: DEVICE VALIDATION PENDING
 
 Candidate0061 can progress only if all are PASS:
 - Linux 5.4.302 stable provenance;
@@ -465,28 +466,35 @@ At the end of every execution:
 ## Current next action
 
 NEXT_ACTION:
-Validate the Phase 7A TOUCH_PERF_ONLY package-runtime/WALT hot-path correction on top of the already static/ABI/identity/packaging-verified Direct-302 base.
+Run Candidate0061 Phase 10 device validation on HyperOS 3.0.9 / Android 16 using the static-verified boot from integrated run 37513703360.
 
-Completed prerequisite evidence:
-- integrated run 37498709196: SUCCESS;
-- Direct-302 semantic closure: 34/34/0;
-- 5.4.302 Image/modules/dtbs/modpost: PASS;
-- ABI/KMI: removed=0, changed=5, added=12;
-- exact kernel identity: PASS;
-- boot static packaging: PASS;
-- static-verified boot artifact 11431741252.
+Candidate under test:
+- build commit: 55105aacd809e748de41230c3ad11ca98ef8cd05
+- kernel release: 5.4.302-qgki-lisa-c0061-r55105aa-by-Tim0320
+- boot artifact: 11437434497
+- boot SHA256: 65e94493f1b41cc889074b3ccc9c19bfea6977c50b0a56754c535aeb9889f8d4
+- Image SHA256: 542c80563f11f759ce8837fd8526acb751af701097042e6bc8033fa12d1a77a6
 
-Phase 7A intervention:
-1. keep frozen Candidate0059 unchanged;
-2. apply Candidate0061-only TOUCH_PERF_ONLY overlay after Direct-302 materialization;
-3. remove per-WALT-update shared user history-slot copies;
-4. retain task history and MIGT accounting;
-5. queue user-history rolling on system_long_wq;
-6. add a bounded donor-equivalent pause hook without a new userspace ABI;
-7. rebuild the same integrated static/ABI/identity/boot gates.
+Automated evidence is complete:
+- Direct-302 semantic closure: 34 reviewed / 0 unresolved
+- Phase7A TOUCH_PERF_ONLY overlay: PASS
+- Image/modules/dtbs/modpost: PASS
+- ABI/KMI: removed=0
+- exact kernel identity: PASS
+- boot static packaging: PASS
+- Phase7 pause is decoupled from Stage9 migt_boost_policy
 
-Completed Phase7A evidence:
-- run 37508028472 completed SUCCESS through overlay apply, compile/modpost, ABI removed=0, identity and boot packaging, but its boot is retained as static evidence only because the first pause implementation was semantically coupled to Stage9 migt_boost_policy.\n\nCurrent validation run:\n- run 37513703360 from commit 55105aa;
-- prior run 37507943931 is ignored because it failed before runner allocation from workflow text-generation corruption, not from kernel source.
+No further kernel source change is justified until device runtime evidence is available.
 
-If the Phase 7A static gate passes, produce a new Candidate0061 static-verified boot labelled device-validation-pending and move to HyperOS 3.0.9/A16 device A/B touch+jank validation. If Phase 7A has no runtime improvement, proceed to Phase 8 FREQ_QOS/touch-boost isolation without modifying Goodix firmware/driver.
+Device validation:
+1. flash/test artifact 11437434497 on the active HyperOS 3.0.9 / Android 16 baseline;
+2. confirm exact kernel identity, boot stability and SELinux Enforcing;
+3. validate Wi-Fi, battery/charging and UFS/data;
+4. reproduce the Candidate0059 touch workload;
+5. collect evidence with reconstruction/tools/collect_lisa_touch_runtime.ps1;
+6. compare touch latency/jank behavior against Candidate0059/User B and the known-good control.
+
+Routing:
+- if Phase10 passes, close Candidate0061 A16 validation and unblock the later Candidate0062/A17 overlay;
+- if touch remains regressed with normal Goodix IRQ delivery, enter Phase 8 FREQ_QOS / Qualcomm touch-boost isolation;
+- if Goodix IRQ delivery is abnormal, investigate IRQ scheduling/affinity/rate before changing touchscreen firmware or driver.
