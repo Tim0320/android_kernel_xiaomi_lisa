@@ -552,7 +552,39 @@ Repair decision:
 
 Classification: MIXED_CONFLICT (preserve verified Candidate0059 runtime-equivalence while carrying Direct-302 stable changes).
 
+## 2026-10-07 TWRP deep capture: failure moved to EBS / packaging layer
+
+Latest user capture:
+- file: lisa-twrp-deep-20261007-152530.zip;
+- capture time: 2026-10-07 15:25:30 +08:00.
+
+Persistent crash-state comparison against the morning boot_65e94493f1b4 capture:
+- oops / sda17 block2mtd SHA256 = 402b53f3583612c3cdd0a08a764535426645cff5ac2a8d24bff16d567b511351 in both captures;
+- minidump SHA256 = 40bdc781b7e2a2ff8c52e50f9ad713168012b796d60adc8650b32eab2f48ea6d in both captures;
+- rawdump SHA256 = 605b2027582ca8c4b3c4d1e04d09ecc7b612dc9fe4ca97208c57bc2e3355710c in both captures;
+- no r60f98e6 / 5.4.302 Candidate0061 Linux banner exists in those persistent partitions;
+- only logfs changed. Its newest mission-mode record reaches Load Image boot_a / vendor_boot_a, orange-state authentication, DT overlay, Shutting Down UEFI Boot Services, and Start EBS. A following boot records PSHOLD / Hard Reset.
+
+Therefore the failed r60f98e6 boot did not reach the existing Candidate0054 raw-fault / mtdoops / IPA checkpoints. Driver/PAS mutation is not justified from this capture.
+
+Binary boot A/B exposed a concrete packaging regression:
+- verified working Candidate0059 boot 21764b30... keeps stock boot header kernel_size=51,436,032 and ramdisk offset=51,441,664;
+- Candidate0059 copies the real Image into that fixed region, zero-pads the unused kernel-region bytes, and leaves every byte after the kernel region unchanged;
+- Candidate0059 retains AVB0 at fixed logical_end 0x4406000, a 896-byte embedded vbmeta payload, and AVBf at the partition footer; tail nonzero bytes=367;
+- failed C0061 r60f98e6 boot abc3568d... changed header kernel_size to the actual 49,283,584-byte Image, moved ramdisk to 49,291,264, and zeroed the entire tail, explicitly requiring stale_avb_footer_absent=1;
+- this contradicts the canonical Candidate0059/fixed-region/AVB preservation contract and is now the first packaging blocker.
+
+Decision:
+- do not change kernel drivers from this TWRP capture;
+- reject abc3568d... as a device-test boot;
+- restore Candidate0046/Candidate0059 fixed-region packaging semantics;
+- hard-gate exact stock header page, ramdisk placement/content, bytes outside kernel region, AVB0 metadata and AVBf footer;
+- additionally hard-gate all 5 changed CRC + 11 added ABI symbols to per-symbol stable or reviewed MIXED_CONFLICT provenance before publishing the replacement boot;
+- produce a package-only recovery artifact from the already compiled r60f98e6 Image while the corrected integrated workflow revalidates future builds.
+
+Classification: BOOT_PACKAGING_REPAIR. The Direct-302 source/ABI result remains static evidence; device runtime validity is pending the corrected fixed-region boot.
+
 ## Current next action
 
 NEXT_ACTION:
-Run a new pure Direct-302 Phase6 build after restoring Candidate0054 raw first-fault inheritance and adding the post-materialization Candidate0059 runtime-contract gate. Require reconstruction markers C0061_C0059_RAW_LATCH_INHERITANCE=PASS, C0061_C0059_IPA_PAS_INHERITANCE=PASS and post-302 C0061_POST_302_C0059_RUNTIME_CONTRACT=PASS before target compilation. Then require compile/modpost, Candidate0059 removed ABI symbols = 0, identity and packaging. The resulting boot is the next device diagnostic candidate. If it still one-screen reboots, collect the persisted raw-fault/mtdoops evidence to identify the actual faulting PC/LR rather than guessing. Do not use Phase7 touch/jank changes as a remedy for this pre-System reboot.
+Run the dedicated fixed-region package-only workflow using source run 37583148751. Require C0061_ABI_PROVENANCE_GATE=PASS with changed=5, added=11, removed=0 and full 16/16 provenance coverage. Require C0061_FIXED_REGION_BOOT_GATE=PASS with header page byte-exact, stock 51,436,032-byte kernel region retained, stock ramdisk byte-exact at the stock offset, zero changes outside the kernel region, AVB0 metadata byte-exact and AVBf footer byte-exact. The resulting artifact is the next device diagnostic boot. In parallel, the integrated workflow is corrected to use the same packaging contract. Do not use abc3568d8c18899d30186c34ccd2198cf2def92f2f1d0809224524551bb6b462 again.

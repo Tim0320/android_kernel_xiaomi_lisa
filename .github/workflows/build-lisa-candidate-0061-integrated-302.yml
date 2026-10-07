@@ -9,6 +9,8 @@ on:
       - reconstruction/scripts/candidate_0061_direct_302_scan.py
       - reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py
       - reconstruction/scripts/candidate_0061_c0059_runtime_contract_gate.py
+      - reconstruction/scripts/candidate_0061_fixed_region_boot.py
+      - reconstruction/scripts/candidate_0061_abi_provenance_gate.py
       - reconstruction/scripts/candidate_0061_c0059_abi_compat.py
       - reconstruction/scripts/candidate_0061_direct_302_reviewed.py
       - reconstruction/scripts/candidate_0061_direct_302_review_gate.py
@@ -374,6 +376,19 @@ jobs:
           print("C0061_INTEGRATED_ABI_KMI_GATE=PASS removed=0")
           PY
 
+      - name: Gate every changed or added ABI symbol to provenance
+        id: abi_provenance
+        if: ${{ steps.abi.outcome == 'success' }}
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0061_abi_provenance_gate.py \
+            --abi candidate-0061-integrated-abi.json \
+            --scan candidate-0061-direct-302-scan.json \
+            --package package \
+            --json candidate-0061-integrated-abi-provenance.json \
+            2>&1 | tee candidate-0061-integrated-abi-provenance.log
+          grep -q '^C0061_ABI_PROVENANCE_GATE=PASS ' candidate-0061-integrated-abi-provenance.log
+
       - name: Gate integrated 5.4.302 kernel identity
         id: identity
         env:
@@ -403,88 +418,31 @@ jobs:
         env:
           STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
           STOCK_BOOT_BYTES: "201326592"
+          STOCK_KERNEL_REGION_BYTES: "51436032"
+          STOCK_RAMDISK_BYTES: "19883180"
+          STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
         run: |
           set -euo pipefail
-          stock="package/reconstruction/stock/stock-Image/boot.img"
-          image="kernel/out/arch/arm64/boot/Image"
-          test -s "$stock"
-          test -s "$image"
-          test "$(sha256sum "$stock" | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
-          test "$(stat -c %s "$stock")" = "$STOCK_BOOT_BYTES"
           short="${GITHUB_SHA:0:7}"
-          export TARGET_RELEASE="5.4.302-qgki-lisa-c0061-r${short}-by-Tim0320"
-          python3 - <<'PY'
-          from pathlib import Path
-          import hashlib, os, struct
-          stock = Path("package/reconstruction/stock/stock-Image/boot.img").read_bytes()
-          kernel = Path("kernel/out/arch/arm64/boot/Image").read_bytes()
-          target = os.environ["TARGET_RELEASE"].encode()
-          page = 4096
-          def align(v, a): return (v + a - 1) // a * a
-          def sha(b): return hashlib.sha256(b).hexdigest()
-          if stock[:8] != b"ANDROID!": raise SystemExit("stock baseline is not Android boot image")
-          if len(stock) != 201326592: raise SystemExit("unexpected stock boot partition size")
-          if struct.unpack_from("<I", stock, 40)[0] != 3: raise SystemExit("expected Android boot header v3")
-          if len(kernel) < 0x3c or struct.unpack_from("<I", kernel, 0x38)[0] != 0x644D5241: raise SystemExit("rebuilt Image lacks ARM64 magic")
-          if target not in kernel: raise SystemExit("rebuilt Image lacks Candidate0061 target release")
-          stock_kernel_size = struct.unpack_from("<I", stock, 8)[0]
-          ramdisk_size = struct.unpack_from("<I", stock, 12)[0]
-          stock_ramdisk_off = align(page + stock_kernel_size, page)
-          stock_ramdisk_end = stock_ramdisk_off + ramdisk_size
-          if stock_ramdisk_end > len(stock): raise SystemExit("stock ramdisk is truncated")
-          ramdisk = stock[stock_ramdisk_off:stock_ramdisk_end]
-          header_page = bytearray(stock[:page])
-          struct.pack_into("<I", header_page, 8, len(kernel))
-          out = bytearray(header_page)
-          out.extend(kernel)
-          out.extend(b"\0" * (align(len(out), page) - len(out)))
-          new_ramdisk_off = len(out)
-          out.extend(ramdisk)
-          out.extend(b"\0" * (align(len(out), page) - len(out)))
-          logical_end = len(out)
-          if logical_end > len(stock): raise SystemExit("rebuilt boot payload exceeds stock partition size")
-          out.extend(b"\0" * (len(stock) - len(out)))
-          out = bytes(out)
-          Path("boot.img").write_bytes(out)
-          check_kernel_size = struct.unpack_from("<I", out, 8)[0]
-          check_ramdisk_size = struct.unpack_from("<I", out, 12)[0]
-          check_ramdisk_off = align(page + check_kernel_size, page)
-          check_kernel = out[page:page + check_kernel_size]
-          check_ramdisk = out[check_ramdisk_off:check_ramdisk_off + check_ramdisk_size]
-          checks = {
-              "android_magic": out[:8] == b"ANDROID!",
-              "header_version_preserved": struct.unpack_from("<I", out, 40)[0] == 3,
-              "header_metadata_except_kernel_size_preserved": out[12:page] == stock[12:page],
-              "kernel_size_header_exact": check_kernel_size == len(kernel),
-              "kernel_payload_hash_exact": sha(check_kernel) == sha(kernel),
-              "ramdisk_size_preserved": check_ramdisk_size == ramdisk_size,
-              "ramdisk_payload_hash_preserved": sha(check_ramdisk) == sha(ramdisk),
-              "partition_size_preserved": len(out) == len(stock),
-              "arm64_image_magic": struct.unpack_from("<I", check_kernel, 0x38)[0] == 0x644D5241,
-              "target_release_present": target in check_kernel,
-              "tail_zeroed": not any(out[logical_end:]),
-              "stale_avb_footer_absent": not (len(out) >= 64 and out[-64:-60] == b"AVBf"),
-          }
-          failed = [k for k,v in checks.items() if not v]
-          lines = [
-              "C0061_INTEGRATED_BOOT_STATIC_GATE=" + ("PASS" if not failed else "FAIL"),
-              f"stock_boot_sha256={sha(stock)}",
-              f"new_kernel_sha256={sha(kernel)}",
-              f"new_kernel_size={len(kernel)}",
-              f"new_ramdisk_offset={new_ramdisk_off}",
-              f"new_logical_end={logical_end}",
-              f"new_boot_bytes={len(out)}",
-              f"new_boot_sha256={sha(out)}",
-              f"target_release={os.environ['TARGET_RELEASE']}",
-          ]
-          lines += [f"check_{k}={int(v)}" for k,v in checks.items()]
-          Path("candidate-0061-integrated-boot-validation.txt").write_text("\n".join(lines)+"\n")
-          print(Path("candidate-0061-integrated-boot-validation.txt").read_text(), end="")
-          if failed: raise SystemExit("boot static validation failed: "+", ".join(failed))
-          PY
+          target="5.4.302-qgki-lisa-c0061-r${short}-by-Tim0320"
+          python3 package/reconstruction/scripts/candidate_0061_fixed_region_boot.py \
+            --stock package/reconstruction/stock/stock-Image/boot.img \
+            --kernel kernel/out/arch/arm64/boot/Image \
+            --out boot.img \
+            --validation candidate-0061-integrated-boot-validation.txt \
+            --target-release "$target" \
+            --expected-stock-sha "$STOCK_BOOT_SHA256" \
+            --expected-partition-size "$STOCK_BOOT_BYTES" \
+            --expected-stock-kernel-size "$STOCK_KERNEL_REGION_BYTES" \
+            --expected-stock-ramdisk-size "$STOCK_RAMDISK_BYTES" \
+            --expected-stock-ramdisk-sha "$STOCK_RAMDISK_SHA256"
           sha256sum boot.img | tee boot.img.sha256
-          test "$(stat -c %s boot.img)" = "$STOCK_BOOT_BYTES"
           grep -q '^C0061_INTEGRATED_BOOT_STATIC_GATE=PASS$' candidate-0061-integrated-boot-validation.txt
+          grep -q '^C0061_FIXED_REGION_BOOT_GATE=PASS$' candidate-0061-integrated-boot-validation.txt
+          grep -q '^check_header_page_byte_exact=1$' candidate-0061-integrated-boot-validation.txt
+          grep -q '^check_changed_bytes_outside_kernel_region_zero=1$' candidate-0061-integrated-boot-validation.txt
+          grep -q '^check_stock_avb0_metadata_byte_exact=1$' candidate-0061-integrated-boot-validation.txt
+          grep -q '^check_stock_avbf_footer_byte_exact=1$' candidate-0061-integrated-boot-validation.txt
 
       - name: Report integrated 5.4.302 gate evidence
         if: ${{ always() }}
@@ -496,6 +454,7 @@ jobs:
           TARGET_CONFIG_OUTCOME: ${{ steps.target_config.outcome }}
           TARGET_BUILD_OUTCOME: ${{ steps.target_build.outcome }}
           ABI_OUTCOME: ${{ steps.abi.outcome }}
+          ABI_PROVENANCE_OUTCOME: ${{ steps.abi_provenance.outcome }}
           IDENTITY_OUTCOME: ${{ steps.identity.outcome }}
           PACKAGE_OUTCOME: ${{ steps.package_boot.outcome }}
         run: |

@@ -1,0 +1,155 @@
+name: Repack Lisa Candidate0061 fixed-region AVB boot
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/repack-lisa-candidate-0061-fixed-region.yml
+      - reconstruction/scripts/candidate_0061_fixed_region_boot.py
+      - reconstruction/scripts/candidate_0061_abi_provenance_gate.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0061-fixed-region-repack
+  cancel-in-progress: true
+
+jobs:
+  repack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_RUN: "37583148751"
+      SOURCE_BOOT_ARTIFACT: lisa-c0061-5.4.302-static-verified-pending-device-a1
+      SOURCE_EVIDENCE_ARTIFACT: lisa-c0061-integrated-302-evidence-a1
+      SOURCE_BAD_BOOT_SHA256: abc3568d8c18899d30186c34ccd2198cf2def92f2f1d0809224524551bb6b462
+      SOURCE_IMAGE_SHA256: 065b762f369a18fa5d427e71dae0754bad253be2e8848ce568e73bdb6c1cf9f5
+      SOURCE_RELEASE: 5.4.302-qgki-lisa-c0061-r60f98e6-by-Tim0320
+      STOCK_BOOT_SHA256: e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+      STOCK_BOOT_BYTES: "201326592"
+      STOCK_KERNEL_REGION_BYTES: "51436032"
+      STOCK_RAMDISK_BYTES: "19883180"
+      STOCK_RAMDISK_SHA256: 0dc218f3167e560444634a6a8cf969eb4470bcf452837a3e23bf45ea0a6819ae
+
+    steps:
+      - name: Checkout package
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+          persist-credentials: false
+
+      - name: Materialize exact stock boot
+        run: |
+          set -euo pipefail
+          git lfs install --local
+          git lfs pull --include="reconstruction/stock/stock-Image/boot.img"
+          test "$(sha256sum reconstruction/stock/stock-Image/boot.img | awk '{print $1}')" = "$STOCK_BOOT_SHA256"
+
+      - name: Download r60f98e6 source boot artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_BOOT_ARTIFACT }}
+          path: source-boot
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN }}
+
+      - name: Download r60f98e6 integrated evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.SOURCE_EVIDENCE_ARTIFACT }}
+          path: source-evidence
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ env.SOURCE_RUN }}
+
+      - name: Extract and authenticate exact compiled r60f98e6 Image
+        run: |
+          set -euo pipefail
+          test "$(sha256sum source-boot/boot.img | awk '{print $1}')" = "$SOURCE_BAD_BOOT_SHA256"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, os, struct
+          b=Path("source-boot/boot.img").read_bytes()
+          if b[:8] != b"ANDROID!": raise SystemExit("source boot magic missing")
+          if struct.unpack_from("<I",b,40)[0] != 3: raise SystemExit("source boot header v3 missing")
+          size=struct.unpack_from("<I",b,8)[0]
+          image=b[4096:4096+size]
+          if hashlib.sha256(image).hexdigest() != os.environ["SOURCE_IMAGE_SHA256"]:
+              raise SystemExit("source Image SHA mismatch")
+          if os.environ["SOURCE_RELEASE"].encode() not in image:
+              raise SystemExit("source release missing")
+          Path("candidate-0061-r60f98e6-Image").write_bytes(image)
+          print(f"SOURCE_IMAGE_BYTES={len(image)}")
+          print("C0061_R60F98E6_IMAGE_RECOVERY_GATE=PASS")
+          PY
+
+      - name: Hard-gate changed and added ABI provenance
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/candidate_0061_abi_provenance_gate.py \
+            --abi source-evidence/candidate-0061-integrated-abi.json \
+            --scan source-evidence/candidate-0061-direct-302-scan.json \
+            --package . \
+            --json candidate-0061-r60f98e6-abi-provenance.json \
+            2>&1 | tee candidate-0061-r60f98e6-abi-provenance.log
+          grep -q '^C0061_ABI_PROVENANCE_GATE=PASS ' candidate-0061-r60f98e6-abi-provenance.log
+
+      - name: Repack with verified Candidate0059 fixed-region contract
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/candidate_0061_fixed_region_boot.py \
+            --stock reconstruction/stock/stock-Image/boot.img \
+            --kernel candidate-0061-r60f98e6-Image \
+            --out boot.img \
+            --validation candidate-0061-r60f98e6-fixed-region-validation.txt \
+            --target-release "$SOURCE_RELEASE" \
+            --expected-stock-sha "$STOCK_BOOT_SHA256" \
+            --expected-partition-size "$STOCK_BOOT_BYTES" \
+            --expected-stock-kernel-size "$STOCK_KERNEL_REGION_BYTES" \
+            --expected-stock-ramdisk-size "$STOCK_RAMDISK_BYTES" \
+            --expected-stock-ramdisk-sha "$STOCK_RAMDISK_SHA256" \
+            --expected-kernel-sha "$SOURCE_IMAGE_SHA256"
+          sha256sum boot.img | tee boot.img.sha256
+          grep -q '^C0061_FIXED_REGION_BOOT_GATE=PASS$' candidate-0061-r60f98e6-fixed-region-validation.txt
+          grep -q '^check_header_page_byte_exact=1$' candidate-0061-r60f98e6-fixed-region-validation.txt
+          grep -q '^check_stock_ramdisk_byte_exact=1$' candidate-0061-r60f98e6-fixed-region-validation.txt
+          grep -q '^check_changed_bytes_outside_kernel_region_zero=1$' candidate-0061-r60f98e6-fixed-region-validation.txt
+          grep -q '^check_stock_avb0_metadata_byte_exact=1$' candidate-0061-r60f98e6-fixed-region-validation.txt
+          grep -q '^check_stock_avbf_footer_byte_exact=1$' candidate-0061-r60f98e6-fixed-region-validation.txt
+
+      - name: Record recovery provenance
+        run: |
+          set -euo pipefail
+          {
+            echo "candidate=0061"
+            echo "classification=BOOT_PACKAGING_REPAIR"
+            echo "source_run=$SOURCE_RUN"
+            echo "source_release=$SOURCE_RELEASE"
+            echo "source_image_sha256=$SOURCE_IMAGE_SHA256"
+            echo "rejected_dynamic_boot_sha256=$SOURCE_BAD_BOOT_SHA256"
+            echo "device_evidence=lisa-twrp-deep-20261007-152530.zip"
+            echo "device_observation=UEFI reaches Start EBS; no fresh Linux banner; oops/minidump/rawdump byte-identical to morning capture"
+            echo "repack_contract=Candidate0046/Candidate0059 fixed stock kernel region with exact stock header, ramdisk, AVB0 and AVBf bytes"
+            echo "C0061_FIXED_REGION_RECOVERY_PACKAGE=PASS"
+          } | tee candidate-0061-r60f98e6-fixed-region-source.txt
+
+      - name: Upload fixed-region device diagnostic boot
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-r60f98e6-fixed-region-avb-pending-device-a${{ github.run_attempt }}
+          retention-days: 14
+          compression-level: 1
+          if-no-files-found: error
+          path: |
+            boot.img
+            boot.img.sha256
+            candidate-0061-r60f98e6-Image
+            candidate-0061-r60f98e6-abi-provenance.json
+            candidate-0061-r60f98e6-abi-provenance.log
+            candidate-0061-r60f98e6-fixed-region-validation.txt
+            candidate-0061-r60f98e6-fixed-region-source.txt
