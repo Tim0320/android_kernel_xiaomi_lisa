@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScriptVersion = "1.3.1"
+$ScriptVersion = "1.3.2"
 $SchemaVersion = 1
 
 function Write-Step {
@@ -449,17 +449,29 @@ New-Item -ItemType Directory -Force -Path $pulledDir | Out-Null
 $adb = Get-Command adb -ErrorAction Stop
 $adbPath = $adb.Source
 
-Write-Step "Starting ADB and waiting for a TWRP/recovery device..."
+Write-Step "Starting ADB and checking for a usable TWRP/recovery transport..."
 & $adbPath start-server | Out-Null
-& $adbPath wait-for-device
-if ($LASTEXITCODE -ne 0) {
-    throw "adb wait-for-device failed."
+
+$acceptedAdbStates = @("device", "recovery")
+$state = (& $adbPath get-state 2>$null | Out-String).Trim()
+
+if ($acceptedAdbStates -notcontains $state) {
+    Write-Step ("Current ADB state is '" + $state + "'. Waiting for device/recovery transport...")
+    $deadline = (Get-Date).AddSeconds(30)
+    do {
+        Start-Sleep -Seconds 1
+        $state = (& $adbPath get-state 2>$null | Out-String).Trim()
+        if ($acceptedAdbStates -contains $state) {
+            break
+        }
+    } while ((Get-Date) -lt $deadline)
 }
 
-$state = (& $adbPath get-state 2>$null | Out-String).Trim()
-if ($state -ne "device") {
-    throw "ADB device state is '$state', expected 'device'."
+if ($acceptedAdbStates -notcontains $state) {
+    throw "ADB state is '$state'; expected 'device' or 'recovery'."
 }
+
+Write-Step ("ADB transport ready: " + $state)
 
 $device = Get-AdbShellText -AdbPath $adbPath -Command "getprop ro.product.device"
 $model = Get-AdbShellText -AdbPath $adbPath -Command "getprop ro.product.model"
