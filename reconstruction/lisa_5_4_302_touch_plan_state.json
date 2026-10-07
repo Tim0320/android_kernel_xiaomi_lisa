@@ -108,18 +108,18 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "fb3b3c2c3d136e7f8abee1f45c24e69174fc119f",
+  "last_checked_commit": "5b5ce159ebb8447cb7b7a93161d030790995c753",
   "last_checked_run": 37655937871,
-  "blocker": "CI_IN_PROGRESS_NFC_RUNTIME_MODULE_ARTIFACT",
-  "next_action": "Watch run 37655937871. Confirm the integrated build produces a rebuilt NFC runtime module containing the cdev guard and publishes module inventory/modinfo evidence. If the run fails, fix the first concrete CI blocker. If it passes, use the resulting module identity/path evidence to build the bounded runtime deployment artifact before any Phase7 WALT/MIGT/FREQ_QOS/Goodix work.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_HARDENING_AND_MATCHED_NFC_DEVICE_VALIDATION",
+  "next_action": "Retry the collector v1.3.6 hardening write: remove generic vendor_dlkm 'mount -o ro' and permit only EROFS ro or ext4 ro,noload. Then use the hardened collector to prove the runtime nfc_i2c.ko path/SHA256/vermagic/guard on HyperOS 3.0.9 A16. Do not start Phase7 WALT/MIGT/FREQ_QOS/Goodix work until the matched module is proven on-device and a fresh boot no longer faults at ffffffffffffffc8 / nfc_dev_open.",
   "next_expected_evidence": [
-    "Run 37655937871 reaches target compile successfully",
-    "C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
-    "candidate-0061-nfc-module-candidates.txt identifies the rebuilt runtime module",
-    "rebuilt module strings contain NFC cdev unavailable",
-    "module modinfo/vermagic is compatible with the Candidate0061 5.4.302 kernel",
-    "artifact includes candidate-0061-runtime-modules for bounded deployment planning",
-    "device retest eventually removes fresh ffffffffffffffc8 nfc_dev_open fault"
+    "Collector v1.3.6 is committed with no generic mount -o ro vendor_dlkm fallback",
+    "Run 37655937871 remains SUCCESS and C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
+    "Candidate0061 boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6",
+    "Guarded nfc_i2c.ko runtime artifact SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "Device collector reports the actual loaded/vendor module path, SHA256, vermagic and NFC cdev unavailable guard marker",
+    "Fresh device evidence no longer contains ffffffffffffffc8 / nfc_dev_open [nfc_i2c]",
+    "Phase7 remains frozen until the NFC runtime deployment gate passes"
   ],
   "forbidden": [
     "global frequency pin",
@@ -555,7 +555,11 @@
     "Fresh current-session mtdoops sequence around 41.816s records LISA0054_RAW_FAULT addr=ffffffffffffffc8 followed by kernel paging request, reproducing the prior nfc_dev_open negative-pointer crash despite the CI NFC guard gate.",
     "Integrated workflow audit proves the NFC source guard is applied before compile, but final packaging uploads boot.img/Image only and does not package rebuilt modules/vendor_dlkm. The runtime [nfc_i2c] module can therefore remain stale, explaining why the source guard passed CI but did not affect device behavior.",
     "Commit fb3b3c2 adds integrated CI inventory/export for rebuilt NFC runtime modules and verifies the compiled module contains the NFC cdev guard marker.",
-    "Integrated run 37655937871 queued from fb3b3c2 to identify and publish the actual guarded NFC runtime module."
+    "Integrated run 37655937871 queued from fb3b3c2 to identify and publish the actual guarded NFC runtime module.",
+    "Run 37655937871 / job 112910508641 rechecked on 2026-10-08: every step completed SUCCESS, including NFC runtime module inventory, Direct-302 compile/modpost, ABI/KMI removed=0 and provenance covered=16 stable=15 mixed=1.",
+    "Run 37655937871 log reconfirmed target release 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320 and boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6.",
+    "Collector v1.3.5 audit found an unsafe generic vendor_dlkm fallback using mount -o ro before the ext4 ro,noload / EROFS ro attempts; strict read-only hardening is required before using that fallback as evidence.",
+    "Attempt to commit collector v1.3.6 hardening was blocked by write safety review; record WRITE_PERMISSION_BLOCKED and keep kernel/Phase7 changes frozen."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
