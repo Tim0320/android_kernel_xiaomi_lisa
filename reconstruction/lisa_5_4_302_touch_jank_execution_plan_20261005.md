@@ -676,3 +676,29 @@ Repair decision:
 
 NEXT_ACTION:
 Run the pure Direct-302 target again with the NFC cdev guard applied only after Candidate0059 control and Direct-302 runtime-contract gates. Require C0061_NFC_CDEV_GUARD=PASS, compile/modpost, strict ABI provenance removed=0, exact identity and fixed-region packaging. The resulting boot is the next device candidate. On retest, verify the ffffffffffffffc8 / nfc_dev_open Oops disappears. If the system still reboots, use the next fresh oops/sda17 delta to identify the next first fault rather than altering PAS/touch/frequency speculatively.
+
+
+## 2026-10-07 r20b187c userspace evidence refinement
+
+Evidence package:
+- lisa-twrp-iter-0005_20261007-224443_boot_deee5ff41b61.zip
+- collector version: 1.3.2
+- boot SHA256: deee5ff41b617391c9ea88663596fed0cbf8b93d3d89f5d0e3e568f4d2788edf
+- /data is decrypted and mounted in recovery.
+- pstore is empty and /proc/last_kmsg is unavailable.
+- no fresh r20b187c persistent kernel panic record was found; oops remains historical.
+- bounded dropbox/tombstone/anr capture succeeded.
+
+First concrete userspace fault retained in the failed-boot evidence:
+- adbd runs from u:r:adbd:s0 and attempts a dyntransition to u:r:su:s0;
+- SELinux enforcing denies that dyntransition;
+- adbd then aborts with "Could not set SELinux context".
+- This proves adbd entered the root-retention path, but it is not yet accepted as the sole device-reboot cause because adbd is not itself sufficient evidence of system_server/zygote/SF failure.
+
+Decision:
+- do not weaken SELinux and do not patch the kernel for this denial.
+- keep qxm_ipa, PAS, watchdog, NFC, WALT, FREQ_QOS and Goodix frozen.
+- investigate why a user/release HyperOS 3.0.9 A16 boot caused adbd to enter the root branch.
+- collect static property sources, init adbd definition/overrides, debug marker files, /data/adb root-module indicators and persistent-property strings from recovery.
+- collector v1.3.3 adds raw/22_adbd_debug_provenance.txt for this read-only provenance capture.
+- only after root/debug provenance is established should a new boot/runtime intervention be selected.
