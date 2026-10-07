@@ -51,7 +51,7 @@ def main():
     c53_path = root/"reconstruction/scripts/candidate_0053_build.py"
     c53_bytes = c53_path.read_bytes()
     c53_blob = hashlib.sha1(
-        b"blob " + str(len(c53_bytes)).encode() + b"\\0" + c53_bytes
+        b"blob " + str(len(c53_bytes)).encode() + b"\0" + c53_bytes
     ).hexdigest()
     c53_expected_blob = "d3111485e075156687c5eee50546ba42417dd2fa"
     if c53_blob != c53_expected_blob:
