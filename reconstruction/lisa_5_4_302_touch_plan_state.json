@@ -108,14 +108,16 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "bb367175e7150d15af2e9648330dae428126429b",
+  "last_checked_commit": "26dd3e5fe87bc8f5f639b0a99020cc37baa10263",
   "last_checked_run": 37617885939,
-  "blocker": "SYSTEM_USERSPACE_REACHED_BUT_BOOT_NOT_COMPLETED_FRESH_FAILURE_CONTENT_MISSING_WRITE_PERMISSION_BLOCKED",
-  "next_action": "Treat run 37617885939 as static/ABI/identity/packaging PASS. Do not modify qxm_ipa, PAS, watchdog, NFC, touch, WALT or FREQ_QOS without new evidence. Improve the TWRP failure collector to pull actual recent /data/system/dropbox, /data/tombstones and /data/anr file contents when /data is mounted/decrypted, then classify the first fresh failure as system_server/zygote/SurfaceFlinger/vendor service/kernel-late panic before any new kernel patch. GitHub write was blocked this round; retry the bounded collector/state update first.",
+  "blocker": "DEVICE_RECAPTURE_REQUIRED_WITH_BOUNDED_USERSPACE_EVIDENCE",
+  "next_action": "Use scripts/collect_lisa_twrp_logs.ps1 v1.3.0 from commit 26dd3e5 on the next recovery capture after reproducing the r20b187c boot-completion failure. The collector now records /data mount/access state and pulls up to 8 newest files (<=2 MiB each) from /data/system/dropbox, /data/tombstones and /data/anr when recovery can access decrypted /data. Classify the first fresh failure before any new kernel patch. Keep qxm_ipa, PAS, watchdog, NFC, touch/WALT and FREQ_QOS frozen unless fresh evidence points there.",
   "next_expected_evidence": [
-    "fresh TWRP package containing actual recent /data/system/dropbox file contents",
-    "fresh /data/tombstones contents or explicit proof none are new",
-    "fresh /data/anr contents when present",
+    "fresh TWRP package produced by collector v1.3.0 / commit 26dd3e5",
+    "raw/21_userspace_failure_sources.txt proving /data access state and recent file inventory",
+    "actual recent /data/system/dropbox file contents or explicit proof none are accessible/new",
+    "actual recent /data/tombstones contents or explicit proof none are accessible/new",
+    "actual recent /data/anr contents when present",
     "boot attempt identity matching 5.4.302-qgki-lisa-c0061-r20b187c-by-Tim0320",
     "first fresh failure classified as system_server, zygote, SurfaceFlinger, vendor service, Android-requested reboot, or late kernel panic",
     "no recurrence of nfc_dev_open/mutex_lock fault at ffffffffffffffc8"
@@ -525,7 +527,9 @@
     "Device capture lisa-twrp-deep-20261007-205735.zip plus user observation shows initial System/userspace entry but Android boot does not complete.",
     "The 20:57:35 deep capture has empty pstore and no /proc/last_kmsg; minidump/rawdump are unchanged historical data and the package contains only dropbox/tombstone listings rather than their file contents, so there is no trustworthy fresh crash root cause yet.",
     "No further kernel-source change is justified until fresh userspace crash evidence is captured; qxm_ipa/PAS/watchdog/NFC/touch/FREQ_QOS remain frozen for this triage.",
-    "Attempted bounded TWRP collector enhancement to pull actual recent dropbox/tombstone/anr files, but GitHub write was blocked by safety review this round."
+    "Attempted bounded TWRP collector enhancement to pull actual recent dropbox/tombstone/anr files, but GitHub write was blocked by safety review this round.",
+    "Commit 26dd3e5fe87bc8f5f639b0a99020cc37baa10263 upgrades scripts/collect_lisa_twrp_logs.ps1 to v1.3.0 and adds bounded userspace failure evidence capture.",
+    "Collector v1.3.0 records /data access state and pulls at most 8 newest files up to 2 MiB each from /data/system/dropbox, /data/tombstones and /data/anr; kernel source remains unchanged."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
