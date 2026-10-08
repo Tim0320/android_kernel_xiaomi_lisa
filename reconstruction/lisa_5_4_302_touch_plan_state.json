@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-08T09:01:45Z",
+  "updated_at": "2026-10-08T11:21:42Z",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -46,16 +46,16 @@
     "phase_2_hyperos_3_0_9_touch_control_capture": "DEVICE_DATA_PENDING",
     "phase_3_batch_a_5_4_290_to_5_4_292": "PROVENANCE_REFERENCE_PASS_NO_LONGER_SEPARATE_REQUIRED_GATE",
     "phase_4_batch_b_5_4_293_to_5_4_296": "LEGACY_PROVENANCE_EVIDENCE_ONLY_RETIRED_AS_SEPARATE_BUILD",
-    "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_PENDING_DIRECT_302_SCAN",
-    "phase_7_touch_jank_hotpath_correction": "BLOCKED_ON_NFC_RUNTIME_MODULE_DEPLOYMENT",
+    "phase_5_batch_c_5_4_297_to_5_4_299": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_REVIEWED_DIRECT_302",
+    "phase_6_batch_d_5_4_300_to_5_4_302": "RETIRED_AS_SEPARATE_BUILD_PROVENANCE_REVIEWED_DIRECT_302",
+    "phase_7_touch_jank_hotpath_correction": "HISTORICAL_STATIC_EVIDENCE_ONLY_NEW_RUNTIME_INTERVENTIONS_HELD",
     "phase_8_freq_qos_touch_boost_isolation": "CONDITIONAL",
     "phase_9_kernel_latency_tracing": "CONDITIONAL",
     "phase_10_candidate0061_a16_validation": "R20B187C_REACHES_SYSTEM_USERSPACE_BUT_BOOT_NOT_COMPLETED_NO_FRESH_PANIC_CAPTURED",
     "phase_11_candidate0060_0062_a17_overlay": "BLOCKED_ON_C0061",
     "phase_4_direct_5_4_289_to_5_4_302": "RECONSTRUCTION_REPAIR_PASS",
     "phase_5_direct_302_semantic_conflict_closure": "DONE_DIRECT_302_MATERIALIZATION_PASS_34_REVIEWED",
-    "phase_6_direct_302_integrated_static_abi_gate": "STATIC_PASS_DEVICE_RUNTIME_FAIL_NFC_MODULE_GUARD_NOT_DEPLOYED"
+    "phase_6_direct_302_integrated_static_abi_gate": "STATIC_PASS_DEVICE_RUNTIME_NFC_DEPLOYMENT_UNVERIFIED"
   },
   "research_verdict": {
     "method_supported_by_public_evidence": true,
@@ -99,26 +99,26 @@
     }
   ],
   "gates": {
-    "stable_uplift_gate": "STATIC_PASS_RUNTIME_BLOCKED_BY_STALE_NFC_MODULE",
+    "stable_uplift_gate": "STATIC_PASS_RUNTIME_UNVERIFIED",
     "abi_module_gate": "PASS_R20B187C_REMOVED_0",
-    "touch_latency_gate": "BLOCKED_ON_NFC_MODULE_RUNTIME_FIX",
-    "performance_retention_gate": "BLOCKED_ON_NFC_MODULE_RUNTIME_FIX",
+    "touch_latency_gate": "BLOCKED_ON_DEVICE_RUNTIME_EVIDENCE",
+    "performance_retention_gate": "BLOCKED_ON_DEVICE_RUNTIME_EVIDENCE",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED",
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "f9b94f73e3e5e67f0f9b3a70a006e810958ec6d6",
+  "last_checked_commit": "ac56b43c4fb895ca17f394d811a27c260cd7c913",
   "last_checked_run": 37655937871,
-  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN_UPDATE; NFC_RUNTIME_DEPLOYMENT_UNVERIFIED",
-  "next_action": "Retry exact, safety-reviewed collector and canonical plan updates if permissions allow. Read-only recovery provenance must inventory vendor_dlkm/odm_dlkm with ext4 ro,noload or EROFS ro only and vendor_boot entries without mounting a boot image. Recover actual Android loaded nfc_i2c.ko canonical path/hash/vermagic/guard on a fresh A16 boot, compare to CI artifact and check nfc_dev_open; do not infer runtime from TWRP disk inspection. Hold Phase7/WALT/touch/FREQ_QOS and Candidate0059 freeze.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN; NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; DEVICE_REBOOT_CAUSE_UNVERIFIED",
+  "next_action": "Retry minimally scoped collector safety fix (remove generic mount -o ro; only ext4 ro,noload or EROFS ro) and canonical plan update without kernel changes. Inspect vendor_dlkm/odm_dlkm independently as recovery-only provenance. Obtain Android-loaded nfc_i2c.ko path/hash/vermagic/guard versus Direct-302 artifact, then fresh-boot panic/userspace evidence; distinguish NFC from historical adbd SELinux denial. Keep Candidate0059 frozen and Phase7/WALT/FREQ_QOS/Goodix/PAS interventions on hold.",
   "next_expected_evidence": [
-    "GitHub collector update committed (no generic readonly mount fallback), read-only vendor_dlkm plus odm_dlkm provenance collector preflight PASS",
-    "Canonical plan marks Phase6 static PASS versus Android runtime NFC UNVERIFIED; Phase7 new interventions held",
-    "Verified current repository HEAD f9b94f73e3e5e67f0f9b3a70a006e810958ec6d6 and Direct-302 successful run 37655937871 / job 112910508641 36 steps",
-    "Static CI semantic closure 34/34 unresolved=0, ABI removed=0, 16/16 provenance, independent NFC runtime module artifact PASS",
-    "NFC CI artifact SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b compared against Android loaded module source (NOT only recovery filesystem)",
-    "Fresh HyperOS 3.0.9 Android16 boot evidence confirms absence of nfc_dev_open +0x30/0xf0 fault and observes runtime services (not inferred from CI)"
+    "GitHub HEAD ac56b43 verified and run 37655937871 job 112910508641 36 steps PASS",
+    "Direct-302 semantic closure 34/34 unresolved=0, ABI removed=0, changed/added provenance 16/16",
+    "Collector removes generic mount -o ro and audits vendor_dlkm/odm_dlkm with ext4 ro,noload / EROFS ro; recovery inventory is not runtime proof",
+    "Canonical plan clarifies Phase6 static PASS versus Android runtime UNVERIFIED and Phase7 device evidence held",
+    "Actual Android-loaded nfc_i2c.ko path/hash/vermagic/guard compared against CI artifact SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "Fresh HyperOS 3.0.9 Android16 boot failure evidence distinguishes nfc_dev_open fault from unrelated userspace crashes including historical adbd dyntransition denial"
   ],
   "forbidden": [
     "global frequency pin",
@@ -583,7 +583,8 @@
     "Fresh run metadata reconfirmed boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6 and target release 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320; artifacts 11499874761, 11500359180 and 11501530106 remain unexpired through 2026-10-21.",
     "Collector v1.3.6 strict-read-only hardening and canonical Phase6/Phase7 alignment writes were retried this round and blocked by OpenAI safety review; no kernel source, Phase7, WALT, MIGT/FREQ_QOS, Goodix or PAS15 change was made.",
     "2026-10-08 13:47+08 fresh audit: HEAD 704e87e, latest Actions 37655937871 / job 112910508641 SUCCESS (36/36). Integrated workflow inventories nfc_i2c.ko and uploads it separately, while boot packaging replaces only the kernel Image and verifies the stock ramdisk remains byte-identical; thus the fixed NFC module is NOT proven installed in active Android vendor/odm DLKM or vendor_boot. Collector v1.3.6 write retried and rejected by OpenAI safety checks; no kernel, Phase7 or device mutation.",
-    "2026-10-08 verified remote HEAD f9b94f7 and Direct-302 job 112910508641 36/36 SUCCESS; collector readonly vendor+ODM DLKM hardening and canonical-plan status edits prepared but write safety blocked; NFC Android runtime remains UNVERIFIED"
+    "2026-10-08 verified remote HEAD f9b94f7 and Direct-302 job 112910508641 36/36 SUCCESS; collector readonly vendor+ODM DLKM hardening and canonical-plan status edits prepared but write safety blocked; NFC Android runtime remains UNVERIFIED",
+    "2026-10-08 verified main ac56b43 and integrated run 37655937871 job 112910508641 36 successful steps; NFC module deployment and current reboot cause remain unverified; collector generic mount fallback write rejected by safety review."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
