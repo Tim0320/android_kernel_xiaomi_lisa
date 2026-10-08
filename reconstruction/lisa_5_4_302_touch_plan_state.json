@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-08T13:47:20+08:00",
+  "updated_at": "2026-10-08T09:01:45Z",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -108,19 +108,17 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "704e87e6869d2494fcd5fdf180dac67ffb02be5c",
+  "last_checked_commit": "f9b94f73e3e5e67f0f9b3a70a006e810958ec6d6",
   "last_checked_run": 37655937871,
-  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN_UPDATE",
-  "next_action": "Retry collector v1.3.6 strict-read-only GitHub update when permitted. CI run 37655937871 creates/copies guarded nfc_i2c.ko into a separate artifact; the boot packager replaces only the Image while retaining the pinned stock ramdisk, so the guard is not proven deployed on the device. Read vendor/odm DLKM and vendor_boot module manifests, obtain Android boot-time loaded module path/vermagic/guard proof (recovery disk evidence alone is insufficient), and verify no nfc_dev_open fault on a fresh boot. Keep Phase7 and all touch/perf, MIGT/FREQ_QOS, Goodix and PAS15 interventions frozen.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN_UPDATE; NFC_RUNTIME_DEPLOYMENT_UNVERIFIED",
+  "next_action": "Retry exact, safety-reviewed collector and canonical plan updates if permissions allow. Read-only recovery provenance must inventory vendor_dlkm/odm_dlkm with ext4 ro,noload or EROFS ro only and vendor_boot entries without mounting a boot image. Recover actual Android loaded nfc_i2c.ko canonical path/hash/vermagic/guard on a fresh A16 boot, compare to CI artifact and check nfc_dev_open; do not infer runtime from TWRP disk inspection. Hold Phase7/WALT/touch/FREQ_QOS and Candidate0059 freeze.",
   "next_expected_evidence": [
-    "Collector v1.3.6 committed with no generic mount -o ro fallback; only ext4 ro,noload or EROFS ro fallbacks, with vendor_dlkm and odm_dlkm coverage plus mount mode and canonical/resolved module path evidence",
-    "Canonical plan records Phase6 matched NFC runtime deployment validation and keeps Phase7 frozen",
-    "Run 37655937871 / job 112910508641 remains SUCCESS with C0061_DIRECT_302_SEMANTIC_CLOSURE=PASS raw=34 reviewed=34 unresolved=0 and C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
-    "Candidate0061 boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6",
-    "Guarded nfc_i2c.ko SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b and vermagic 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320",
-    "Device evidence proves actual runtime module canonical/resolved path/hash/vermagic/guard",
-    "Fresh boot has no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault",
-    "Android runtime deployment gate: identify actual loaded nfc_i2c.ko source in vendor_dlkm / odm_dlkm / vendor_boot and compare hash, vermagic, cdev guard; CI boot.img preserves stock ramdisk and only ships guarded NFC module in a separate evidence artifact."
+    "GitHub collector update committed (no generic readonly mount fallback), read-only vendor_dlkm plus odm_dlkm provenance collector preflight PASS",
+    "Canonical plan marks Phase6 static PASS versus Android runtime NFC UNVERIFIED; Phase7 new interventions held",
+    "Verified current repository HEAD f9b94f73e3e5e67f0f9b3a70a006e810958ec6d6 and Direct-302 successful run 37655937871 / job 112910508641 36 steps",
+    "Static CI semantic closure 34/34 unresolved=0, ABI removed=0, 16/16 provenance, independent NFC runtime module artifact PASS",
+    "NFC CI artifact SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b compared against Android loaded module source (NOT only recovery filesystem)",
+    "Fresh HyperOS 3.0.9 Android16 boot evidence confirms absence of nfc_dev_open +0x30/0xf0 fault and observes runtime services (not inferred from CI)"
   ],
   "forbidden": [
     "global frequency pin",
@@ -584,7 +582,8 @@
     "Run 37655937871 / job 112910508641 re-read in full: all 36 steps SUCCESS; semantic closure raw=34 reviewed=34 unresolved=0; NFC cdev guard PASS; NFC runtime module artifact PASS; ABI removed=0; provenance covered=16 stable=15 mixed=1.",
     "Fresh run metadata reconfirmed boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6 and target release 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320; artifacts 11499874761, 11500359180 and 11501530106 remain unexpired through 2026-10-21.",
     "Collector v1.3.6 strict-read-only hardening and canonical Phase6/Phase7 alignment writes were retried this round and blocked by OpenAI safety review; no kernel source, Phase7, WALT, MIGT/FREQ_QOS, Goodix or PAS15 change was made.",
-    "2026-10-08 13:47+08 fresh audit: HEAD 704e87e, latest Actions 37655937871 / job 112910508641 SUCCESS (36/36). Integrated workflow inventories nfc_i2c.ko and uploads it separately, while boot packaging replaces only the kernel Image and verifies the stock ramdisk remains byte-identical; thus the fixed NFC module is NOT proven installed in active Android vendor/odm DLKM or vendor_boot. Collector v1.3.6 write retried and rejected by OpenAI safety checks; no kernel, Phase7 or device mutation."
+    "2026-10-08 13:47+08 fresh audit: HEAD 704e87e, latest Actions 37655937871 / job 112910508641 SUCCESS (36/36). Integrated workflow inventories nfc_i2c.ko and uploads it separately, while boot packaging replaces only the kernel Image and verifies the stock ramdisk remains byte-identical; thus the fixed NFC module is NOT proven installed in active Android vendor/odm DLKM or vendor_boot. Collector v1.3.6 write retried and rejected by OpenAI safety checks; no kernel, Phase7 or device mutation.",
+    "2026-10-08 verified remote HEAD f9b94f7 and Direct-302 job 112910508641 36/36 SUCCESS; collector readonly vendor+ODM DLKM hardening and canonical-plan status edits prepared but write safety blocked; NFC Android runtime remains UNVERIFIED"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
