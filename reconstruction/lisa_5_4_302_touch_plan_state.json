@@ -108,16 +108,17 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "9e86c0e5bc3a03402e682657ccb17c4693df3eea",
+  "last_checked_commit": "4076143c86c3b87860db447aa0949d8d90292240",
   "last_checked_run": 37655937871,
-  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6; NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; DEVICE_REBOOT_CAUSE_UNVERIFIED",
-  "next_action": "Retry authorized collector v1.3.6 strict read-only recovery inspection (ext4 ro,noload or EROFS ro only) for vendor_dlkm and odm_dlkm independently. Correlate recovery nfc_i2c.ko SHA256/vermagic/guard and Android module-load evidence with CI artifact before matched boot/module packaging. Do not infer runtime deployment from compile or Recovery mount visibility. Keep Candidate0059 frozen, Phase7 and kernel changes on hold pending device evidence.",
+  "blocker": "NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; DEVICE_REBOOT_CAUSE_UNVERIFIED; DEVICE_EVIDENCE_REQUIRED_WITH_COLLECTOR_V1_3_6",
+  "next_action": "Use committed collector v1.3.6 on the HyperOS 3.0.9 / Android 16 device after the next failed/attempted boot to inspect /vendor/lib/modules and /odm/lib/modules plus strict read-only vendor_dlkm/odm_dlkm provenance. Compare nfc_i2c.ko canonical/resolved path, SHA256, vermagic and NFC guard marker against CI artifact SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. Do not change WALT/FREQ_QOS/Goodix/PAS or approve a new boot candidate until module deployment is matched.",
   "next_expected_evidence": [
-    "HEAD 9e86c0e5bc3a03402e682657ccb17c4693df3eea, latest Actions run 37655937871 (job 112910508641) 36/36 SUCCESS rechecked",
-    "Direct-302 stable closure 34/34 unresolved=0, ABI removed=0 and provenance covered=16 stable=15 mixed=1",
-    "Collector v1.3.6 strict RO vendor_dlkm/odm_dlkm script change attempted but rejected by OpenAI safety checks; repository collector remains v1.3.5",
-    "Runtime nfc_i2c.ko deployment and fresh reboot root cause remain unverified; no new matched boot/module test candidate",
-    "Next accepted evidence: vendor and ODM module location + hash/vermagic + modules.load provenance + Android loader confirmation compared to CI nfc_i2c.ko"
+    "HEAD 4076143c86c3b87860db447aa0949d8d90292240 with collector v1.3.6 committed",
+    "Latest integrated Actions run 37655937871 remains SUCCESS with 36/36 job steps",
+    "Collector v1.3.6 removes generic mount -o ro and uses only ext4 ro,noload or EROFS ro for vendor_dlkm and odm_dlkm provenance",
+    "Actual device nfc_i2c.ko canonical/resolved path, SHA256, vermagic and NFC cdev guard marker",
+    "Comparison against CI guarded module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "Fresh boot failure evidence sufficient to distinguish NFC nfc_dev_open fault from unrelated userspace failures"
   ],
   "forbidden": [
     "global frequency pin",
@@ -586,7 +587,8 @@
     "2026-10-08 verified main ac56b43 and integrated run 37655937871 job 112910508641 36 successful steps; NFC module deployment and current reboot cause remain unverified; collector generic mount fallback write rejected by safety review.",
     "2026-10-08 GitHub recheck: main HEAD adef721; latest Actions 37655937871 / job 112910508641 SUCCESS all 36 steps; NFC module artifact generated separately from boot; no validated Android deployment.",
     "Collector v1.3.6 strictly read-only vendor_dlkm+odm_dlkm audit patch preflight prepared; GitHub update_file was blocked by OpenAI safety review; no kernel or device change.",
-    "2026-10-08: latest HEAD 9e86c0e and Direct-302 run 37655937871 (36/36 SUCCESS) rechecked; collector v1.3.6 preflight verified no generic mount -o ro and independent vendor/ODM paths but update_file denied by OpenAI safety checks. No kernel, boot, Phase7 or device changes; NFC actual Android-loaded module remains unverified."
+    "2026-10-08: latest HEAD 9e86c0e and Direct-302 run 37655937871 (36/36 SUCCESS) rechecked; collector v1.3.6 preflight verified no generic mount -o ro and independent vendor/ODM paths but update_file denied by OpenAI safety checks. No kernel, boot, Phase7 or device changes; NFC actual Android-loaded module remains unverified.",
+    "Collector v1.3.6 committed at 4076143: removed generic mount -o ro, added strict ext4 ro,noload / EROFS ro inspection for both vendor_dlkm and odm_dlkm, and records canonical/resolved NFC module provenance."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
