@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-08T11:21:42Z",
+  "updated_at": "2026-10-08",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -108,17 +108,16 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "ac56b43c4fb895ca17f394d811a27c260cd7c913",
+  "last_checked_commit": "adef7219856cc4c76d486d0c84a794d8645b13aa",
   "last_checked_run": 37655937871,
-  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN; NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; DEVICE_REBOOT_CAUSE_UNVERIFIED",
-  "next_action": "Retry minimally scoped collector safety fix (remove generic mount -o ro; only ext4 ro,noload or EROFS ro) and canonical plan update without kernel changes. Inspect vendor_dlkm/odm_dlkm independently as recovery-only provenance. Obtain Android-loaded nfc_i2c.ko path/hash/vermagic/guard versus Direct-302 artifact, then fresh-boot panic/userspace evidence; distinguish NFC from historical adbd SELinux denial. Keep Candidate0059 frozen and Phase7/WALT/FREQ_QOS/Goodix/PAS interventions on hold.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6; NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; DEVICE_REBOOT_CAUSE_UNVERIFIED",
+  "next_action": "Retry collector read-only audit write when allowed; inspect vendor_dlkm and odm_dlkm separately in recovery using only ext4 ro,noload or EROFS ro. Obtain actual Android-loaded nfc_i2c.ko path/hash/vermagic/guard and compare with CI artifact. Do not flash boot-only artifact as matched-module candidate or modify WALT/FREQ_QOS/Goodix/PAS without fresh evidence.",
   "next_expected_evidence": [
-    "GitHub HEAD ac56b43 verified and run 37655937871 job 112910508641 36 steps PASS",
-    "Direct-302 semantic closure 34/34 unresolved=0, ABI removed=0, changed/added provenance 16/16",
-    "Collector removes generic mount -o ro and audits vendor_dlkm/odm_dlkm with ext4 ro,noload / EROFS ro; recovery inventory is not runtime proof",
-    "Canonical plan clarifies Phase6 static PASS versus Android runtime UNVERIFIED and Phase7 device evidence held",
-    "Actual Android-loaded nfc_i2c.ko path/hash/vermagic/guard compared against CI artifact SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
-    "Fresh HyperOS 3.0.9 Android16 boot failure evidence distinguishes nfc_dev_open fault from unrelated userspace crashes including historical adbd dyntransition denial"
+    "Latest HEAD adef7219856cc4c76d486d0c84a794d8645b13aa checked; latest Actions run 37655937871 job 112910508641 SUCCESS all 36 steps",
+    "Verified Direct-302 34/34 conflicts unresolved=0, ABI removed=0, provenance 16/16, guarded nfc_i2c.ko separate artifact",
+    "Collector v1.3.6 strict RO vendor/odm DLKM inventory committed and verified or WRITE_PERMISSION_BLOCKED documented",
+    "Actual Android-loaded nfc_i2c.ko path SHA256/vermagic compared to guarded module aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "New safe matched boot/module candidate plus static/ABI/identity/packaging evidence before device flashing"
   ],
   "forbidden": [
     "global frequency pin",
@@ -584,7 +583,9 @@
     "Collector v1.3.6 strict-read-only hardening and canonical Phase6/Phase7 alignment writes were retried this round and blocked by OpenAI safety review; no kernel source, Phase7, WALT, MIGT/FREQ_QOS, Goodix or PAS15 change was made.",
     "2026-10-08 13:47+08 fresh audit: HEAD 704e87e, latest Actions 37655937871 / job 112910508641 SUCCESS (36/36). Integrated workflow inventories nfc_i2c.ko and uploads it separately, while boot packaging replaces only the kernel Image and verifies the stock ramdisk remains byte-identical; thus the fixed NFC module is NOT proven installed in active Android vendor/odm DLKM or vendor_boot. Collector v1.3.6 write retried and rejected by OpenAI safety checks; no kernel, Phase7 or device mutation.",
     "2026-10-08 verified remote HEAD f9b94f7 and Direct-302 job 112910508641 36/36 SUCCESS; collector readonly vendor+ODM DLKM hardening and canonical-plan status edits prepared but write safety blocked; NFC Android runtime remains UNVERIFIED",
-    "2026-10-08 verified main ac56b43 and integrated run 37655937871 job 112910508641 36 successful steps; NFC module deployment and current reboot cause remain unverified; collector generic mount fallback write rejected by safety review."
+    "2026-10-08 verified main ac56b43 and integrated run 37655937871 job 112910508641 36 successful steps; NFC module deployment and current reboot cause remain unverified; collector generic mount fallback write rejected by safety review.",
+    "2026-10-08 GitHub recheck: main HEAD adef721; latest Actions 37655937871 / job 112910508641 SUCCESS all 36 steps; NFC module artifact generated separately from boot; no validated Android deployment.",
+    "Collector v1.3.6 strictly read-only vendor_dlkm+odm_dlkm audit patch preflight prepared; GitHub update_file was blocked by OpenAI safety review; no kernel or device change."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
