@@ -108,17 +108,18 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "23154b60c5f5e51d5bec9e70ef541ab34354aaba",
+  "last_checked_commit": "3bd61139e279d25c9a1376e2f559d198246c40d7",
   "last_checked_run": 37655937871,
   "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN_UPDATE",
-  "next_action": "Retry collector v1.3.6 strict-read-only hardening and canonical plan alignment. Keep Phase7/WALT/MIGT/FREQ_QOS/Goodix/PAS15 frozen. When hardening lands, use the collector on HyperOS 3.0.9 A16 to prove the actual runtime nfc_i2c.ko path, SHA256, vermagic and NFC cdev guard marker; accept Phase6 runtime only after a fresh boot has no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault.",
+  "next_action": "Retry collector v1.3.6 strict-read-only hardening and canonical plan alignment. Also correct Segment C/D provenance status from PENDING to REVIEWED because run 37655937871 shows Direct-302 semantic review entries for C/D and closure raw=34 reviewed=34 unresolved=0. Keep Phase7/WALT/MIGT/FREQ_QOS/Goodix/PAS15 frozen. After hardening lands, use the collector on HyperOS 3.0.9 A16 to prove actual runtime nfc_i2c.ko canonical/resolved path, SHA256, vermagic and NFC cdev guard marker; accept Phase6 runtime only after a fresh boot has no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault.",
   "next_expected_evidence": [
-    "Collector v1.3.6 committed with no generic mount -o ro fallback; vendor_dlkm fallback limited to ext4 ro,noload or EROFS ro and records mount mode",
+    "Collector v1.3.6 committed with no generic mount -o ro fallback; fallback limited to ext4 ro,noload or EROFS ro, covers vendor_dlkm and odm_dlkm, and records mount mode plus canonical/resolved module path",
     "Canonical plan records Phase6 matched NFC runtime deployment validation and keeps Phase7 frozen",
-    "Run 37655937871 / job 112910508641 remains SUCCESS with C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
+    "State provenance Segment C and D marked REVIEWED_DIRECT_302_SCAN_NO_SEPARATE_BUILD",
+    "Run 37655937871 / job 112910508641 remains SUCCESS with C0061_DIRECT_302_SEMANTIC_CLOSURE=PASS raw=34 reviewed=34 unresolved=0 and C0061_NFC_RUNTIME_MODULE_ARTIFACT=PASS",
     "Candidate0061 boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6",
     "Guarded nfc_i2c.ko SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b and vermagic 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320",
-    "Device evidence proves actual runtime module path/hash/vermagic/guard",
+    "Device evidence proves actual runtime module canonical/resolved path/hash/vermagic/guard",
     "Fresh boot has no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault"
   ],
   "forbidden": [
@@ -570,7 +571,11 @@
     "Run 37655937871 artifacts 11499874761, 11500359180 and 11501530106 are unexpired through 2026-10-21.",
     "Repo-wide search found no committed vendor_dlkm image/build recipe; stock vendor_boot.img is a 100663296-byte Git LFS object, so runtime NFC module location must not be assumed from repository packaging alone.",
     "AOSP module-layout audit confirms second-stage vendor kernel modules are consumed via /vendor/lib/modules and may be backed by vendor_dlkm; this supports validating the actual runtime module before any bounded deployment.",
-    "Collector v1.3.6 write retry and canonical plan alignment write retry were both blocked by OpenAI safety review this round; no kernel source, Phase7, WALT, MIGT/FREQ_QOS, Goodix or PAS15 change was made."
+    "Collector v1.3.6 write retry and canonical plan alignment write retry were both blocked by OpenAI safety review this round; no kernel source, Phase7, WALT, MIGT/FREQ_QOS, Goodix or PAS15 change was made.",
+    "2026-10-08 fresh audit from repo head 3bd61139: Direct-302 run 37655937871 / job 112910508641 re-read; all 36 steps SUCCESS.",
+    "Fresh job log reconfirmed semantic closure raw=34 reviewed=34 unresolved=0, NFC cdev guard PASS, NFC runtime module artifact PASS, ABI removed=0 and provenance covered=16 stable=15 mixed=1.",
+    "Direct-302 semantic log explicitly contains Segment C and D reviewed paths, so state labels C/D=PENDING are stale and should be corrected to REVIEWED_DIRECT_302_SCAN_NO_SEPARATE_BUILD.",
+    "Collector v1.3.6 strict-read-only hardening write and canonical plan Phase6/Phase7 alignment write were retried and blocked by OpenAI safety review; no kernel source or Phase7 change made."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
