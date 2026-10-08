@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-08",
+  "updated_at": "2026-10-08T09:50:15+08:00",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -108,7 +108,7 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "c92153f30e906160f95f39ccc0b9aeeccd3c6cd5",
+  "last_checked_commit": "a88f03575a1b435462e49968408837a5a7edea6f",
   "last_checked_run": 37655937871,
   "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_6_AND_CANONICAL_PLAN_UPDATE",
   "next_action": "Retry collector v1.3.6 strict-read-only hardening and canonical plan alignment after the write-safety block clears. Keep Phase7/WALT/MIGT/FREQ_QOS/Goodix/PAS15 frozen. Then use the collector on HyperOS 3.0.9 A16 to prove the actual runtime nfc_i2c.ko canonical/resolved path, SHA256, vermagic and NFC cdev guard marker; accept Phase6 runtime only after a fresh boot has no ffffffffffffffc8 / nfc_dev_open [nfc_i2c] fault.",
@@ -578,7 +578,11 @@
     "2026-10-08 09:25+08 fresh audit: repo head c92153f; latest accepted Direct-302 run 37655937871 / job 112910508641 re-read and remains SUCCESS with all 36 steps successful.",
     "Fresh job log reconfirmed semantic closure raw=34 reviewed=34 unresolved=0, NFC cdev guard PASS, NFC runtime module artifact PASS, ABI provenance covered=16 stable=15 mixed=1 removed=0, release 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320 and boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6.",
     "Segment C/D provenance status corrected in state to REVIEWED_DIRECT_302_SCAN_NO_SEPARATE_BUILD based on explicit Direct-302 semantic-review log entries; no Batch C/D build loop is restored.",
-    "Collector v1.3.6 and canonical plan writes were retried but blocked by OpenAI write safety review; no kernel source, Phase7, WALT, MIGT/FREQ_QOS, Goodix or PAS15 change was made."
+    "Collector v1.3.6 and canonical plan writes were retried but blocked by OpenAI write safety review; no kernel source, Phase7, WALT, MIGT/FREQ_QOS, Goodix or PAS15 change was made.",
+    "2026-10-08 09:50+08 fresh audit: repo head a88f03575a1b435462e49968408837a5a7edea6f; latest repository-wide Actions run remains 37655937871, completed SUCCESS from fb3b3c2.",
+    "Run 37655937871 / job 112910508641 re-read in full: all 36 steps SUCCESS; semantic closure raw=34 reviewed=34 unresolved=0; NFC cdev guard PASS; NFC runtime module artifact PASS; ABI removed=0; provenance covered=16 stable=15 mixed=1.",
+    "Fresh run metadata reconfirmed boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6 and target release 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320; artifacts 11499874761, 11500359180 and 11501530106 remain unexpired through 2026-10-21.",
+    "Collector v1.3.6 strict-read-only hardening and canonical Phase6/Phase7 alignment writes were retried this round and blocked by OpenAI safety review; no kernel source, Phase7, WALT, MIGT/FREQ_QOS, Goodix or PAS15 change was made."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
