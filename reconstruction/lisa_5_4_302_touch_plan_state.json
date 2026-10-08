@@ -108,17 +108,16 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "e82fd6d254d98c7010a7e5eead2d1633aafdd4df",
+  "last_checked_commit": "70984307c27b42075d231dd0bc4b506cd5619fcf",
   "last_checked_run": 37655937871,
-  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_7_AND_CANONICAL_PLAN; DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED",
-  "next_action": "Obtain fresh TWRP NFC evidence using the committed collector v1.3.6 without flashing another boot, then compare actual /vendor/lib/modules /odm/lib/modules and available vendor_dlkm/odm_dlkm module path, SHA256, vermagic and guard marker against CI guarded nfc_i2c.ko (SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b). Treat v1.3.6 symbolic-link and recursive binary-grep limitations as known and do not infer absence from an empty scan. Retry a bounded v1.3.7 collector update and canonical plan alignment only if GitHub write permission is available; never bypass safety checks. Keep Candidate0059 frozen, Direct-302 provenance policy unchanged, and WALT/FREQ_QOS/Goodix/PAS/Phase7 held.",
+  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_7; DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED",
+  "next_action": "Retry authorized collector v1.3.7 patch only if permitted: follow symlinked NFC module trees and scan text module manifests rather than recursive binary grep; preserve strictly read-only vendor_dlkm and odm_dlkm inspection. Obtain a fresh TWRP v1.3.6 evidence package meanwhile; v1.3.6 empty results do not prove absence. Correlate active nfc_i2c.ko path, SHA256, vermagic, guard marker and Android loader source against CI artifact aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. Do not flash new boot or alter frozen Candidate0059 / WALT / FREQ_QOS / Goodix / PAS.",
   "next_expected_evidence": [
-    "Repository HEAD e82fd6d and latest integrated run 37655937871 verified: 36 successful job steps; NFC module artifact PASS, ABI removed=0 provenance covered=16",
-    "Collector v1.3.7 scoped symlink/manifest-only patch attempted but GitHub write blocked by safety review; repository remains v1.3.6",
-    "Canonical plan Phase6/7/10 alignment attempted but GitHub write blocked by safety review",
-    "Fresh device TWRP collector v1.3.6 package with raw/23_nfc_runtime_module_provenance.txt; account for symlink-missing false negatives",
-    "Device nfc_i2c.ko canonical/resolved path, SHA256, vermagic, module load manifests and runtime loading source versus CI SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
-    "Fresh failed-boot evidence must distinguish NFC nfc_dev_open fault from unrelated adbd SELinux or other userspace failures"
+    "HEAD 7098430; Direct-302 run 37655937871 / job 112910508641 verified 36/36 SUCCESS; 34/34 semantic closure; ABI removed=0 provenance 16/16",
+    "Collector v1.3.7 minimal two-site symlink/manifest patch statically reviewed but update_file blocked by OpenAI safety checks; v1.3.6 remains committed",
+    "New actual TWRP collector evidence for vendor_dlkm, odm_dlkm, /vendor/lib/modules and /odm/lib/modules; do not assume an empty find proves missing module",
+    "NFC device module path, hash, vermagic, guard and Android load source compared with CI module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "No runtime fix or flash candidate may be accepted without module deployment match"
   ],
   "forbidden": [
     "global frequency pin",
@@ -590,7 +589,8 @@
     "2026-10-08: latest HEAD 9e86c0e and Direct-302 run 37655937871 (36/36 SUCCESS) rechecked; collector v1.3.6 preflight verified no generic mount -o ro and independent vendor/ODM paths but update_file denied by OpenAI safety checks. No kernel, boot, Phase7 or device changes; NFC actual Android-loaded module remains unverified.",
     "Collector v1.3.6 committed at 4076143: removed generic mount -o ro, added strict ext4 ro,noload / EROFS ro inspection for both vendor_dlkm and odm_dlkm, and records canonical/resolved NFC module provenance.",
     "2026-10-08 21:34+08 fresh audit: HEAD 78121bc; latest repository Actions remains 37655937871, completed SUCCESS with all 36 job steps. No new build or CI failure; next non-substitutable evidence is device-side collector v1.3.6 NFC module provenance.",
-    "2026-10-08 fresh HEAD e82fd6d and Actions 37655937871 job 112910508641 rechecked 36/36 SUCCESS; collector v1.3.7 symlink/manifest-only patch and plan Phase6/7/10 update were prepared but GitHub update_file safety-blocked, no kernel or device change."
+    "2026-10-08 fresh HEAD e82fd6d and Actions 37655937871 job 112910508641 rechecked 36/36 SUCCESS; collector v1.3.7 symlink/manifest-only patch and plan Phase6/7/10 update were prepared but GitHub update_file safety-blocked, no kernel or device change.",
+    "2026-10-08 fresh GitHub audit: HEAD 7098430; latest Direct-302 Actions 37655937871 and all 36 job steps remain SUCCESS; static semantic closure 34/34 unresolved=0 and ABI provenance 16/16 removed=0. Minimal collector v1.3.7 symlink/manifest scan patch passed textual preflight but update_file was safety-blocked; no device evidence, kernel change, or new boot."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
