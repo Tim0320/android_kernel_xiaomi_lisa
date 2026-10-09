@@ -1,7 +1,7 @@
 # Lisa 5.4.302 + Touch/Jank stabilization execution plan
 
-Plan version: 1.1
-Updated: 2026-10-06
+Plan version: 1.2
+Updated: 2026-10-10
 Active device baseline: HyperOS 3.0.9 / Android 16
 Canonical runtime reference: Candidate0059 r43da7c5
 
@@ -195,7 +195,7 @@ Important:
 - It remains a trusted reference for reconstruction, ABI policy, and provenance classification.
 
 ### Phase 4 - Direct Candidate0061 Linux 5.4.302 uplift
-Status: REOPENED - C0059 SOURCE RECONSTRUCTION CONTRACT REPAIR
+Status: DIRECT-302 SOURCE RECONSTRUCTION AND SEMANTIC CLOSURE PASS; SEE 2026-10-10 RUNTIME BLOCKER
 
 Target:
 - Candidate0059/Lisa 5.4.289 -> Linux 5.4.302 in one integrated source/build gate.
@@ -281,7 +281,7 @@ Exit:
 - integrated compile exposed one textually-clean but semantically incompatible runtime-PM path; `drivers/base/power/runtime.c` is now the 34th reviewed path, classified MIXED_CONFLICT for Segments B+C: keep the Segment-B timer-expiry `<=` stable fix, but reject the Segment-C `needs_force_resume` reinit write because frozen Lisa intentionally retains `pm_runtime_need_not_resume()` and no `dev_pm_info.needs_force_resume` field.
 
 ### Phase 6 - Direct-302 integrated static/ABI gate
-Status: STATIC PASS BUT RUNTIME INVALIDATED - ONE-SCREEN REBOOT
+Status: STATIC/ABI/IDENTITY/PACKAGING PASS; DEVICE NFC DEPLOYMENT AND BOOT NOT VERIFIED
 
 Run one target build after Phase 5 conflict closure.
 
@@ -379,7 +379,7 @@ identify whether latency is:
 - render/present.
 
 ### Phase 10 - Candidate0061 integrated A16 validation
-Status: BLOCKED ON PURE PHASE6 BASE + ORDERED PHASE7 REBUILD
+Status: BLOCKED ON ANDROID RUNTIME BOOT, NFC MODULE ALIGNMENT AND FIRST-FAULT PROOF
 
 Candidate0061 can progress only if all are PASS:
 - Linux 5.4.302 stable provenance;
@@ -746,3 +746,17 @@ The `raw/22` adbd provenance probe used RAM-script transport but still failed wi
 **Collector-only correction**: at `0ff4ddd`, version **v1.4.0** normalizes Windows line endings, replaces adbd's dense one-line shell with simple multiline commands and scans the mapped Android `vendor` logical partition via by-name aliases strictly read-only (ext4 `ro,noload` or EROFS `ro`). On no successful mapped mount, record the failure rather than fabricate module identity. Independent CI `37966876041` (commit `6eecc50`) passed PowerShell AST, bash/dash remote shell syntax and state/static-CI audit. These CI gates do **not** prove actual TWRP execution, Android NFC module loading or stable Android boot.
 
 **Next action:** acquire one fresh v1.4.0 read-only TWRP capture to check `VENDOR_BASE-READONLY_MOUNTED`, module path/hash/vermagic and text manifests against CI guarded NFC SHA256 `aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b`; separately investigate a fresh Android first-fault and actual NFC load. Keep C0059 frozen; no same-source rebuild, batch loop or speculative PAS/Goodix/WALT/MIGT changes.
+
+## 2026-10-10 01:35+08:00 - verified vendor NFC module mismatch; deployment-first repair gate
+
+Fresh physical-device capture: `lisa-twrp-iter-0002_20261010-013518_boot_038e35371c97.zip`, collector v1.4.0, same Direct-302 boot SHA256 `038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6`. User's note **"進system層後閃退"** (reaches system layer, then crashes); do not describe this as an independently observed first-screen-only failure. `raw/22` and `raw/23` both complete with `transport=adb_push_tmp_sh` and `exit_code=0`. Recovery adbd root labels are NOT Android adbd/root-state evidence.
+
+TWRP mounted `/dev/block/mapper/vendor_a` EROFS strictly `ro`. Two vendor files exist, both with 5.4.289 vermagic; text `modules.load` and `modules.dep` list each path:
+- `/vendor/lib/modules/5.4-gki/nfc_i2c.ko` SHA256 `bb1e8994d0ddf0b15bd038457a850b2a8b5c7b74e1816b97dea5623c2ea5c80b`; vermagic `5.4.289-g5987d69e25da`.
+- `/vendor/lib/modules/nfc_i2c.ko` SHA256 `b37dae41aad83b6adaa1f2a16253d2a8ca931b83a534fd5fb57ceaea2424bc68`; vermagic `5.4.289-qgki-g5987d69e25da`.
+
+Freshly downloaded and independently inspected the exact successful integrated-302 run `37655937871` artifact `11500359180`: `candidate-0061-runtime-modules/nfc_i2c.ko` SHA256 `aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b`; vermagic `5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320`; cdev guard marker PRESENT. Therefore **guarded module not deployed in either inspected vendor file**. This proves a deployment/content mismatch, **not** actual Android loading, cause of reboot, or inevitable vermagic rejection. The boot.img intentionally does not modify vendor EROFS. Oops/logdump hashes remain unchanged across the previous captures and no fresh first-fault was identified.
+
+The engineering next step is no longer another identical kernel rebuild. Confirm init/module selection and a reversible Android-16-compatible deployment method for a **matched C0061 kernel+module** (modversions/CRC, AVB and EROFS constraints, backups and rollback). Never write blindly into `/vendor`, weaken SELinux, disable thermal or treat an inspection archive as flashable.
+
+Evidence report: `reconstruction/c0061_vendor_nfc_runtime_mismatch_20261010.md`. Separate new GitHub staging Action `37967884526` **SUCCESS**, artifact `11634242690`, packages original CI-verified guarded .ko, SHA256SUMS, identity and on-device mismatch manifest as an **inspection-only / NOT FLASHABLE** ZIP. Module staging does not count as a newly built boot, actual phone module deployment or Phase10 device PASS. Keep C0059 frozen and Direct-302 uplift immutable until this boundary is resolved.
