@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-09T22:16:27+08:00",
+  "updated_at": "2026-10-09T22:39:00+08:00",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -108,16 +108,16 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "36778380e48efce2e8818c2bfca38589acb81a70",
+  "last_checked_commit": "5567b6f13801360ea46ffa6e09d8dc43e8e72751",
   "last_checked_run": 37655937871,
-  "blocker": "DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; ANDROID_NFC_ACTUAL_MODULE_LOAD_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED; WRITE_PERMISSION_BLOCKED (canonical plan v1.2 phase-heading alignment update denied by safety review)",
-  "next_action": "Obtain fresh HyperOS 3.0.9/A16 collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt; compare resolved nfc_i2c.ko paths, SHA256, vermagic, cdev guard string and text module manifests against CI guarded module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. Independently prove Android actually loaded this module and obtain fresh first fault before choosing bounded kernel+module deployment. Retry canonical plan v1.2 status alignment if write permission returns; no blind rebuild/Phase7 changes.",
+  "blocker": "DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; ANDROID_NFC_ACTUAL_MODULE_LOAD_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED; WRITE_PERMISSION_BLOCKED (canonical plan phase-heading alignment update denied by safety review)",
+  "next_action": "Capture fresh HyperOS 3.0.9/A16 TWRP collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt; compare mounted vendor/odm_dlkm nfc_i2c.ko resolved path, SHA256, vermagic, guard and text manifest membership to CI aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. Recovery /proc/modules reflects TWRP, NOT prior Android load; use independent Android boot/first-fault evidence before choosing kernel+module deployment. Do not repeat same build or modify WALT/MIGT/Goodix/PAS without evidence. Retry canonical plan version alignment only when write allowed.",
   "next_expected_evidence": [
-    "Canonical plan phase-heading alignment commit/read-back (prior safety block)",
-    "Fresh read-only collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt from HyperOS 3.0.9/A16 device",
-    "Device nfc_i2c.ko resolved path/SHA256/vermagic/guard/manifest membership vs CI aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
-    "Independent Android actual module-load evidence and fresh post-boot first-fault log",
-    "Only after matched kernel-module runtime evidence and boot stabilization: resume Phase7 A/B touch/jank"
+    "Read-only TWRP collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt on HyperOS 3.0.9/A16",
+    "Module source/partition paths and SHA256/vermagic/guard + manifest presence vs guarded CI SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "Independent Android-boot proof of actual module load and fresh first-fault record (do not use TWRP /proc/modules as Android load proof)",
+    "Only after first-fault and matching kernel/module, decide bounded deployment intervention then Phase7 touch/jank AB evidence",
+    "Canonical plan phase-heading alignment when write permitted"
   ],
   "forbidden": [
     "global frequency pin",
@@ -598,7 +598,8 @@
     "2026-10-09 subsequent audit: integrated Actions run 37655937871 still 36/36 successful; 27 commits after fb3b3c2 affect only plan/state/collector, not kernel/workflow; read-back confirms collector 1.3.8; GNU grep/find fixture correctly matches NFC module in three text manifests and excludes modules.dep.bin; canonical plan write denied by OpenAI safety checks.",
     "2026-10-09 21:55+08 live review: default HEAD a5548a6, last integrated CI 37655937871 from fb3b3c2 SUCCESS; job 112910508641 all 36 steps successful; evidence artifacts 11499874761, 11500359180, 11501530106 unexpired until 2026-10-21T17:40Z; NFC runtime module is separately exported and is not proven deployed by boot.img. No new device-side NFC data. LLVM Broken Pipe remains unproven origin.",
     "2026-10-09 21:56+08 state sync committed at c3fc704; canonical-plan phase-heading alignment for v1.2 was attempted but blocked by OpenAI safety review. Job log read-back confirms nfc_i2c.ko generated and copied to separate runtime-module evidence; the matched guard has not been proven present or actually loaded on-device. Updated static gate labels to current run fb3b3c2 (legacy r20b187c labels were stale).",
-    "2026-10-09 22:16+08 live GitHub recheck: HEAD 3677838; latest Actions 37655937871 at fb3b3c2 success, 36/36 steps; semantic closure 34/34 unresolved=0; NFC guarded runtime module artifact PASS; ABI removed=0 provenance 16/16. Head delta since CI 31 commits affects only plan/state/collector. Three artifacts still unexpired through 2026-10-21T17:40Z. Collector v1.3.8 NFC evidence capture code verified, but no fresh device SHA/vermagic/actual load or post-boot first fault. Canonical plan v1.2 phase-heading write attempted and tool safety-blocked; do not infer Phase10 device PASS."
+    "2026-10-09 22:16+08 live GitHub recheck: HEAD 3677838; latest Actions 37655937871 at fb3b3c2 success, 36/36 steps; semantic closure 34/34 unresolved=0; NFC guarded runtime module artifact PASS; ABI removed=0 provenance 16/16. Head delta since CI 31 commits affects only plan/state/collector. Three artifacts still unexpired through 2026-10-21T17:40Z. Collector v1.3.8 NFC evidence capture code verified, but no fresh device SHA/vermagic/actual load or post-boot first fault. Canonical plan v1.2 phase-heading write attempted and tool safety-blocked; do not infer Phase10 device PASS.",
+    "2026-10-09 22:38+08 current-turn live audit: main HEAD 5567b6f, Actions latest run 37655937871 completed SUCCESS and job 112910508641 36/36; 32 post-fb3b3c2 commits touch only plan/state/TWRP collector (no kernel or workflow changes). Three Direct-302 artifacts unexpired to 2026-10-21T17:40Z. CI log reconfirms guarded nfc_i2c.ko separately exported, removed ABI=0 and covered provenance=16 (stable=15,mixed=1). Recovery collector scans read-only module partitions but recovery /proc/modules is NOT evidence of a prior Android module load. No fresh device capture; plan v1.2 status-alignment write denied by tool safety review."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
