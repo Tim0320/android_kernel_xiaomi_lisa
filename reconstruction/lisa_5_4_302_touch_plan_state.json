@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-09T21:55:00+08:00",
+  "updated_at": "2026-10-09T21:56:00+08:00",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -100,19 +100,20 @@
   ],
   "gates": {
     "stable_uplift_gate": "STATIC_PASS_RUNTIME_UNVERIFIED",
-    "abi_module_gate": "PASS_R20B187C_REMOVED_0",
+    "abi_module_gate": "PASS_FB3B3C2_REMOVED_0_PROVENANCE_16_OF_16",
     "touch_latency_gate": "BLOCKED_ON_DEVICE_RUNTIME_EVIDENCE",
     "performance_retention_gate": "BLOCKED_ON_DEVICE_RUNTIME_EVIDENCE",
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED",
-    "identity_gate": "PASS_R20B187C",
-    "packaging_gate": "PASS_FIXED_REGION_R20B187C"
+    "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
+    "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "a5548a6c9092a6a300176c17ebe24ac47050b9f1",
+  "last_checked_commit": "c3fc7040fcbcc9b734e80a5c3935cc924037b035",
   "last_checked_run": 37655937871,
-  "blocker": "DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; ANDROID_NFC_ACTUAL_MODULE_LOAD_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED",
+  "blocker": "DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; ANDROID_NFC_ACTUAL_MODULE_LOAD_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED; WRITE_PERMISSION_BLOCKED (canonical plan phase-heading alignment rejected by safety review, state write succeeded)",
   "next_action": "On receipt of a fresh HyperOS 3.0.9/A16 collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt, compare resolved nfc_i2c.ko paths, SHA256, vermagic, guard marker and text module manifests against the CI guarded module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. Distinguish partition bytes from actual Android loaded module, and check fresh reboot/first-fault evidence before any matched-module deployment. No unchanged-kernel rebuild, speculative device mutation or Phase7 modifications.",
   "next_expected_evidence": [
+    "Retry canonical plan v1.2 phase-heading status alignment update after write safety check clears; current plan appendix already records runtime NFC deployment as first gate",
     "Fresh read-only collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt from the HyperOS 3.0.9/A16 device",
     "Resolved device nfc_i2c.ko SHA256/vermagic/guard and module manifest membership vs CI guarded module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
     "Independent proof of Android's actual module load and fresh post-boot fault logs",
@@ -595,7 +596,8 @@
     "2026-10-09 16:55+08 fresh audit: HEAD 396b337 vs integrated run 37655937871 at fb3b3c2 has only plan/state/collector edits (23 commits, 3 files); job 112910508641 SUCCESS 36/36, semantic closure 34/34, ABI removed=0 provenance 16/16. NFC module built but stock-ramdisk-preserving boot packaging does not prove vendor/odm deployment. Collector v1.3.8 manifest fixes preflighted (colon, symlink text index, no binary) but update_file denied by OpenAI safety checks. Device NFC SHA256/vermagic/deployment and reboot cause remain unverified.",
     "2026-10-09 17:00+08: collector v1.3.8 completed in two commits (3be8165, 899c225); read-back confirms colon-safe nfc_i2c.ko manifest matching, exact modules.dep text scan, modules.dep.bin exclusion, and symlink-aware manifest discovery.",
     "2026-10-09 subsequent audit: integrated Actions run 37655937871 still 36/36 successful; 27 commits after fb3b3c2 affect only plan/state/collector, not kernel/workflow; read-back confirms collector 1.3.8; GNU grep/find fixture correctly matches NFC module in three text manifests and excludes modules.dep.bin; canonical plan write denied by OpenAI safety checks.",
-    "2026-10-09 21:55+08 live review: default HEAD a5548a6, last integrated CI 37655937871 from fb3b3c2 SUCCESS; job 112910508641 all 36 steps successful; evidence artifacts 11499874761, 11500359180, 11501530106 unexpired until 2026-10-21T17:40Z; NFC runtime module is separately exported and is not proven deployed by boot.img. No new device-side NFC data. LLVM Broken Pipe remains unproven origin."
+    "2026-10-09 21:55+08 live review: default HEAD a5548a6, last integrated CI 37655937871 from fb3b3c2 SUCCESS; job 112910508641 all 36 steps successful; evidence artifacts 11499874761, 11500359180, 11501530106 unexpired until 2026-10-21T17:40Z; NFC runtime module is separately exported and is not proven deployed by boot.img. No new device-side NFC data. LLVM Broken Pipe remains unproven origin.",
+    "2026-10-09 21:56+08 state sync committed at c3fc704; canonical-plan phase-heading alignment for v1.2 was attempted but blocked by OpenAI safety review. Job log read-back confirms nfc_i2c.ko generated and copied to separate runtime-module evidence; the matched guard has not been proven present or actually loaded on-device. Updated static gate labels to current run fb3b3c2 (legacy r20b187c labels were stale)."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
