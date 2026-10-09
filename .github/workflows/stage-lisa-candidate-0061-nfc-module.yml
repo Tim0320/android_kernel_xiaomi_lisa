@@ -1,0 +1,88 @@
+name: Stage Lisa Candidate0061 guarded NFC module
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/stage-lisa-candidate-0061-nfc-module.yml
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  stage-nfc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Download verified integrated-302 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lisa-c0061-integrated-302-evidence-a1
+          path: source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 37655937871
+
+      - name: Verify and package guarded NFC module for inspection (NO FLASH)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib, hashlib, json, re, shutil
+          source = pathlib.Path('source')
+          module = source / 'candidate-0061-runtime-modules/nfc_i2c.ko'
+          identity = source / 'candidate-0061-integrated-identity.txt'
+          abi = json.loads((source / 'candidate-0061-integrated-abi.json').read_text())
+          actual = hashlib.sha256(module.read_bytes()).hexdigest()
+          expected = 'aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b'
+          release = '5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320'
+          if actual != expected or module.read_bytes()[:4] != bytes.fromhex('7f454c46'):
+              raise SystemExit('NFC_CI_HASH_OR_ELF_MISMATCH')
+          raw = module.read_bytes()
+          vermagic = re.search(rb'vermagic=([^\x00]+)', raw)
+          if not vermagic or not vermagic.group(1).decode().startswith(release + ' '):
+              raise SystemExit('NFC_CI_VERMAGIC_MISMATCH')
+          if b'NFC cdev unavailable' not in raw:
+              raise SystemExit('NFC_CDEV_GUARD_ABSENT')
+          if 'actual_kernelrelease=' + release not in identity.read_text():
+              raise SystemExit('CI_KERNEL_IDENTITY_MISMATCH')
+          if abi.get('removed_symbol_count') != 0:
+              raise SystemExit('ABI_REMOVED_NONZERO')
+          out = pathlib.Path('staged-nfc')
+          out.mkdir()
+          shutil.copyfile(module, out / 'nfc_i2c.ko')
+          report = {
+              'purpose': 'INSPECTION_ONLY_NOT_FLASHABLE',
+              'ci_run': 37655937871, 'ci_kernelrelease': release,
+              'module_sha256': actual, 'module_vermagic': vermagic.group(1).decode(),
+              'module_guard_marker': True, 'abi_removed': 0,
+              'tested_boot_sha256': '038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6',
+              'vendor_a_filesystem': 'erofs:ro',
+              'device_nfc_modules': {
+                  'vendor/lib/modules/5.4-gki/nfc_i2c.ko': 'bb1e8994d0ddf0b15bd038457a850b2a8b5c7b74e1816b97dea5623c2ea5c80b',
+                  'vendor/lib/modules/nfc_i2c.ko': 'b37dae41aad83b6adaa1f2a16253d2a8ca931b83a534fd5fb57ceaea2424bc68'
+              },
+              'actual_android_module_loaded': 'UNKNOWN',
+              'device_boot_success': False
+          }
+          (out / 'evidence.json').write_text(json.dumps(report, indent=2) + chr(10))
+          (out / 'SHA256SUMS.txt').write_text(actual + '  nfc_i2c.ko' + chr(10))
+          (out / 'README.md').write_text(
+              '# Candidate0061 NFC - inspection-only staging' + chr(10) + chr(10)
+              + 'NOT FLASHABLE. Do not write to EROFS /vendor or change AVB.' + chr(10)
+              + 'This .ko matches the CI-built 5.4.302 kernel, not the current vendor modules.' + chr(10)
+              + 'Android module loading and boot success are NOT VERIFIED.' + chr(10)
+              + 'A reversible deployment/rollback and init module selection check are required.' + chr(10))
+          print('C0061_NFC_INSPECTION_STAGE=PASS')
+          print('C0061_NFC_SHA256=' + actual)
+          print('DEVICE_NFC_LOADED=UNVERIFIED')
+          PY
+
+      - name: Upload inspection-only module evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-guarded-nfc-inspection-only-fb3b3c2
+          path: staged-nfc/
+          retention-days: 14
