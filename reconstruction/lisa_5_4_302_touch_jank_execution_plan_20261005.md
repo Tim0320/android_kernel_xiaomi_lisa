@@ -760,3 +760,22 @@ Freshly downloaded and independently inspected the exact successful integrated-3
 The engineering next step is no longer another identical kernel rebuild. Confirm init/module selection and a reversible Android-16-compatible deployment method for a **matched C0061 kernel+module** (modversions/CRC, AVB and EROFS constraints, backups and rollback). Never write blindly into `/vendor`, weaken SELinux, disable thermal or treat an inspection archive as flashable.
 
 Evidence report: `reconstruction/c0061_vendor_nfc_runtime_mismatch_20261010.md`. Separate new GitHub staging Action `37967884526` **SUCCESS**, artifact `11634242690`, packages original CI-verified guarded .ko, SHA256SUMS, identity and on-device mismatch manifest as an **inspection-only / NOT FLASHABLE** ZIP. Module staging does not count as a newly built boot, actual phone module deployment or Phase10 device PASS. Keep C0059 frozen and Direct-302 uplift immutable until this boundary is resolved.
+
+## 2026-10-10 - AOSP vendor-module-loading references; USER_LOGS_PENDING
+
+The user explicitly requests **priority display of "使用者待處理：取日誌"** whenever a needed physical-device log is blocked, and a pause of the existing single Lisa automation if reliable relevant forum/upstream guidance identifies a specific log-gated hypothesis. This is a pause for evidence, **not** acceptance of boot.img or termination of Candidate0061.
+
+Relevant external documentation (mechanism, NOT proof of this Lisa boot's root cause):
+- Android official kernel module guidance: https://source.android.google.cn/docs/core/architecture/kernel/loadable-kernel-modules?hl=zh-tw . Kernel modules are normally built for their target kernel, and CONFIG_MODVERSIONS checks ABI-related symbol CRC during module load. The vendor init/modprobe/module paths must be inspected.
+- AOSP module installation / first-stage loading: https://source.android.com/docs/core/architecture/kernel/kernel-module-support . Depending on stage, modules may be in vendor boot ramdisk or Android vendor directories and loaded via modules.load/init.rc.
+- Android vendor/odm DLKM layout: https://source.android.com/docs/core/architecture/partitions/vendor-odm-dlkm-partition . The vendor/vendor_dlkm mapping depends on device layout; do not assume Lisa has a separate vendor_dlkm dynamic partition.
+- Related *anecdotal* custom GKI community discussion: https://groups.google.com/g/perbenanoun/c/hACT8j0IiSw . It describes core kernel replacement while vendor module files remain on a verified dynamic partition and suggests a vendor-boot-based workaround for some devices. This is NOT verified on Lisa and must NOT be followed blindly; AVB, init ordering and rollback differ.
+
+This matters because the real 2026-10-10 Lisa vendor_a EROFS evidence identifies two 5.4.289 nfc_i2c.ko files while its paired compiled C0061 NFC module has exact 5.4.302 release and a cdev guard. The exact Android-loaded NFC module and whether a failed load or other first fault caused the reboot remain unknown. Neither changing vermagic strings nor disabling verification/SELinux constitutes a valid fix.
+
+**Prioritized new evidence rather than another repeat TWRP dump:**
+1. With TWRP ADB=recovery currently available, read-only mount /dev/block/mapper/vendor_a (EROFS ro), retrieve `/etc/init` from that *mapped Android vendor filesystem* and inspect `insmod`, `modprobe`, `nfc_i2c` and `modules.load` paths; also inspect actual vendor-boot module manifests where available. The prior raw/23 capture already contains vendor module hashes/manifests and does not need repeating.
+2. Only if Android ADB=device becomes available during a boot attempt, collect Android `logcat -b all`, `/proc/modules` and permitted dmesg entries containing `nfc`, `modprobe`, `vermagic`, `Unknown symbol`, `Invalid module format`, `init`, `watchdog`, and the first contemporaneous fault. If ADB is unavailable, do not misattribute recovery logs as Android runtime evidence.
+3. Record exactly which layer each log came from and do not ask user to reflash identical boot only to repeat unchanged historical Oops/Logdump.
+
+**Automation:** single existing task ID `6ac29deeada88191891ff651309f5641`; pause it while awaiting new decisive user log(s), as newly directed by the user, and resume only after an upload or the user's explicit "繼續". No new tasks, no RRULE, no uninformed kernel/firmware modifications.
