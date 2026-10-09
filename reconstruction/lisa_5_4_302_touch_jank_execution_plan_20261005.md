@@ -702,3 +702,13 @@ Decision:
 - collect static property sources, init adbd definition/overrides, debug marker files, /data/adb root-module indicators and persistent-property strings from recovery.
 - collector v1.3.3 adds raw/22_adbd_debug_provenance.txt for this read-only provenance capture.
 - only after root/debug provenance is established should a new boot/runtime intervention be selected.
+
+
+## 2026-10-09 NFC runtime provenance collector update
+
+- Collector v1.3.7 is committed at de5ee97bd582593433311f73fdc501f6195fcfdd.
+- NFC runtime provenance scanning is symlink-aware for module trees and module files.
+- Module membership lookup is limited to text manifests (modules.load*, modules.dep*, modules.order) instead of recursive grep across binary .ko files.
+- vendor_dlkm and odm_dlkm fallback inspection remains strict read-only: ext4 ro,noload or EROFS ro only.
+- This change does not prove Android runtime deployment. The next required evidence remains a fresh HyperOS 3.0.9 / Android 16 TWRP capture comparing device nfc_i2c.ko path/SHA256/vermagic/guard marker with the guarded CI module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b.
+- Do not resume WALT/FREQ_QOS/Goodix/PAS intervention or approve a new boot candidate until the module source/deployment mismatch is resolved.
