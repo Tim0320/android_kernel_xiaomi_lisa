@@ -779,3 +779,14 @@ This matters because the real 2026-10-10 Lisa vendor_a EROFS evidence identifies
 3. Record exactly which layer each log came from and do not ask user to reflash identical boot only to repeat unchanged historical Oops/Logdump.
 
 **Automation:** single existing task ID `6ac29deeada88191891ff651309f5641`; pause it while awaiting new decisive user log(s), as newly directed by the user, and resume only after an upload or the user's explicit "繼續". No new tasks, no RRULE, no uninformed kernel/firmware modifications.
+
+## 2026-10-10 — new vendor init ZIP confirms loader entrypoint; mandatory Action link reporting
+
+New read-only vendor `.rc` evidence: `lisa_nfc_init_logs.zip`, SHA256 `866164c26a20201f4051732e99441525972d3cfced1e2cf2d1adabcd7b623ec0`, 156 Android vendor `.rc` files. `init.target.rc` has `early-init: exec ... /vendor/bin/vendor_modprobe.sh`; `init.qcom.rc:421` defines `nqnfcinfo` as `late_start` and `oneshot`; `vendor.nxp.hardware.nfc@2.0-service.rc` defines the NFC HAL. No direct literal `nfc_i2c` / `modules.load` appears in any captured `.rc`, so Android-selected 5.4.289 NFC module remains unresolved. See full referenced evidence report `reconstruction/c0061_vendor_init_module_route_20261010.md`. Next highest value file is **`/vendor/bin/vendor_modprobe.sh`** from TWRP read-only mounted vendor_a (no repeat old Oops/Logdump, no boot reflash). If Android ADB becomes available, prefer its real logcat / loaded modules / fresh fault.
+
+**New user-required report contract for every scheduled or interactive round:**
+- Always show `最新 Action 網址：<exact GitHub Actions run link>` if a new relevant run occurred, otherwise `最新 Action 網址：無` (older reference runs may be shown separately with clear labels).
+- Append **`boot打包可準備測試`** immediately after the Action URL ONLY if that exact run has already built/packaged a new `boot.img`, passed its static/ABI/KMI/identity/packaging gates and its artifact is verified available for a next physical test. Provide kernel commit, boot SHA256 and artifact URL; this label does not imply the phone booted.
+- Evidence audits, documentation/state-only commits and the NFC inspection-only module artifact are NEVER tagged as flashable/new boot.
+- If additional user logs are needed, begin with `使用者待處理：取日誌`; updated collection scripts must also say `採集腳本已更新` and link the tested version and command.
+- Only the existing Lisa one-shot automation ID is allowed; pause when a strong evidence-gated external lead requires a specific user log, then resume same ID upon upload or explicit continue.
