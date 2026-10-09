@@ -672,9 +672,9 @@ Repair decision:
 - keep Candidate0059 frozen control unchanged;
 - this mutation is DEVICE_RUNTIME_FIX and is applied only to the C0061 target tree.
 
-## Current next action
+## Historical next action (2026-10-07; superseded by the 2026-10-09 gate)
 
-NEXT_ACTION:
+HISTORICAL_NEXT_ACTION:
 Run the pure Direct-302 target again with the NFC cdev guard applied only after Candidate0059 control and Direct-302 runtime-contract gates. Require C0061_NFC_CDEV_GUARD=PASS, compile/modpost, strict ABI provenance removed=0, exact identity and fixed-region packaging. The resulting boot is the next device candidate. On retest, verify the ffffffffffffffc8 / nfc_dev_open Oops disappears. If the system still reboots, use the next fresh oops/sda17 delta to identify the next first fault rather than altering PAS/touch/frequency speculatively.
 
 
@@ -712,3 +712,15 @@ Decision:
 - vendor_dlkm and odm_dlkm fallback inspection remains strict read-only: ext4 ro,noload or EROFS ro only.
 - This change does not prove Android runtime deployment. The next required evidence remains a fresh HyperOS 3.0.9 / Android 16 TWRP capture comparing device nfc_i2c.ko path/SHA256/vermagic/guard marker with the guarded CI module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b.
 - Do not resume WALT/FREQ_QOS/Goodix/PAS intervention or approve a new boot candidate until the module source/deployment mismatch is resolved.
+
+## 2026-10-09 19:54+08:00 — verified Direct-302 static gate; NFC runtime gate is next
+
+Authoritative references at this review: repository HEAD c5469f08d72dcfe94055312dd99570388261f0dc; successful integrated run 37655937871, job 112910508641, target kernel source fb3b3c2c3d136e7f8abee1f45c24e69174fc119f. All 36 job steps completed successfully, including frozen Candidate0059 same-run control, Direct-302 semantic closure, Image/modules/dtbs, modpost, guarded NFC artifact, ABI/KMI (removed=0, reviewed changed/added provenance), identity and fixed-region boot packaging. This is **static/CI evidence**, not proof of a successful HyperOS 3.0.9 / Android 16 boot.
+
+Collector v1.3.8 was committed in 3be8165802fc24feb3ec01d6e66b5232a7e24f4a and 899c225ea65c6457a7c8bb2611de0bc52bd4a2c8. Read-back verifies colon-safe nfc_i2c.ko manifest entries, symlink-aware file/manifest discovery and exact **text** modules.dep matching; modules.dep.bin is deliberately excluded. The prior collector v1.3.7 reference above is historical.
+
+The integrated CI log contains 886 `LLVM ERROR: IO failure on output stream: Broken pipe` lines (443 during the frozen control compilation, 443 during the 5.4.302 target compilation), despite a passing job. A `$(LLVM_NM) ... | grep -q __ksymtab` early-close/SIGPIPE mechanism is a plausible **unproven** explanation; the messages have not been traced to their exact subprocesses. Do not call these diagnostics fixed, nor treat them as proof of broken kernel objects. Preserve the evidence for a future narrow diagnostic investigation; avoid recompiling an unchanged kernel solely to suppress logging.
+
+The first unresolved validation gate is **DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED**: no fresh device-side module hash, vermagic, resolved path, manifest membership, or Android actual-load evidence for the guarded CI module is available. Distinguish (1) a partition/module hash match from (2) proof of actual Android module loading and (3) disappearance of the historical nfc_dev_open/ffffffffffffffc8 Oops. If the active device module differs from the guarded CI SHA256 `aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b`, investigate packaging/deployment of a **matched kernel+module**, not another blind same-kernel build. If it matches, investigate the next fresh first-fault evidence. Keep Candidate0059 r43da7c5 frozen. No speculative WALT/MIGT/Goodix/PAS changes, false success signals, weakened SELinux, disabled thermal, or global frequency pins.
+
+CURRENT_NEXT_ACTION: obtain fresh collector v1.3.8 read-only evidence `raw/23_nfc_runtime_module_provenance.txt` on HyperOS 3.0.9/A16; audit symlink-resolved nfc_i2c.ko path, SHA256/vermagic/guard, text module manifests and RO vendor_dlkm/odm_dlkm mounts; compare to guarded CI hash; then obtain actual module-load and fresh first-fault evidence before a new runtime intervention.
