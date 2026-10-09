@@ -13,7 +13,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
-$ScriptVersion = "1.3.8"
+$ScriptVersion = "1.3.9"
 $SchemaVersion = 1
 
 function Write-Step {
