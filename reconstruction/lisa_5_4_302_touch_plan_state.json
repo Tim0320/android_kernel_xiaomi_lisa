@@ -108,17 +108,16 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "899c225ea65c6457a7c8bb2611de0bc52bd4a2c8",
+  "last_checked_commit": "cf9f156ca4f174cdc1f78cf41a6bd258e5ab3820",
   "last_checked_run": 37655937871,
-  "blocker": "DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED",
-  "next_action": "Run committed collector v1.3.8 on HyperOS 3.0.9 / Android 16 and inspect raw/23_nfc_runtime_module_provenance.txt for canonical/resolved nfc_i2c.ko path, SHA256, vermagic, NFC cdev guard marker, and text manifest membership from vendor/odm module roots plus strict read-only vendor_dlkm/odm_dlkm fallback. Compare device module SHA256 to integrated CI guarded module aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. If mismatch, prepare matched boot + module deployment candidate; if matched, investigate the first fresh reboot blocker. Do not modify WALT/MIGT/Goodix/PAS or recompile the same kernel without new evidence.",
+  "blocker": "WRITE_PERMISSION_BLOCKED (canonical plan append rejected by OpenAI safety checks); DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED",
+  "next_action": "Retry canonical-plan v1.3.8 evidence-provenance synchronization when writes are permitted. Await fresh HyperOS 3.0.9/A16 collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt; compare live nfc_i2c.ko path/SHA256/vermagic/guard marker and module manifests to the CI guarded module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. No same-kernel rebuild without new device evidence.",
   "next_expected_evidence": [
-    "Collector v1.3.8 commit 899c225 with colon-safe NFC manifest matching, exact text modules.dep scanning, modules.dep.bin exclusion, and symlink-aware manifest discovery",
-    "Fresh device raw/23_nfc_runtime_module_provenance.txt from HyperOS 3.0.9 / Android 16",
-    "Actual nfc_i2c.ko canonical/resolved path, SHA256, vermagic, and NFC cdev guard marker",
-    "Text manifest membership from modules.load/modules.dep/modules.order",
-    "Comparison against guarded CI nfc_i2c.ko SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
-    "Fresh reboot evidence sufficient to distinguish NFC nfc_dev_open crash from unrelated userspace failure"
+    "Canonical plan update reflecting verified collector v1.3.8, if GitHub writes permitted",
+    "Fresh collector v1.3.8 device raw/23_nfc_runtime_module_provenance.txt",
+    "Live nfc_i2c.ko SHA256/vermagic/source/guard and modules.load/modules.dep/modules.order memberships",
+    "Evidence-linked match/mismatch against guarded CI SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "If matched module, fresh reboot oops/tombstone to locate first still-failing component"
   ],
   "forbidden": [
     "global frequency pin",
@@ -595,7 +594,8 @@
     "Collector v1.3.7 committed at de5ee97: symlink-aware NFC module discovery and text-manifest-only membership scan.",
     "2026-10-09 fresh audit: latest integrated Actions run 37655937871 remains SUCCESS with 36/36 steps; semantic closure 34/34 unresolved=0; ABI removed=0; provenance covered=16 stable=15 mixed=1.",
     "2026-10-09 16:55+08 fresh audit: HEAD 396b337 vs integrated run 37655937871 at fb3b3c2 has only plan/state/collector edits (23 commits, 3 files); job 112910508641 SUCCESS 36/36, semantic closure 34/34, ABI removed=0 provenance 16/16. NFC module built but stock-ramdisk-preserving boot packaging does not prove vendor/odm deployment. Collector v1.3.8 manifest fixes preflighted (colon, symlink text index, no binary) but update_file denied by OpenAI safety checks. Device NFC SHA256/vermagic/deployment and reboot cause remain unverified.",
-    "2026-10-09 17:00+08: collector v1.3.8 completed in two commits (3be8165, 899c225); read-back confirms colon-safe nfc_i2c.ko manifest matching, exact modules.dep text scan, modules.dep.bin exclusion, and symlink-aware manifest discovery."
+    "2026-10-09 17:00+08: collector v1.3.8 completed in two commits (3be8165, 899c225); read-back confirms colon-safe nfc_i2c.ko manifest matching, exact modules.dep text scan, modules.dep.bin exclusion, and symlink-aware manifest discovery.",
+    "2026-10-09 subsequent audit: integrated Actions run 37655937871 still 36/36 successful; 27 commits after fb3b3c2 affect only plan/state/collector, not kernel/workflow; read-back confirms collector 1.3.8; GNU grep/find fixture correctly matches NFC module in three text manifests and excludes modules.dep.bin; canonical plan write denied by OpenAI safety checks."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
