@@ -48,16 +48,20 @@ jobs:
           python3 - <<'PY'
           import pathlib, re, subprocess, tempfile
           source = pathlib.Path("scripts/collect_lisa_twrp_logs.ps1").read_text()
-          adbd = re.search(r"(?ms)^\\$AdbdProvenanceScript = @'\\n(.*?)\\n'@", source)
-          if not adbd:
+          rows = source.splitlines()
+          try:
+              start = rows.index("$AdbdProvenanceScript = @'")
+              end = rows.index("'@", start + 1)
+          except ValueError:
               raise SystemExit("ADBD_PROBE_HERESTRING_MISSING")
+          adbd_script = "\n".join(rows[start + 1:end])
           row = next((x for x in source.splitlines()
                       if 'File = "23_nfc_runtime_module_provenance.txt"' in x), None)
           if row is None or "; Command = '" not in row or not row.endswith("' }"):
               raise SystemExit("NFC_PROBE_STRING_MISSING")
           nfc = row.split("; Command = '", 1)[1].rsplit("' }", 1)[0]
           with tempfile.TemporaryDirectory() as tmp:
-              for label, body in (("adbd", adbd.group(1)), ("nfc", nfc)):
+              for label, body in (("adbd", adbd_script), ("nfc", nfc)):
                   p = pathlib.Path(tmp) / (label + ".sh")
                   p.write_text("#!/bin/sh\\n" + body + "\\n")
                   for shell in ("bash", "dash"):
