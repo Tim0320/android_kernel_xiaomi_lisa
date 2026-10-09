@@ -108,14 +108,15 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "7ff1158a94d8602fd415406433e5c2ef9f298310",
+  "last_checked_commit": "d6d373ef4fe4884c535dbd762a5013bfce4620af",
   "last_checked_run": 37655937871,
-  "blocker": "BOOT_FIRST_SCREEN_REBOOT; NO_FRESH_FIRST_FAULT; NFC_PROVENANCE_UNVERIFIED; V1_3_8_RAW22_RAW23_SHELL_QUOTING_ERROR; V1_3_9_DEVICE_RETEST_PENDING",
-  "next_action": "Use collector v1.3.9 at 76fb6e0; capture one TWRP ZIP and inspect raw/22 and raw/23 for successful adb_push_tmp_sh output. Compare device nfc_i2c.ko hash/vermagic with guarded CI sha256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. Oct 10 01:06 and 01:21 Oops, logdump and cache last_kmsg are byte-identical and cannot prove a fresh first fault. Keep C0059 frozen.",
+  "blocker": "C0061_FIRST_SCREEN_REBOOT_UNRESOLVED; FRESH_ANDROID_FIRST_FAULT_MISSING; NFC_ANDROID_MODULE_DEPLOYMENT_UNVERIFIED; TWRP_VENDOR_LOGICAL_PARTITION_UNMOUNTED_IN_V1_3_9; V1_4_0_MAPPED_VENDOR_RO_PROBE_PENDING_DEVICE_EVIDENCE",
+  "next_action": "Use collector v1.4.0 (0ff4ddd) on current TWRP (no new boot flash) for one RO capture. Confirm raw/23 VENDOR_BASE-READONLY_MOUNTED, resolved Android vendor nfc_i2c.ko sha256/vermagic/manifests vs guarded CI SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b; check raw/22 multiline adbd provenance. A missing RO mount/module is inconclusive, not proof of NFC absence. Need independent Android module load and fresh first fault before intervention. No blind kernel recompilation.",
   "next_expected_evidence": [
-    "Collector v1.3.9 TWRP raw/22 and raw/23 successful outputs, verified SHA256/vermagic and text manifests",
-    "Independent Android module load evidence and fresh first-fault record",
-    "Integrated 302 static CI run 37655937871 success; collector syntax audit run 37965996926 success; real device check pending"
+    "v1.4.0 read-only TWRP ZIP raw/23: VENDOR_BASE-READONLY_MOUNTED on mapped vendor logical partition or grounded read-only mount blocker, module SHA256/vermagic/path/text manifests",
+    "v1.4.0 raw/22 shell probe outputs or explicit syntax/error evidence, without conflating recovery and Android runtime",
+    "Android actual nfc_i2c.ko load evidence and contemporary first-fault tied to Candidate0061 boot SHA 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6",
+    "CI 37966876041 passed collector PowerShell AST and bash/dash embedded shell syntax; integrated kernel build still 37655937871 static PASS, device NOT PASS"
   ],
   "forbidden": [
     "global frequency pin",
@@ -602,7 +603,8 @@
     "2026-10-10 01:06 device evidence inspected: C0061 boot SHA matches packaging, first-screen reboot reported, v1.3.3 TWRP collector lacks raw/23; pstore empty, historical C0054 fault not assigned to latest boot.",
     "2026-10-10 01:12+08: diagnosed no new kernel Actions since Oct 7: integrated workflow push.paths excludes state.json; previous state-only dbb54fc did not trigger a build. Added lightweight audit-lisa-candidate-0061-device-evidence.yml at 5fb84c5; Actions run 37964555568 completed SUCCESS (metadata-only job, not new kernel or device PASS). First-screen boot failure and NFC runtime module deployment remain unresolved.",
     "2026-10-10: diagnosed TWRP collector v1.3.8 PowerShell ParserError line 524 due to trailing comma on final NFC entry before closing @(...). Fix committed a59c46369a420c22423f65177544a4a5b1915eda. New read-only audit workflow parser gate committed d6288292a0d5516b91753863cc1d228eeb87aeb5. Action 37965400225 passed PowerShell Parser.ParseFile and all audit steps; no kernel compilation or device PASS. Await fresh v1.3.8 read-only TWRP capture.",
-    "2026-10-10: v1.3.8 raw22/raw23 failed with shell unexpected '('; actual remote shell scripts passed sh -n and bash -n; v1.3.9 RAM /tmp transport repair 37a699e / 76fb6e0; plan updated 7ff1158a; no new kernel build."
+    "2026-10-10: v1.3.8 raw22/raw23 failed with shell unexpected '('; actual remote shell scripts passed sh -n and bash -n; v1.3.9 RAM /tmp transport repair 37a699e / 76fb6e0; plan updated 7ff1158a; no new kernel build.",
+    "2026-10-10 01:27 TWRP v1.3.9 ZIP raw23 RAM shell exit=0 but TWRP vendor/modules are tmpfs; Android vendor logical partition exists at by-name/vendor -> dm-5 and was not mounted. No valid NFC SHA or fresh kernel first fault; Oops/Logdump unchanged. raw22 fails unmatched if. Collector-only v1.4.0 fix at 0ff4ddd: multiline adbd, CRLF-normalized RAM scripts, strict RO mapped vendor scanner. GitHub CI 37966876041 passed PowerShell AST plus bash/dash syntax. Plan update d6d373e; no kernel build."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -620,5 +622,5 @@
     "https://source.android.com/docs/core/architecture/kernel/abi-monitor",
     "https://github.com/MiYume0721/android_kernel_xiaomi_sm8350_miyume"
   ],
-  "last_checked_auxiliary_run": 37965996926
+  "last_checked_auxiliary_run": 37966876041
 }
