@@ -42,17 +42,40 @@ function Invoke-AdbShellCapture {
     param(
         [string]$AdbPath,
         [string]$Command,
-        [string]$OutFile
+        [string]$OutFile,
+        [switch]$UseFileTransport
     )
 
     $header = @(
         ("command=adb shell " + $Command),
         ("captured_utc=" + (Get-Date).ToUniversalTime().ToString("o")),
+        ("transport=" + $(if ($UseFileTransport) { "adb_push_tmp_sh" } else { "adb_shell_inline" })),
         ""
     )
 
+    $localScript = $null
+    $remoteScript = $null
     try {
-        $body = & $AdbPath shell $Command 2>&1
+        if ($UseFileTransport) {
+            # Windows PowerShell/adb shell removes nested quoting from long commands.
+            # Push the exact script bytes into TWRP's RAM-backed /tmp; never write partitions.
+            $nonce = [Guid]::NewGuid().ToString("N")
+            $localScript = Join-Path ([System.IO.Path]::GetTempPath()) ("lisa-twrp-" + $nonce + ".sh")
+            $remoteScript = "/tmp/lisa-twrp-" + $nonce + ".sh"
+            [System.IO.File]::WriteAllText(
+                $localScript,
+                ("#!/system/bin/sh" + [Environment]::NewLine + $Command + [Environment]::NewLine),
+                (New-Object System.Text.UTF8Encoding($false))
+            )
+            $pushOutput = & $AdbPath push $localScript $remoteScript 2>&1
+            if ($LASTEXITCODE -ne 0) {
+                throw ("Failed to push TWRP RAM script: " + ($pushOutput | Out-String))
+            }
+            $body = & $AdbPath shell sh $remoteScript 2>&1
+        }
+        else {
+            $body = & $AdbPath shell $Command 2>&1
+        }
         $exitCode = $LASTEXITCODE
         @($header + @("exit_code=" + $exitCode, "") + $body) |
             Out-File -FilePath $OutFile -Encoding utf8
@@ -62,6 +85,14 @@ function Invoke-AdbShellCapture {
         @($header + @("capture_exception=" + $_.Exception.Message)) |
             Out-File -FilePath $OutFile -Encoding utf8
         return 255
+    }
+    finally {
+        if ($null -ne $remoteScript) {
+            try { & $AdbPath shell rm -f $remoteScript 2>$null | Out-Null } catch {}
+        }
+        if (($null -ne $localScript) -and (Test-Path -LiteralPath $localScript)) {
+            Remove-Item -LiteralPath $localScript -Force -ErrorAction SilentlyContinue
+        }
     }
 }
 
@@ -526,7 +557,8 @@ $commands = @(
 
 foreach ($entry in $commands) {
     $out = Join-Path $rawDir $entry.File
-    Invoke-AdbShellCapture -AdbPath $adbPath -Command $entry.Command -OutFile $out | Out-Null
+    $useFileTransport = $entry.File -in @("22_adbd_debug_provenance.txt", "23_nfc_runtime_module_provenance.txt")
+    Invoke-AdbShellCapture -AdbPath $adbPath -Command $entry.Command -OutFile $out -UseFileTransport:$useFileTransport | Out-Null
 }
 
 $getpropPath = Join-Path $rawDir "18_getprop_redacted.txt"
