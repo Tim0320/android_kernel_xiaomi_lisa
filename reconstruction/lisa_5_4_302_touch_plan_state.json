@@ -108,15 +108,15 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "d94404e0ca28d5edefbcb5522ff9f9acd3eea0fb",
+  "last_checked_commit": "5fb84c569faf25f9d8ffb4d538cb2aed3eb7ee36",
   "last_checked_run": 37655937871,
   "blocker": "DEVICE_BOOT_FIRST_SCREEN_REBOOT_CONFIRMED_C0061_FB3B3C2; FIRST_ANDROID_KERNEL_FAULT_UNRESOLVED; NFC_MODULE_DEPLOYMENT_UNVERIFIED; COLLECTOR_1_3_3_LACKS_RAW_23",
-  "next_action": "Analyze fresh 2026-10-10 01:06 Taiwan TWRP capture boot SHA256 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6. Correlate first-screen reboot against per-record recency in oops/logdump; old C0054 fault @43.347718 and historical cache last_kmsg must not be assigned to current boot without matching identity/timestamp. Fresh capture collector v1.3.8 for raw/23 NFC provenance and independent Android first-fault evidence. Keep C0059 frozen, no blind changes.",
+  "next_action": "Next: inspect the first confirmed 2026-10-10 boot failure and acquire collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt from HyperOS 3.0.9/A16. Correlate Android-loaded nfc_i2c.ko vs CI guarded sha256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. The new evidence-only GitHub Action 37964555568 passed metadata audit, NOT device boot/NFC loading, and does not build kernel. Trigger integrated build only after a justified code/workflow fix.",
   "next_expected_evidence": [
-    "Direct-302 boot SHA identity 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6 (matches FB3B3C2 package gate)",
-    "First-fault evidence tied to 2026-10-10 boot attempt, distinct from stale C0054 mtdoops and recovery log",
-    "Collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt; uploaded v1.3.3 lacks it",
-    "Android loaded NFC module evidence and SHA/vermagic vs CI guarded artifact"
+    "Collector v1.3.8 raw/23_nfc_runtime_module_provenance.txt; Oct 10 upload is collector v1.3.3, no raw/23",
+    "Confirm Android actual NFC module loading SHA256/vermagic vs CI guarded artifact and vendor/odm_dlkm module manifests",
+    "Correlate first fault with 2026-10-10 first-screen reboot, not historical C0054 oops",
+    "Evidence-only audit run 37964555568 PASS is metadata only; integrated static gate remains run 37655937871 and device boot is NOT VERIFIED"
   ],
   "forbidden": [
     "global frequency pin",
@@ -600,7 +600,8 @@
     "2026-10-09 22:16+08 live GitHub recheck: HEAD 3677838; latest Actions 37655937871 at fb3b3c2 success, 36/36 steps; semantic closure 34/34 unresolved=0; NFC guarded runtime module artifact PASS; ABI removed=0 provenance 16/16. Head delta since CI 31 commits affects only plan/state/collector. Three artifacts still unexpired through 2026-10-21T17:40Z. Collector v1.3.8 NFC evidence capture code verified, but no fresh device SHA/vermagic/actual load or post-boot first fault. Canonical plan v1.2 phase-heading write attempted and tool safety-blocked; do not infer Phase10 device PASS.",
     "2026-10-09 22:38+08 current-turn live audit: main HEAD 5567b6f, Actions latest run 37655937871 completed SUCCESS and job 112910508641 36/36; 32 post-fb3b3c2 commits touch only plan/state/TWRP collector (no kernel or workflow changes). Three Direct-302 artifacts unexpired to 2026-10-21T17:40Z. CI log reconfirms guarded nfc_i2c.ko separately exported, removed ABI=0 and covered provenance=16 (stable=15,mixed=1). Recovery collector scans read-only module partitions but recovery /proc/modules is NOT evidence of a prior Android module load. No fresh device capture; plan v1.2 status-alignment write denied by tool safety review.",
     "2026-10-09 23:18+08 fresh connector API recheck: HEAD 77f6108; newest Actions run 37655937871 success (36/36), semantic 34/34, ABI removed=0 provenance 16/16, NFC guarded module separately exported. Compare fb3b3c2...77f6108: 33 commits touched only plan, state, and TWRP collector; no kernel change. Artifacts valid to 2026-10-21T17:40Z. No fresh device module/actual-load evidence. Attempted canonical plan v1.2 alignment, blocked by tool safety review. This is not device PASS.",
-    "2026-10-10 01:06 device evidence inspected: C0061 boot SHA matches packaging, first-screen reboot reported, v1.3.3 TWRP collector lacks raw/23; pstore empty, historical C0054 fault not assigned to latest boot."
+    "2026-10-10 01:06 device evidence inspected: C0061 boot SHA matches packaging, first-screen reboot reported, v1.3.3 TWRP collector lacks raw/23; pstore empty, historical C0054 fault not assigned to latest boot.",
+    "2026-10-10 01:12+08: diagnosed no new kernel Actions since Oct 7: integrated workflow push.paths excludes state.json; previous state-only dbb54fc did not trigger a build. Added lightweight audit-lisa-candidate-0061-device-evidence.yml at 5fb84c5; Actions run 37964555568 completed SUCCESS (metadata-only job, not new kernel or device PASS). First-screen boot failure and NFC runtime module deployment remain unresolved."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -617,5 +618,6 @@
     "https://android.googlesource.com/kernel/common/+/refs/tags/android11-5.4.302_r00",
     "https://source.android.com/docs/core/architecture/kernel/abi-monitor",
     "https://github.com/MiYume0721/android_kernel_xiaomi_sm8350_miyume"
-  ]
+  ],
+  "last_checked_auxiliary_run": 37964555568
 }
