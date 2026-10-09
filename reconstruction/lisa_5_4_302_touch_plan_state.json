@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_RUNTIME_BOOT_FIRST_FAULT_AND_NFC_MODULE_DEPLOYMENT_REVIEW",
+  "current_phase": "PHASE_6_RUNTIME_NFC_VENDOR_MODULE_ALIGNMENT_AND_FRESH_FIRST_FAULT_REVIEW",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,15 +108,15 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "d6d373ef4fe4884c535dbd762a5013bfce4620af",
+  "last_checked_commit": "698fbff768cf4c6e5a0a0694d4c46edccdbe8dfc",
   "last_checked_run": 37655937871,
-  "blocker": "C0061_FIRST_SCREEN_REBOOT_UNRESOLVED; FRESH_ANDROID_FIRST_FAULT_MISSING; NFC_ANDROID_MODULE_DEPLOYMENT_UNVERIFIED; TWRP_VENDOR_LOGICAL_PARTITION_UNMOUNTED_IN_V1_3_9; V1_4_0_MAPPED_VENDOR_RO_PROBE_PENDING_DEVICE_EVIDENCE",
-  "next_action": "Use collector v1.4.0 (0ff4ddd) on current TWRP (no new boot flash) for one RO capture. Confirm raw/23 VENDOR_BASE-READONLY_MOUNTED, resolved Android vendor nfc_i2c.ko sha256/vermagic/manifests vs guarded CI SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b; check raw/22 multiline adbd provenance. A missing RO mount/module is inconclusive, not proof of NFC absence. Need independent Android module load and fresh first fault before intervention. No blind kernel recompilation.",
+  "blocker": "NFC_GUARDED_C0061_MODULE_NOT_PRESENT_IN_ANDROID_VENDOR_A; TWO_VENDOR_NFC_MODULES_ARE_5_4_289; ANDROID_ACTUAL_MODULE_LOAD_UNVERIFIED; SYSTEM_STAGE_REBOOT_FRESH_FIRST_FAULT_UNRESOLVED; REVERSIBLE_EROFS_AVB_DEPLOYMENT_REVIEW_PENDING",
+  "next_action": "Audit the actual Android 16 init and modules.load path selection for nfc_i2c.ko; design a reversible vendor_a EROFS/AVB-safe matched C0061 kernel+NFC module deployment with rollback, verify module symbol CRC/modversions and exact identity before any flash. CI artifact 11634242690 from staging run 37967884526 contains verified guarded nfc_i2c.ko (inspection only, NOT flashable). Real TWRP v1.4.0 capture 2026-10-10 01:35 proves two 5.4.289 vendor modules differing from guarded 5.4.302 artifact, but NOT actual Android load or boot crash cause. No more identical-boot captures or speculative kernel changes.",
   "next_expected_evidence": [
-    "v1.4.0 read-only TWRP ZIP raw/23: VENDOR_BASE-READONLY_MOUNTED on mapped vendor logical partition or grounded read-only mount blocker, module SHA256/vermagic/path/text manifests",
-    "v1.4.0 raw/22 shell probe outputs or explicit syntax/error evidence, without conflating recovery and Android runtime",
-    "Android actual nfc_i2c.ko load evidence and contemporary first-fault tied to Candidate0061 boot SHA 038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6",
-    "CI 37966876041 passed collector PowerShell AST and bash/dash embedded shell syntax; integrated kernel build still 37655937871 static PASS, device NOT PASS"
+    "Read-only evidence of Android 16 init module selection between /vendor/lib/modules/nfc_i2c.ko and /vendor/lib/modules/5.4-gki/nfc_i2c.ko",
+    "Verified rollback-capable EROFS/AVB compliant C0061 guarded module deployment strategy and modversions/CRC check, without blind vendor writes",
+    "Independent actual Android module load confirmation and first current C0061 system-stage crash evidence (Oops/logdump unchanged, recovery is not Android)",
+    "CI staging run 37967884526 PASS artifact 11634242690 (inspect-only); integrated-302 kernel run 37655937871 static PASS; device boot remains unverified"
   ],
   "forbidden": [
     "global frequency pin",
@@ -604,7 +604,8 @@
     "2026-10-10 01:12+08: diagnosed no new kernel Actions since Oct 7: integrated workflow push.paths excludes state.json; previous state-only dbb54fc did not trigger a build. Added lightweight audit-lisa-candidate-0061-device-evidence.yml at 5fb84c5; Actions run 37964555568 completed SUCCESS (metadata-only job, not new kernel or device PASS). First-screen boot failure and NFC runtime module deployment remain unresolved.",
     "2026-10-10: diagnosed TWRP collector v1.3.8 PowerShell ParserError line 524 due to trailing comma on final NFC entry before closing @(...). Fix committed a59c46369a420c22423f65177544a4a5b1915eda. New read-only audit workflow parser gate committed d6288292a0d5516b91753863cc1d228eeb87aeb5. Action 37965400225 passed PowerShell Parser.ParseFile and all audit steps; no kernel compilation or device PASS. Await fresh v1.3.8 read-only TWRP capture.",
     "2026-10-10: v1.3.8 raw22/raw23 failed with shell unexpected '('; actual remote shell scripts passed sh -n and bash -n; v1.3.9 RAM /tmp transport repair 37a699e / 76fb6e0; plan updated 7ff1158a; no new kernel build.",
-    "2026-10-10 01:27 TWRP v1.3.9 ZIP raw23 RAM shell exit=0 but TWRP vendor/modules are tmpfs; Android vendor logical partition exists at by-name/vendor -> dm-5 and was not mounted. No valid NFC SHA or fresh kernel first fault; Oops/Logdump unchanged. raw22 fails unmatched if. Collector-only v1.4.0 fix at 0ff4ddd: multiline adbd, CRLF-normalized RAM scripts, strict RO mapped vendor scanner. GitHub CI 37966876041 passed PowerShell AST plus bash/dash syntax. Plan update d6d373e; no kernel build."
+    "2026-10-10 01:27 TWRP v1.3.9 ZIP raw23 RAM shell exit=0 but TWRP vendor/modules are tmpfs; Android vendor logical partition exists at by-name/vendor -> dm-5 and was not mounted. No valid NFC SHA or fresh kernel first fault; Oops/Logdump unchanged. raw22 fails unmatched if. Collector-only v1.4.0 fix at 0ff4ddd: multiline adbd, CRLF-normalized RAM scripts, strict RO mapped vendor scanner. GitHub CI 37966876041 passed PowerShell AST plus bash/dash syntax. Plan update d6d373e; no kernel build.",
+    "2026-10-10 01:35+08 captured v1.4.0 ZIP: raw22/raw23 RAM transport exit_code=0; readonly /dev/block/mapper/vendor_a EROFS mount PASS. Android vendor NFC: 5.4-gki SHA bb1e8994d0dd... vermagic 5.4.289-g5987d69e25da, qgki SHA b37dae41aad8... vermagic 5.4.289-qgki-g5987d69e25da. Both in text modules.load/dep. CI 37655937871 module inspected SHA aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b vermagic 5.4.302-qgki-lisa-c0061-rfb3b3c2 and guard present; not deployed in vendor. User note says system stage then crash. Identical historic Oops/Logdump, no new first-fault. Device provenance report d13cd07, staging workflow d76e971 and SUCCESS run 37967884526 artifact 11634242690 inspection only; plan updated 698fbff. Kernel and C0059 unchanged."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -622,5 +623,5 @@
     "https://source.android.com/docs/core/architecture/kernel/abi-monitor",
     "https://github.com/MiYume0721/android_kernel_xiaomi_sm8350_miyume"
   ],
-  "last_checked_auxiliary_run": 37966876041
+  "last_checked_auxiliary_run": 37967884526
 }
