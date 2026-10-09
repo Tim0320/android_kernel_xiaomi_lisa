@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-08",
+  "updated_at": "2026-10-09T03:15:00Z",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -108,16 +108,17 @@
     "identity_gate": "PASS_R20B187C",
     "packaging_gate": "PASS_FIXED_REGION_R20B187C"
   },
-  "last_checked_commit": "70984307c27b42075d231dd0bc4b506cd5619fcf",
+  "last_checked_commit": "9c8313b67ad510ad24f78d5e6e9b9588b92b89cf",
   "last_checked_run": 37655937871,
-  "blocker": "WRITE_PERMISSION_BLOCKED_COLLECTOR_V1_3_7; DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED",
-  "next_action": "Retry authorized collector v1.3.7 patch only if permitted: follow symlinked NFC module trees and scan text module manifests rather than recursive binary grep; preserve strictly read-only vendor_dlkm and odm_dlkm inspection. Obtain a fresh TWRP v1.3.6 evidence package meanwhile; v1.3.6 empty results do not prove absence. Correlate active nfc_i2c.ko path, SHA256, vermagic, guard marker and Android loader source against CI artifact aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. Do not flash new boot or alter frozen Candidate0059 / WALT / FREQ_QOS / Goodix / PAS.",
+  "blocker": "DEVICE_NFC_RUNTIME_DEPLOYMENT_UNVERIFIED; FRESH_DEVICE_EVIDENCE_REQUIRED_WITH_COLLECTOR_V1_3_7",
+  "next_action": "Use committed collector v1.3.7 on the active HyperOS 3.0.9 / Android 16 device in TWRP. Capture symlink-aware nfc_i2c.ko canonical/resolved path, SHA256, vermagic, guard marker, and text manifest references from /vendor/lib/modules, /odm/lib/modules, vendor_dlkm and odm_dlkm. Compare with guarded CI module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b. If the device module is stale, prepare a matched module deployment/package candidate; otherwise investigate fresh reboot evidence before Phase7. Keep Candidate0059 frozen and do not change WALT/FREQ_QOS/Goodix/PAS yet.",
   "next_expected_evidence": [
-    "HEAD 7098430; Direct-302 run 37655937871 / job 112910508641 verified 36/36 SUCCESS; 34/34 semantic closure; ABI removed=0 provenance 16/16",
-    "Collector v1.3.7 minimal two-site symlink/manifest patch statically reviewed but update_file blocked by OpenAI safety checks; v1.3.6 remains committed",
-    "New actual TWRP collector evidence for vendor_dlkm, odm_dlkm, /vendor/lib/modules and /odm/lib/modules; do not assume an empty find proves missing module",
-    "NFC device module path, hash, vermagic, guard and Android load source compared with CI module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
-    "No runtime fix or flash candidate may be accepted without module deployment match"
+    "Collector v1.3.7 commit de5ee97bd582593433311f73fdc501f6195fcfdd is present on main",
+    "Latest integrated run 37655937871 / job 112910508641 remains 36/36 SUCCESS",
+    "Fresh TWRP v1.3.7 package records symlink-aware device nfc_i2c.ko canonical/resolved path",
+    "Device nfc_i2c.ko SHA256/vermagic/guard marker compared with CI guarded module SHA256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b",
+    "Text module manifest reference identifies whether nfc_i2c is in an active vendor/ODM load plan",
+    "Fresh reboot evidence distinguishes NFC fault from unrelated userspace failure before Phase7 resumes"
   ],
   "forbidden": [
     "global frequency pin",
@@ -590,7 +591,9 @@
     "Collector v1.3.6 committed at 4076143: removed generic mount -o ro, added strict ext4 ro,noload / EROFS ro inspection for both vendor_dlkm and odm_dlkm, and records canonical/resolved NFC module provenance.",
     "2026-10-08 21:34+08 fresh audit: HEAD 78121bc; latest repository Actions remains 37655937871, completed SUCCESS with all 36 job steps. No new build or CI failure; next non-substitutable evidence is device-side collector v1.3.6 NFC module provenance.",
     "2026-10-08 fresh HEAD e82fd6d and Actions 37655937871 job 112910508641 rechecked 36/36 SUCCESS; collector v1.3.7 symlink/manifest-only patch and plan Phase6/7/10 update were prepared but GitHub update_file safety-blocked, no kernel or device change.",
-    "2026-10-08 fresh GitHub audit: HEAD 7098430; latest Direct-302 Actions 37655937871 and all 36 job steps remain SUCCESS; static semantic closure 34/34 unresolved=0 and ABI provenance 16/16 removed=0. Minimal collector v1.3.7 symlink/manifest scan patch passed textual preflight but update_file was safety-blocked; no device evidence, kernel change, or new boot."
+    "2026-10-08 fresh GitHub audit: HEAD 7098430; latest Direct-302 Actions 37655937871 and all 36 job steps remain SUCCESS; static semantic closure 34/34 unresolved=0 and ABI provenance 16/16 removed=0. Minimal collector v1.3.7 symlink/manifest scan patch passed textual preflight but update_file was safety-blocked; no device evidence, kernel change, or new boot.",
+    "Collector v1.3.7 committed at de5ee97: symlink-aware NFC module discovery and text-manifest-only membership scan.",
+    "2026-10-09 fresh audit: latest integrated Actions run 37655937871 remains SUCCESS with 36/36 steps; semantic closure 34/34 unresolved=0; ABI removed=0; provenance covered=16 stable=15 mixed=1."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
