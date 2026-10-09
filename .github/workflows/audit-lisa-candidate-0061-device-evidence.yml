@@ -63,7 +63,7 @@ jobs:
           with tempfile.TemporaryDirectory() as tmp:
               for label, body in (("adbd", adbd_script), ("nfc", nfc)):
                   p = pathlib.Path(tmp) / (label + ".sh")
-                  p.write_text("#!/bin/sh\\n" + body + "\\n")
+                  p.write_text("#!/bin/sh" + chr(10) + body + chr(10))
                   for shell in ("bash", "dash"):
                       subprocess.run([shell, "-n", str(p)], check=True)
                   print(f"TWRP_{label.upper()}_SHELL_SYNTAX=PASS")
