@@ -32,6 +32,26 @@ jobs:
           set -euo pipefail
           python3 -m py_compile reconstruction/scripts/candidate_0061_avb_descriptor_gate.py
           echo 'AUDIT_TOOL_SYNTAX=PASS; DEVICE_AVB=UNVERIFIED; NOT_FLASHABLE'
+      - name: Gate known experimental Boot embedded AVB mismatch (no kernel build)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p avb-audit
+          gh api -H 'Accept: application/vnd.github+json' \
+            /repos/${GITHUB_REPOSITORY}/actions/artifacts/11674463191/zip > avb-audit/artifact.zip
+          unzip -oq avb-audit/artifact.zip -d avb-audit
+          test -f avb-audit/boot.img
+          echo '6d4bde9703183308808825ee2fe726850f9a5bcbd70869c6b269ca745355159e  avb-audit/boot.img' | sha256sum -c -
+          python3 reconstruction/scripts/candidate_0061_avb_descriptor_gate.py \
+            --boot avb-audit/boot.img --expect-mismatch --json avb-audit/descriptor.json
+          echo 'KNOWN_EXPERIMENT_AVB_MISMATCH=CONFIRMED; NOT_FLASHABLE'
+      - uses: actions/upload-artifact@v4
+        if: ${{ always() }}
+        with:
+          name: lisa-c0061-avb-readonly-audit-${{ github.run_id }}
+          path: avb-audit/descriptor.json
+          if-no-files-found: warn
   nfc-builtin-prototype:
     if: ${{ inputs.run_mode == 'build-prototype' }}
     runs-on: ubuntu-24.04
