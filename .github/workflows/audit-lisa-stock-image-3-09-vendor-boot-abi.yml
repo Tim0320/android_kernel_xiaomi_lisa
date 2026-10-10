@@ -9,6 +9,7 @@ on:
       - reconstruction/stock/stock-Image-3.09/vendor_boot.img
       - reconstruction/stock/stock-Image-3.09/dtbo.img
       - .gitattributes
+      - reconstruction/scripts/candidate_0061_vendor_boot_nfc_placement.py
 
 permissions:
   contents: read
@@ -151,6 +152,20 @@ jobs:
           cat audit/load-plan-active.txt
           echo 'ALTERNATE LOAD FILES:'
           cat audit/load-files-alternate.txt || true
+
+      - name: Independently audit stock vendor_boot NFC first-stage delivery eligibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile reconstruction/scripts/candidate_0061_vendor_boot_nfc_placement.py
+          python3 reconstruction/scripts/candidate_0061_vendor_boot_nfc_placement.py --self-test
+          python3 reconstruction/scripts/candidate_0061_vendor_boot_nfc_placement.py \
+            --root vendor-root \
+            --active-load audit/load-plan-active.txt \
+            --json audit/c0061-nfc-vendor-boot-placement.json | tee audit/c0061-nfc-vendor-boot-placement.log
+          grep -qx 'C0061_VENDOR_BOOT_NFC_PLACEMENT_AUDIT=PASS' audit/c0061-nfc-vendor-boot-placement.log
+          grep -qx 'VENDOR_BOOT_ONLY_FIXES_SECOND_STAGE_NFC=NO' audit/c0061-nfc-vendor-boot-placement.log
+          grep -qx 'READY_TO_FLASH=NO' audit/c0061-nfc-vendor-boot-placement.log
 
       - name: Audit active QGKI cohort and alternate 5.4-gki cohort
         run: |
