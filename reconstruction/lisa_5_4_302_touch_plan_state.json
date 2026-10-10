@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_MANUAL_NFC_WORKFLOW_UNDISPATCHED_AND_VENDOR_AVB_PREDEPLOYMENT",
+  "current_phase": "PHASE_6_NFC_Y_MANUAL_AUDIT_UNDISPATCHED_AVB_HASH_VERIFICATION_GATE",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "a4529d5b50fb6e8a0a1e2e47ba10ccedf2933880",
+  "last_checked_commit": "01c54b910253bc89682c3521bc871a172f302dae",
   "last_checked_run": 38062935154,
-  "blocker": "AUDIT_ONLY_WORKFLOW_DISPATCH_NOT_VERIFIED_GITHUB_CONNECTION_HAS_NO_DISPATCH_ACTION; NFC_Y_BOOT_AVB_AND_VENDOR_KO_COLLISION_NOT_RESOLVED",
-  "next_action": "Do not misattribute evidence audit Action 38067158034 as manual dispatch. Verify audit-only via available authorized workflow_dispatch method only; continue investigating stock vendor NFC module loader and AVB descriptor, external vbmeta, slot rollback with existing evidence; no redundant build and no flash.",
+  "blocker": "NFC_Y_PROTOTYPE_NOT_FLASHABLE; EMBEDDED_AVB_HASH_DESCRIPTOR_MISMATCH_NEEDS_SIGNATURE_CHAIN_VALIDATION; OEM_NFC_KO_DUPLICATE_MODULE_ROUTE_UNVERIFIED; GITHUB_MANUAL_DISPATCH_UNAVAILABLE",
+  "next_action": "Strengthen static AVB gate in artifact validation using read-only candidate_0061_avb_descriptor_gate.py --require-match; compare stock Boot against experimental Boot, inspect external vbmeta hash chain/signature/slot and vendor_modprobe.sh built-in NFC behavior. Do not run redundant kernel build or promote prototype artifact. Optional audit-only real dispatch remains pending an authorized workflow dispatch action.",
   "next_expected_evidence": [
-    "Genuine audit-only dispatch job report with no kernel compilation if authorized",
-    "Original vendor loader duplicate NFC=y module behavior established",
-    "AVB and revertible slot/partition preflight before promoting any artifact"
+    "Read-only AVB descriptor verification output for stock and prototype with explicit mismatch fail-closed",
+    "Real source evidence for built-in NFC and old vendor nfc_i2c.ko loading behavior",
+    "Signature/slot rollback closure before offering flashable artifact"
   ],
   "forbidden": [
     "global frequency pin",
@@ -628,7 +628,8 @@
     "2026-10-10 reviewed public GitHub vendor init evidence: early-init executes vendor_modprobe.sh, nqnfcinfo late_start; embedded AVB hash descriptor gate script added in 773eaf58, script is not proof of bootloader AVB acceptance.",
     "2026-10-11 made NFC built-in experiment manual-only workflow_dispatch with run_mode audit-only default vs build-prototype; added plan note; no new boot or device PASS.",
     "2026-10-11 verified optional manual-only workflow source on main after acdf3b4: audit-only default, build-prototype explicit, no push trigger; no manual dispatch run in latest Actions; earlier state-only audit successes do not test the new menu.",
-    "2026-10-11 verified current Actions include only automatic evidence audits through 38067158034; no manual NFC dispatch; current GitHub connector has no dispatch operation, so selectable workflow remains source-verified only."
+    "2026-10-11 verified current Actions include only automatic evidence audits through 38067158034; no manual NFC dispatch; current GitHub connector has no dispatch operation, so selectable workflow remains source-verified only.",
+    "2026-10-11 reviewed AOSP AVB verify_image and kernel module docs: embedded hash descriptor must match partition content; Module.symvers CRC checks alone cannot certify device runtime; latest 38067287084 is evidence audit, not manual NFC dispatch."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
