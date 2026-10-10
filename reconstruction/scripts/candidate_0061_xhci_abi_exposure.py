@@ -16,6 +16,13 @@ EXPECTED_CHANGED = {
     'xhci_dbg_trace', 'xhci_ext_cap_init', 'xhci_gen_setup',
     'xhci_resume', 'xhci_suspend',
 }
+EXPECTED_CRC_PAIRS = {
+    'xhci_dbg_trace': ('0x3dc34dfe', '0xa1f8fad0'),
+    'xhci_ext_cap_init': ('0x57ed4b9d', '0x8ca6136b'),
+    'xhci_gen_setup': ('0x2033f1e5', '0x75ff0fe3'),
+    'xhci_resume': ('0xaf0bba47', '0xc8b2f4a9'),
+    'xhci_suspend': ('0x7c5c2b95', '0xa065eb97'),
+}
 XHCI_CONFIG = {
     'CONFIG_USB_XHCI_HCD', 'CONFIG_USB_XHCI_PCI',
     'CONFIG_USB_XHCI_PLATFORM', 'CONFIG_USB_DWC3',
@@ -80,6 +87,11 @@ def analyze(control: Path, target: Path, control_cfg: Path,
         failures.append('Removed ABI symbols exist')
     if set(changed) != EXPECTED_CHANGED:
         failures.append(f'Changed exports drift: {changed}')
+    for symbol, (old_crc, new_crc) in EXPECTED_CRC_PAIRS.items():
+        if symbol not in old or symbol not in new:
+            failures.append(f'Expected xHCI export missing: {symbol}')
+        elif old[symbol][0] != old_crc or new[symbol][0] != new_crc:
+            failures.append(f'Expected xHCI CRC pair drift: {symbol}')
     if len(added) != 11:
         failures.append(f'Added ABI symbols drift: {len(added)}')
     if ownership_changes:
