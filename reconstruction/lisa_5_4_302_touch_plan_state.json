@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_C0061_NFC_BUILTIN_IMAGE_PROTOTYPE_INTEGRATED_BUILD_RUNNING",
+  "current_phase": "PHASE_6_C0061_NFC_BUILTIN_PROTOTYPE_WORKFLOW_DISPATCH_FAILURE",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,15 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "610b7921e34f34a2a5ff928260c4e4307e059509",
+  "last_checked_commit": "df878c874116855ace8e8a56a54fda0cb4a65b9d",
   "last_checked_run": 37655937871,
-  "blocker": "NEW_C0061_NFC_PANIC_NQNFCINFO_MUTEX_LOCK_AT_41_798S; GUARD_NOT_DEPLOYED_TO_VENDOR; STOCK_VENDOR_BOOT_HAS_NO_NORMAL_BOOT_NFC; EXPERIMENTAL_NFC_BUILTIN_Y_KERNEL_BUILD_38061878279_IN_PROGRESS; LATE_OLD_VENDOR_NFC_KO_DUPLICATE_DRIVER_LOAD_AND_BOOT_ROLLBACK_UNVERIFIED",
-  "next_action": "Track experimental actual build 38061878279 (in progress; source-oracle fetch at latest poll) separately from last_completed_static_build 37655937871. If it fails identify first real blocker and repair. If passes validate config NFC_QTI_I2C=y and I2C=y, Image guard marker, absence of new .ko, ABI/identity/packaging plus experiment-only NOT-FLASHABLE artifact; then analyze duplicate registration when Android second-stage attempts stock NFC .ko and TWRP rollback before any flash. User TWRP-only, no new logs or reflash now. Recent audit run 38061949448 failed because last_checked_run was incorrectly set to running prototype; restore last_checked_run=37655937871 (successful) and track prototype in current_in_progress_build_run, not as successful historical static run. Continue unique automation.",
+  "blocker": "NFC_BUILTIN_PROTOTYPE_RUN_38062918078_FAILED_BEFORE_JOB_CREATION_ZERO_JOBS_ZERO_ARTIFACTS; WORKFLOW_VALIDATION_OR_DISPATCH_ROOT_CAUSE_UNCONFIRMED; STOCK_VENDOR_NFC_UNGUARDED_AND_DEVICE_NOT_PASS",
+  "next_action": "Identify GitHub Actions workflow validation/dispatch error for run 38062918078 (0 jobs). Check syntax/workflow diagnostics before modifying kernel source; preserve C0059 NFC=m baseline and C0061 prototype NFC=y isolation. Then run controlled experiment only after verified workflow fix; experimental package remains NOT_FLASHABLE pending duplicate vendor NFC module and rollback gate.",
   "next_expected_evidence": [
-    "Kernel pilot GitHub Action 38061878279 first failing job or final results; if compiled, original target CONFIG_NFC_QTI_I2C=y, I2C=y, integrated Image contains guard and NFC no longer separate .ko",
-    "ABI/KMI symbol count and provenance, stock-preserving boot header/AVB/ramdisk hash and boot.img SHA256 and artifact are really verified (experimental NOT FLASHABLE until device module conflicts/rollback resolved)",
-    "Investigate Android vendor modprobe when old nfc_i2c.ko is loaded after a built-in NFC driver, or devise safer matched first-stage preload/rollback path without vendor EROFS write",
-    "Future physical tests via TWRP recovery only, stable baseline HyperOS 3.0.9/A16; do not require unavailable Android ADB and do not reflash unmodified 038e35371c97 Boot"
+    "Workflow dispatch failure diagnostic explaining run 38062918078 zero jobs (not a compilation failure)",
+    "A corrected prototype workflow run with real job logs and, only if successful, explicit NFC=y Image and ABI/packaging gates; mark NOT_FLASHABLE",
+    "A recoverable vendor NFC module deployment/blacklist or built-in-vendor duplication avoidance strategy with AVB/EROFS/slot evidence"
   ],
   "forbidden": [
     "global frequency pin",
@@ -619,7 +618,8 @@
     "2026-10-10 22:xx: confirmed latest successful existing audit 38060094641 and earlier xHCI 38059953730. No new kernel build since 37655937871. Current source-only analysis cannot determine Android init modprobe chosen branch or first contemporaneous crash. New bounded read-only Windows script scripts/collect_lisa_android_first_fault.ps1 v1.0.0 commit 94c3299 filters exact adb get-state=device vs recovery/offline/unauthorized, starts logcat stream, snapshots buffers/proc_modules/props/dmesg if permitted, prints true observation status, no root/flash and saves to fixed pull_log root; CI PowerShell Parser/SelfTest action 38060440979 SUCCESS after workflow commit 5a006ab, real device untested. Evidence ecf5fc3 and plan 2114b8c. User needs one targeted live capture if existing C0061 image already installed; pause unique automation until user provides zip; source-only work complete for this gate.",
     "2026-10-10 22:45 real TWRP ZIP confirms only recovery ADB, early System reboot. Comparison of 01:06, 01:21, 01:27, 01:35 earlier TWRP zips oops SHA 5e29f593... (no C0061 panic) vs NEW 22:45 oops SHA 0e034b599... confirms newly persisted C0061 fatal crash log: at boot 41.634 invalid pointer ffffffffffffffc8, Oops 96000005, Modules linked in includes nfc_i2c, 41.724 nqnfcinfo PID 2155, pc mutex_lock+0x18, lr nfc_dev_open+0x30, 41.798 Kernel panic Fatal exception, emergency_restart by 43.750. Ring includes legacy LISA0046 markers (don't equate marker with actual 5.4.302 executing kernel); 22:45 readback may contain crash from prior attempt in interval, cannot prove exact instant. No current Oct10 userspace tombstone, pstore empty, logdump unchanged. CI-built corrected nfc_i2c.ko module not physically deployed in on-device EROFS vendor; boot.img only Image thus reflash unchanged image ineffective. Report 8bddd24, new guard delivery state gate in staging workflow e52bc15, Action 38061180881 PASS artifact 11673226946 inspection-only, plan ceec5dd. User says Android ADB impossible; TWRP-only, no more unnecessary full logs. Need engineering safe matched module delivery. Do not request user action yet.",
     "2026-10-10 23:00+08: read-only actual project HyperOS3.0.9 stock vendor_boot.img LFS SHA a94ecc2b..., v3 page 4096 1 frag / DTB size 4223378, 46 .ko, only first-stage module msm_drm, no nfc_i2c binary or load entry, CI 38061521692 SUCCESS artifact 11673670637 downloaded and reviewed; gate script b1f9b00, workflow 424f797, evidence 17de516. Verified source NFC_QTI_I2C tristate depends I2C; original actual C0061 .config NFC_QTI_I2C=m and I2C=y; isolated full Direct-302 NFC built-in prototype workflow a47b3b2 after repairing invalid initial YAML 32c085e (Action 38061831994 workflow parse fail), launched new full kernel build Action 38061878279 in progress from source-oracle fetching. Purpose true guard built into Image without writing EROFS vendor; still not flashable due old stock NFC .ko late-load risk, security/rollback unverified. Plan 610b792. No new compiled boot yet, no user action now.",
-    "2026-10-10: audit run 38061949448 failed only canonical state's last_checked_run pointing to unfinished prototype 38061878279. Corrected last_checked_run to actual completed integrated static CI 37655937871 and added current_in_progress_build_run=38061878279; no claim new kernel completed. Audit failure was report/schema state routing, not compile fault."
+    "2026-10-10: audit run 38061949448 failed only canonical state's last_checked_run pointing to unfinished prototype 38061878279. Corrected last_checked_run to actual completed integrated static CI 37655937871 and added current_in_progress_build_run=38061878279; no claim new kernel completed. Audit failure was report/schema state routing, not compile fault.",
+    "2026-10-10 confirmed experimental run 38062918078 failure prior to job creation: jobs=0, artifacts=0; runtime fix remains unproven"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
