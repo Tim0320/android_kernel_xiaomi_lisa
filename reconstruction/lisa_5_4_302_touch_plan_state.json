@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_STOCK_NFC_CRC_PROVEN_QGKI_PASS_GKI_MISMATCH_FALLBACK_BRANCH_REVIEW",
+  "current_phase": "PHASE_6_VENDOR_MANIFEST_GRAPH_PASS_FALLBACK_FIRST_PROBE_RUNTIME_UNKNOWN",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,15 +108,15 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "2a72f10e76f2d6c113809650de1b536ecbf78efe",
+  "last_checked_commit": "11603a73f3def79fefdd4a97db1e95f309e45e6c",
   "last_checked_run": 37655937871,
-  "blocker": "STOCK_QGKI_NFC_71_OF_71_CRC_MATCHES_5_4_302; STOCK_GKI_NFC_32_OF_68_SYMBOL_CRC_MISMATCHES; ACTUAL_ANDROID_VENDOR_MODPROBE_BRANCH_UNOBSERVED; WHOLE_VENDOR_SET_KMI_NOT_YET_CHECKED; CONTEMPORANEOUS_SYSTEM_STAGE_FIRST_FAULT_UNKNOWN",
-  "next_action": "Continue autonomous review of existing loader script and two vendor module dependency sets: first non-blocklisted QGKI modprobe -l probe and when it forces global GKI fallback, which has verified NFC CRC mismatches (stock QGKI CRC 71/71 PASS, GKI CRC 36/68). Source report reconstruction/c0061_stock_nfc_crc_comparison_20261010.md, scripts/candidate_0061_stock_nfc_crc_compare.py reusable offline tool validated syntactically in CI run 38057824262 SUCCESS. No public OEM .ko upload. No new boot/kernel; identify safe reversible deployment or actual Android boot first fault before any flash. Original Lisa automation resumed after user uploaded the decisive files. Windows collection path D:\\1.ROM_Prot\\lisa\\pull_log if new evidence ever becomes necessary.",
+  "blocker": "VENDOR_GRAPH_QGKI_107_DEP_211_AND_GKI_227_DEP_741_CLOSED_WITH_ZERO_CYCLES; QGKI_STOCK_NFC_71_OF_71_IMPORT_CRC_MATCH; GKI_STOCK_NFC_32_IMPORT_CRC_MISMATCH; ACTUAL_MODPROBE_L_LIST_FIRST_CANDIDATE_UNVERIFIED; OEM_MODULES_BLOCKLIST_ABSENCE_UNVERIFIED; BARE_WAIT_MASKS_BACKGROUND_MODPROBE_STATUS; REAL_ANDROID_SELECTED_BRANCH_AND_CONTEMPORANEOUS_FIRST_FAULT_UNOBSERVED",
+  "next_action": "Next autonomous round: inspect available Candidate0061 integrated boot packaging, module loader semantics and source exported-symbol ABI for first QGKI probe / fallback impact, using existing CI and real vendor module graph (evidence 5f6546a; script 3e4c3c9; CI 38058408963 SUCCESS). Graph check verified QGKI 107/211 edges vs GKI 227/741 with zero dangling dependencies or graph cycles. AOSP ListModules enumerates dependency map not modules.load position; missing modules.blocklist ADB pull does not prove absence. OEM loader's background bare wait can mask failing modprobe children. Do not claim phone branch/kernel reboot root cause, do not flash inspection-only artifacts or recompile identical boot. No further user logs until a targeted question requires them; fixed PowerShell log workdir D:\\1.ROM_Prot\\lisa\\pull_log. Continue existing single one-shot automation and report new Action URL + actual schedule time, with final summary table last.",
   "next_expected_evidence": [
-    "Verify actual modprobe -l ordering and conditional first-probe fallback from available captured source / Android modprobe implementation, without confusing modules.load order with enumeration",
-    "CRC review of representative essential/boot-critical QGKI versus GKI module candidates against integrated 5.4.302 symvers; do not claim whole-module set works based on NFC only",
-    "Only if an actual runtime branch/fault decision needs new evidence, prepare an executable narrowly scoped Android ADB (if device) or TWRP read-only probe (if recovery) and optionally pause existing automation",
-    "Future boot.img artifact requires actual kernel or module deployment change and gate PASS; no flash/repack of unchanged Direct-302 boot"
+    "Autonomous source/CI examination of actual full boot package and kernel/module ABI for representative first-probe or high-fan-in modules; avoid equating manifest graph closure with module load success",
+    "Identify actual modprobe -l ordering and missing modules.blocklist effect only via grounded executable diagnostic if it materially changes rollback-safe module strategy; do not assume modules.load first element",
+    "Independent fresh Android device first fault / live loaded modules only if Android ADB can actually run; never use Recovery /proc/modules as Android runtime",
+    "Only a genuine new gate-passed boot.img packaging run can be labeled boot打包可準備測試; CRC/graph Actions are not flashable."
   ],
   "forbidden": [
     "global frequency pin",
@@ -612,7 +612,8 @@
     "2026-10-10 21:22+08 user uploaded lisa_nfc_module_configs_20261010-212249.zip sha256 3a8717640a28b8facbd46e59bf796a577b462bbce1cc7d521d768e7218b6ac0b: two modules.load+dep pairs, QGKI 107/107 NFC line66, GKI 227/227 NFC line139. 63 common names, QGKI-only 44, GKI-only 164. All dep entries account for load entries, 211/741 edges all internal paths resolvable. Both modules.blocklist pulls failed; file absence not proven. New evidence commit bbe9fd7, plan commit d90c6c3. User specified ALL future PowerShell log commands Set-Location \"D:\\1.ROM_Prot\\lisa\\pull_log\" and outputs there. No new kernel/boot yet; new requested manifest logs received, resume original automation for next ABI review.",
     "2026-10-10: real ELF64 aarch64 NFC imported-symbol CRC checker script a1169ef, workflow f4d3d0f, artifact fix 6c8199a. Action 38056564905 SUCCESS, artifact 11672061727 contains real 830233-byte C0061 Module.symvers and signed checksum-scoped report: 71/71 compiled NFC __versions CRC match integrated Kernel's symbols, zero mismatches/missing; negative control intentionally flips module_layout CRC and is rejected. This is same-build consistency only, not proof 5.4.289 device modules load. Version release mismatch alone insufficient under MODVERSIONS. Need exact two device NFC .ko binaries from TWRP EROFS RO, hashes already known. Plan commit 9ba143a; no new boot. Existing single schedule pause for explicit device evidence.",
     "2026-10-10 21:55: user provided genuine OEM NFC ZIP sha256 c7beb4f6de91e6952bd41b2b191be5748f92f3ab8f4e37a5710f9a0dec730a71, verified both ELF hashes from earlier TWRP. Matched 5.4.302 Module.symvers in action 38056564905 artifact 11672061727: stock QGKI nfc_i2c.ko imported CRC 71/71 all match incl module_layout 0xba39cbb8; stock GKI 36/68 match and 32 CRC mismatch incl module_layout 0x1e5b7ab7, missing symbols zero. This proves static QGKI NFC import-CRC compatibility and GKI NFC ABI incompatibility if fallback, not Android actual path or cause of crash. No proprietary OEM binaries published. Committed offline checker aaab25f, evidence report 9a968d3, plan 1a861a0. Reopen same Lisa one-shot automation for autonomous fallback/whole module review, no new boot.",
-    "2026-10-10 followup CI run 38057824262 SUCCESS: Python stock comparison utility syntax/help preflight, previously known C0061 guarded module 71/71 CRC gate and negative-control confirmed. Reusable tool commit aaab25f, workflow lint/trigger commit 2a72f10; report 9a968d3; plan 1a861a0; checked original vendor hashes, no OEM .ko published. Whole module-set ABI & Android loader path remain unverified; no new boot/kernel."
+    "2026-10-10 followup CI run 38057824262 SUCCESS: Python stock comparison utility syntax/help preflight, previously known C0061 guarded module 71/71 CRC gate and negative-control confirmed. Reusable tool commit aaab25f, workflow lint/trigger commit 2a72f10; report 9a968d3; plan 1a861a0; checked original vendor hashes, no OEM .ko published. Whole module-set ABI & Android loader path remain unverified; no new boot/kernel.",
+    "2026-10-10 22:08: Offline real TWRP 20261010-212249 module manifests dependency graph verified QGKI 107 module entries / 211 edges vs GKI 227 / 741, 63 shared names, 44 QGKI-only and 164 GKI-only, zero unlisted dep references and zero cycles. High fan-in QGKI q6_pdr 20, GKI qmi_helpers 76. OEM loader only first QGKI test triggers whole GKI branch; source ends bare wait so successful init service completion masks background modprobe statuses per POSIX (host bash/dash wait=0 with failed child). Real modprobe -l first module and blocklists remain unknown. New reproducible static tool 3e4c3c9 and workflow self-test d07ace2, verified CI 38058408963 success; evidence 5f6546a, plan 11603a7. No new kernel build or boot; next analyze source/packaging autonomously."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -630,5 +631,5 @@
     "https://source.android.com/docs/core/architecture/kernel/abi-monitor",
     "https://github.com/MiYume0721/android_kernel_xiaomi_sm8350_miyume"
   ],
-  "last_checked_auxiliary_run": 38057824262
+  "last_checked_auxiliary_run": 38058408963
 }
