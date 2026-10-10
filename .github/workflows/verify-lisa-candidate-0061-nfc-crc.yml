@@ -1,0 +1,120 @@
+name: Lisa Candidate0061 NFC symbol CRC preflight
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verify-lisa-candidate-0061-nfc-crc.yml
+      - reconstruction/scripts/candidate_0061_module_crc_preflight.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0061-nfc-crc-preflight
+  cancel-in-progress: true
+
+jobs:
+  verify-ci-module-crcs:
+    name: Verify real NFC module __versions against integrated kernel symbols
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download the actual integrated Direct-302 output (no rebuild)
+        uses: actions/download-artifact@v4
+        with:
+          name: lisa-c0061-integrated-302-evidence-a1
+          path: source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 37655937871
+
+      - name: Check binutils, artifact paths and Python script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile reconstruction/scripts/candidate_0061_module_crc_preflight.py
+          test -s source/candidate-0061-runtime-modules/nfc_i2c.ko
+          test -s source/kernel/out/Module.symvers
+          if ! command -v llvm-objcopy >/dev/null; then
+            tool="$(command -v llvm-objcopy-19 || command -v llvm-objcopy-18 || command -v llvm-objcopy-17 || true)"
+            test -n "$tool"
+            mkdir -p "$RUNNER_TEMP/lisa-bin"
+            ln -s "$tool" "$RUNNER_TEMP/lisa-bin/llvm-objcopy"
+            echo "$RUNNER_TEMP/lisa-bin" >> "$GITHUB_PATH"
+          fi
+
+      - name: Validate all imported NFC symbol CRCs against build exports
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/candidate_0061_module_crc_preflight.py \
+            --module source/candidate-0061-runtime-modules/nfc_i2c.ko \
+            --symvers source/kernel/out/Module.symvers \
+            --json candidate-0061-nfc-crc-preflight.json \
+            --expected-sha256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b \
+            --expected-kernelrelease 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320 \
+            2>&1 | tee candidate-0061-nfc-crc-preflight.log
+          grep -q '^C0061_NFC_CRC_PREFLIGHT=PASS$' candidate-0061-nfc-crc-preflight.log
+          grep -q '^C0061_VENDOR_5_4_289_CRC_COMPATIBILITY=UNVERIFIED$' candidate-0061-nfc-crc-preflight.log
+
+      - name: Confirm failure on altered CRC (negative-control test)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util
+          import pathlib
+          import subprocess
+          import sys
+          import tempfile
+          s = importlib.util.spec_from_file_location('crc', 'reconstruction/scripts/candidate_0061_module_crc_preflight.py')
+          m = importlib.util.module_from_spec(s)
+          s.loader.exec_module(m)
+          src = pathlib.Path('source/candidate-0061-runtime-modules/nfc_i2c.ko')
+          versions = m.imported_crcs(src)
+          if 'module_layout' not in versions:
+              raise SystemExit('MISSING_MODULE_LAYOUT')
+          with tempfile.TemporaryDirectory() as tmp:
+              wrong = pathlib.Path(tmp) / 'tampered.Module.symvers'
+              original = pathlib.Path('source/kernel/out/Module.symvers').read_text()
+              out = []
+              changed = False
+              for ln in original.splitlines():
+                  cols = ln.split()
+                  if len(cols) >= 4 and cols[1] == 'module_layout':
+                      crc = int(cols[0], 16)
+                      cols[0] = '0x%08x' % ((crc ^ 1) & 0xffffffff)
+                      ln = '\t'.join(cols)
+                      changed = True
+                  out.append(ln)
+              if not changed:
+                  raise SystemExit('NO_MODULE_LAYOUT_IN_MODULE_SYMVERS')
+              wrong.write_text('\n'.join(out) + '\n')
+              args = [
+                  sys.executable, 'reconstruction/scripts/candidate_0061_module_crc_preflight.py',
+                  '--module', str(src), '--symvers', str(wrong),
+                  '--json', str(pathlib.Path(tmp)/'negative.json'),
+                  '--expected-sha256', 'aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b',
+                  '--expected-kernelrelease', '5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320',
+              ]
+              run = subprocess.run(args, text=True, capture_output=True)
+              if run.returncode == 0 or 'C0061_NFC_CRC_PREFLIGHT=FAIL' not in run.stdout:
+                  raise SystemExit('CRC_NEGATIVE_CONTROL_DID_NOT_FAIL')
+              print('C0061_NFC_CRC_NEGATIVE_CONTROL=PASS')
+          PY
+
+      - name: Upload scoped preflight evidence (not flashable)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-nfc-crc-abi-preflight-not-flashable
+          path: |
+            candidate-0061-nfc-crc-preflight.json
+            candidate-0061-nfc-crc-preflight.log
+          retention-days: 14
+          if-no-files-found: warn
