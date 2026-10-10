@@ -9,6 +9,7 @@ on:
       - reconstruction/lisa_5_4_302_touch_plan_state.json
       - reconstruction/tools/collect_lisa_touch_runtime.ps1
       - scripts/collect_lisa_twrp_logs.ps1
+      - scripts/collect_lisa_android_first_fault.ps1
 
 permissions:
   contents: read
@@ -41,6 +42,24 @@ jobs:
             throw "LISA_TWRP_COLLECTOR_SYNTAX=FAIL"
           }
           Write-Host "LISA_TWRP_COLLECTOR_SYNTAX=PASS"
+
+      - name: Parse Android first-fault collector and reject recovery as Android
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          $path = "scripts/collect_lisa_android_first_fault.ps1"
+          $null = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Host ("POWERSHELL_PARSE_ERROR line={0} message={1}" -f $_.Extent.StartLineNumber, $_.Message) }
+            throw "LISA_ANDROID_FIRST_FAULT_COLLECTOR_SYNTAX=FAIL"
+          }
+          Write-Host "LISA_ANDROID_FIRST_FAULT_COLLECTOR_SYNTAX=PASS"
+          $output = & pwsh -NoProfile -NonInteractive -File $path -SelfTest
+          if ($LASTEXITCODE -ne 0 -or $output -notcontains "LISA_ANDROID_FIRST_FAULT_SELF_TEST=PASS") {
+            throw "LISA_ANDROID_FIRST_FAULT_RECOVERY_CLASSIFIER=FAIL"
+          }
+          Write-Host "LISA_ANDROID_FIRST_FAULT_RECOVERY_CLASSIFIER=PASS"
 
       - name: Parse remote TWRP shell probe syntax
         shell: bash
