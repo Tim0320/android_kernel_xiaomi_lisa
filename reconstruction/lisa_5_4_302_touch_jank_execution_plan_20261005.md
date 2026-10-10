@@ -790,3 +790,19 @@ New read-only vendor `.rc` evidence: `lisa_nfc_init_logs.zip`, SHA256 `866164c26
 - Evidence audits, documentation/state-only commits and the NFC inspection-only module artifact are NEVER tagged as flashable/new boot.
 - If additional user logs are needed, begin with `使用者待處理：取日誌`; updated collection scripts must also say `採集腳本已更新` and link the tested version and command.
 - Only the existing Lisa one-shot automation ID is allowed; pause when a strong evidence-gated external lead requires a specific user log, then resume same ID upon upload or explicit continue.
+
+## 2026-10-10 — vendor_modprobe.sh read-back: conditional whole-directory fallback
+
+User uploaded `lisa_nfc_loader.zip`, verified one 1429-byte `vendor_modprobe.sh` sourced from Android vendor_a. File ZIP SHA256 `3a39c7aa9ec83900de764064dde663b56c269c593277419d16e53e941d4d8f79`; shell syntax `bash -n` / `dash -n` PASS. Script has a proprietary header: summarize, do not publish full contents. Complete static analysis `reconstruction/c0061_vendor_modprobe_branch_evidence_20261010.md` commit `d8b5e26`.
+
+**Verified algorithm:** vendor early-init enumerates `/vendor/lib/modules`; after trying the first module excluded from `modules.blocklist`, it switches the *entire* remaining batch to `/vendor/lib/modules/5.4-gki` if and only if that first probe returns nonzero. A failure among later modules does **not** cause per-module fallback. It concurrently loads most remaining modules from the selected directory. Both inspected directories currently have 5.4.289 NFC modules, not the separate C0061 5.4.302 guarded NFC CI module. Loader does not itself implement automatic C0061 module deployment. There may be cross-module compatibility issues beyond NFC. No evidence yet identifies which branch was taken or which module actually failed, and 5.4.289 vermagic difference alone does not prove reboot cause.
+
+Official Android documentation corroborates module-directory / init / modversions mechanisms, not a Lisa-specific root cause:
+https://source.android.com/docs/core/architecture/kernel/kernel-module-support
+https://source.android.com/docs/core/architecture/kernel/loadable-kernel-modules
+https://android.googlesource.com/platform/system/core/+/android16-release/init/first_stage_init.cpp
+https://android.googlesource.com/platform/system/core/+/android16-qpr2-release/toolbox/modprobe.cpp
+
+**New decisive targeted evidence:** from already usable TWRP ADB=recovery read-only mounted mapped vendor_a, collect `modules.blocklist`, `modules.load`, and `modules.dep` for both `/vendor/lib/modules/` and `/vendor/lib/modules/5.4-gki/`. These are static module-order/dependency/blacklist context, not actual runtime module load proof. Only if Android ADB=device is available during boot, collect its actual `logcat /proc/modules / dmesg` and first error. No repeated unchanged Oops/Logdump or boot flash. Per user request, report `使用者待處理：取日誌`, provide a read-only PowerShell recipe, pause same single automation while awaiting this materially new evidence, then resume when uploaded.
+
+**Every report:** `最新 Action 網址：<new run URL>` or `無`. No Action that only audits metadata is `boot打包可準備測試`. Existing Direct-302 static run 37655937871 is not device PASS; NFC staging 37967884526 is inspection-only.
