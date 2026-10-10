@@ -2,10 +2,15 @@ name: Prototype Lisa Candidate0061 NFC built-in Image (NOT FLASHABLE)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/build-lisa-candidate-0061-nfc-builtin-prototype.yml
+    inputs:
+      run_mode:
+        description: 'Choose audit-only or ~50-minute NFC built-in build (NOT FLASHABLE)'
+        type: choice
+        required: true
+        default: audit-only
+        options:
+          - audit-only
+          - build-prototype
 
 permissions:
   contents: read
@@ -17,7 +22,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  optional-audit:
+    if: ${{ inputs.run_mode == 'audit-only' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate AVB descriptor audit tool without making a boot
+        run: |
+          set -euo pipefail
+          python3 -m py_compile reconstruction/scripts/candidate_0061_avb_descriptor_gate.py
+          echo 'AUDIT_TOOL_SYNTAX=PASS; DEVICE_AVB=UNVERIFIED; NOT_FLASHABLE'
   nfc-builtin-prototype:
+    if: ${{ inputs.run_mode == 'build-prototype' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 300
     steps:
