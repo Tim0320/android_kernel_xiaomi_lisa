@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_AVB_READONLY_EXPERIMENT_AUDIT_WORKFLOW_COMMITTED_UNEXECUTED",
+  "current_phase": "PHASE_6_AVB_ARTIFACT_GATE_PENDING_CI_SAFE_DEPLOYMENT_INVESTIGATION",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "2929f42203562a84b42e07e2e84fc359d9a01f57",
-  "last_checked_run": 38062935154,
-  "blocker": "NFC_Y_BOOT_AVB_EMBEDDED_MISMATCH_NOT_FLASHABLE; EXISTING_VENDOR_NFC_KO_DUPLICATE_LOAD_NOT_CLOSED; MANUAL_AUDIT_ARTIFACT_DOWNLOAD_NOT_RUN_YET",
-  "next_action": "Validate manually dispatching audit-only workflow and inspect first real failure if any. It downloads immutable historical artifact 11674463191, checks SHA256, audits expected AVB mismatch and emits JSON without kernel rebuild. Then pursue AVB/slot reversible boot design and vendor built-in NFC duplicate-loader guard. Do not flash.",
+  "last_checked_commit": "003f63893e6b236773c47933793a4d6bfc0a4e37",
+  "last_checked_run": 38069174300,
+  "blocker": "EXPERIMENT_NFC_Y_BOOT_6d4bde97_AVB_HASH_MISMATCH; OEM_VENDOR_NFC_KO_DUPLICATE_LOAD_UNVERIFIED; REAL_AUDIT_ONLY_DISPATCH_NOT_RUN; WORKFLOW_WRITE_PERMISSION_BLOCKED_OPENAI_SAFETY_CHECK",
+  "next_action": "Review existing artifact-download audit gate and confirm an authorized low-cost audit-only CI run; do not launch dual kernel build. AVB header/embedded hash consistency and external vbmeta chain/rollback must be proven before flash. Verify precise vendor_modprobe.sh behavior and NFC=y duplicate handling, or a guarded first-stage module preload plan; maintain TWRP-only device boundary.",
   "next_expected_evidence": [
-    "Real audit-only workflow run result / artifact SHA and JSON",
-    "AVB fix design preserving stock verification (not merely preserving stale descriptor)",
-    "Safely accounted vendor nfc_i2c.ko load behavior and TWRP rollback gate"
+    "CI run with actual artifact 11674463191 SHA256 verified and embedded AVB digest mismatch JSON, no kernel recompilation",
+    "Explicit AVB chain and slot revert preflight including live boot/vendor_boot/vbmeta partition identities",
+    "Demonstrated mitigation for old OEM vendor nfc_i2c.ko duplication or a safe matched guarded module load route"
   ],
   "forbidden": [
     "global frequency pin",
@@ -630,7 +630,8 @@
     "2026-10-11 verified optional manual-only workflow source on main after acdf3b4: audit-only default, build-prototype explicit, no push trigger; no manual dispatch run in latest Actions; earlier state-only audit successes do not test the new menu.",
     "2026-10-11 verified current Actions include only automatic evidence audits through 38067158034; no manual NFC dispatch; current GitHub connector has no dispatch operation, so selectable workflow remains source-verified only.",
     "2026-10-11 reviewed AOSP AVB verify_image and kernel module docs: embedded hash descriptor must match partition content; Module.symvers CRC checks alone cannot certify device runtime; latest 38067287084 is evidence audit, not manual NFC dispatch.",
-    "2026-10-11 committed 2929f42: optional audit-only GitHub job downloads known NFC experiment artifact 11674463191, validates its SHA256, audits AVB descriptor expected mismatch and exports JSON; no kernel build or boot flashing; dispatch not yet executed."
+    "2026-10-11 committed 2929f42: optional audit-only GitHub job downloads known NFC experiment artifact 11674463191, validates its SHA256, audits AVB descriptor expected mismatch and exports JSON; no kernel build or boot flashing; dispatch not yet executed.",
+    "2026-10-11 01:07+08: read canonical plan/state, latest head 003f638, last evidence audit 38069174300 jobs/log/artifacts; latest audit checks metadata only, not 2929f42 AVB artifact gate. Verified artifact 11674463191 unexpired, SHA and known mismatch historical; reviewed stock vendor_boot: first-stage modules.load only msm_drm, so standalone guarded NFC vendor_boot placement cannot fix second-stage vendor file selection. Attempted to add cheap audit smoke push path and strict manual heavy gate, but GitHub workflow write was explicitly blocked by OpenAI safety checks; no new workflow run or boot generated."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
