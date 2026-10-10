@@ -1,0 +1,99 @@
+name: Verify Lisa Candidate0061 xHCI ABI exposure
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/verify-lisa-candidate-0061-xhci-abi.yml
+      - reconstruction/scripts/candidate_0061_xhci_abi_exposure.py
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: lisa-c0061-xhci-export-audit
+  cancel-in-progress: true
+
+jobs:
+  verify-export-drift:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Retrieve the original same-run C0059-control and C0061 exports
+        uses: actions/download-artifact@v4
+        with:
+          name: lisa-c0061-integrated-302-evidence-a1
+          path: source
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 37655937871
+
+      - name: Verify parser and real built-in xHCI export drift
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile reconstruction/scripts/candidate_0061_xhci_abi_exposure.py
+          python3 reconstruction/scripts/candidate_0061_xhci_abi_exposure.py --self-test
+          test -s source/candidate-0061-integrated-control.Module.symvers
+          test -s source/kernel/out/Module.symvers
+          test -s source/candidate-0061-integrated-control.config
+          test -s source/candidate-0061-integrated-target.config
+          python3 reconstruction/scripts/candidate_0061_xhci_abi_exposure.py \
+            --control-symvers source/candidate-0061-integrated-control.Module.symvers \
+            --target-symvers source/kernel/out/Module.symvers \
+            --control-config source/candidate-0061-integrated-control.config \
+            --target-config source/candidate-0061-integrated-target.config \
+            --json c0061-xhci-export-drift.json | tee c0061-xhci-export-drift.log
+          grep -qx 'C0061_XHCI_ABI_EXPOSURE_GATE=PASS' c0061-xhci-export-drift.log
+          grep -qx 'C0061_XHCI_CHANGED_CRC_EXPORTS=5' c0061-xhci-export-drift.log
+          grep -qx 'ANDROID_DEVICE_BOOT_PASS=UNVERIFIED' c0061-xhci-export-drift.log
+
+      - name: Negative control for export mutation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import sys
+          import tempfile
+          original = Path('source/kernel/out/Module.symvers').read_text().splitlines()
+          changed = False
+          output = []
+          for line in original:
+              p = line.split()
+              if len(p) >= 4 and p[1] == 'xhci_gen_setup':
+                  p[0] = '0x00000000' if p[0].lower() != '0x00000000' else '0x00000001'
+                  line = '\t'.join(p)
+                  changed = True
+              output.append(line)
+          if not changed:
+              raise SystemExit('MISSING_XHCI_GEN_SETUP')
+          with tempfile.TemporaryDirectory() as tmp:
+              target = Path(tmp) / 'mutated.Module.symvers'
+              target.write_text('\n'.join(output) + '\n')
+              proc = subprocess.run([sys.executable, 'reconstruction/scripts/candidate_0061_xhci_abi_exposure.py',
+                  '--control-symvers', 'source/candidate-0061-integrated-control.Module.symvers',
+                  '--target-symvers', str(target),
+                  '--control-config', 'source/candidate-0061-integrated-control.config',
+                  '--target-config', 'source/candidate-0061-integrated-target.config',
+                  '--json', str(Path(tmp) / 'negative.json')], capture_output=True, text=True)
+              if proc.returncode == 0 or 'C0061_XHCI_ABI_EXPOSURE_GATE=FAIL' not in proc.stdout:
+                  raise SystemExit('XHCI_NEGATIVE_CONTROL_NOT_DETECTED')
+              print('C0061_XHCI_NEGATIVE_CONTROL=PASS')
+          PY
+
+      - name: Upload evidence, not boot package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: lisa-c0061-xhci-abi-readonly-audit-not-flashable
+          path: |
+            c0061-xhci-export-drift.json
+            c0061-xhci-export-drift.log
+          retention-days: 14
+          if-no-files-found: warn
