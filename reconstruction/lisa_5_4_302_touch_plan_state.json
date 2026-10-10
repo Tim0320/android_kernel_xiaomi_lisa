@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_VENDOR_MODPROBE_MANIFESTS_REVIEWED_MODULE_ABI_AND_ROLLBACK_PLANNING",
+  "current_phase": "PHASE_6_C0061_CRC_PREFLIGHT_PASS_AWAITING_VENDOR_NFC_IMPORT_CRC",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,15 +108,15 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "d90c6c33510a719c3ced43cf172ba350b01171c1",
+  "last_checked_commit": "9ba143a449987dc41c106c95ca85f93d022b3d7f",
   "last_checked_run": 37655937871,
-  "blocker": "VENDOR_MODULE_SET_QGKI_107_VS_GKI_227; MODULES_BLOCKLIST_PULL_MISSING_BOTH_DIRS; ACTUAL_ANDROID_MODPROBE_LIST_ORDER_AND_FALLBACK_UNVERIFIED; KERNEL_5_4_302_VS_VENDOR_MODULE_5_4_289_CRC_KMI_UNVERIFIED; SYSTEM_STAGE_FIRST_FAULT_UNIDENTIFIED",
-  "next_action": "ZIP with QGKI (107) vs GKI (227) modules.load/modules.dep received and audited (evidence bbe9fd7, plan d90c6c3): each load set matches its own dep entries and all internal dependency references resolve; QGKI/GKI share 63, each nfc_i2c is in load with no hard deps. Both modules.blocklist pulls failed, NOT proof of absence. Before requesting any more device data: review device modprobe -l ordering, AOSP blocklist parsing/missing file semantics, full 5.4.302 KMI/symbol CRC/dependency compatibility and reversible EROFS/AVB-safe deployment. Do not assume NFC root cause, change vendor, flash inspection-only module, or rerun unchanged kernel. Fixed user Windows log directory: Set-Location \"D:\\1.ROM_Prot\\lisa\\pull_log\" for ALL future TWRP/ADB PowerShell commands, scripts, outputs/ZIP; pass explicit OutputRoot. Resume original single Lisa automation after this user upload. Every report newest relevant Action link or 無; append boot打包可準備測試 only for a new verified gate-passed boot.img artifact.",
+  "blocker": "GUARDED_NFC_SAME_BUILD_71_OF_71_IMPORTED_CRCS_PASS; TWO_STOCK_VENDOR_5_4_289_NFC_ELF_BYTES_NOT_YET_COLLECTED; STOCK_NFC_VS_5_4_302_IMPORTED_CRC_COMPATIBILITY_UNVERIFIED; ANDROID_ACTUAL_MODULE_LOAD_UNKNOWN; FRESH_BOOT_FIRST_FAULT_UNKNOWN",
+  "next_action": "USER_ACTION_REQUIRED_GET_LOGS: request ONLY two original Android vendor_a NFC ELF files from TWRP recovery (read-only EROFS) into Windows fixed D:\\1.ROM_Prot\\lisa\\pull_log: /vendor/lib/modules/nfc_i2c.ko QGKI sha256 b37dae41aad83b6adaa1f2a16253d2a8ca931b83a534fd5fb57ceaea2424bc68 and /vendor/lib/modules/5.4-gki/nfc_i2c.ko GKI sha256 bb1e8994d0ddf0b15bd038457a850b2a8b5c7b74e1816b97dea5623c2ea5c80b. Zip privately to chat, not public GitHub. Integrated 5.4.302 Module.symvers now available in verified CRC workflow Action 38056564905 artifact 11672061727. CI CRC gate checked guarded new .ko has 71/71 matching imported symbols and corruption negative control PASS, not vendor compatibility. After stock .ko upload, compare actual __versions to 5.4.302 symvers offline; then reassess fallback branch/whole module set, no blind vendor rewrite or boot reflash. Temporarily disable existing single automation while awaiting exact files, resume same ID after upload.",
   "next_expected_evidence": [
-    "Static review of whole module sets and kernel-vendor symbol CRC/CONFIG_MODVERSIONS ABI compatibility; evidence may use GitHub CI data before asking device",
-    "Read-only existence diagnostics for each vendor modules.blocklist and actual /vendor/bin/modprobe -l order only if materially needed; user commands must Set-Location \"D:\\1.ROM_Prot\\lisa\\pull_log\"",
-    "Real Android ADB=device module loading/error and contemporary first-fault only if device state makes it possible; recovery-only logs are not runtime proof",
-    "Review reversible module set deployment, EROFS/AVB/rollback gates; only a new successfully packaged boot.img Action earns boot打包可準備測試 label"
+    "From TWRP recovery, original device vendor_a QGKI nfc_i2c.ko with SHA256 b37dae41aad83b6adaa1f2a16253d2a8ca931b83a534fd5fb57ceaea2424bc68; first PowerShell line Set-Location \"D:\\1.ROM_Prot\\lisa\\pull_log\"",
+    "From TWRP recovery, original device vendor_a 5.4-gki nfc_i2c.ko with SHA256 bb1e8994d0ddf0b15bd038457a850b2a8b5c7b74e1816b97dea5623c2ea5c80b",
+    "Use Action 38056564905 artifact 11672061727 Module.symvers to compare actual vendor __versions symbol CRC, document missing/changed matched imports without publishing OEM binaries",
+    "Android actual module load and fresh first-fault unresolved; no new Kernel Build/boot, never equate same-build NFC gate with device boot PASS"
   ],
   "forbidden": [
     "global frequency pin",
@@ -609,7 +609,8 @@
     "2026-10-10 scheduled workflow updated per user's directive: prioritize label 使用者待處理：取日誌 for next required TWRP/ADB logs; AOSP docs explain kernel module/modversions/loading constraints, community GKI discussion notes vendor-module mismatch after replacing kernel (not Lisa-specific). Need Android vendor init module selection and, if available, Android runtime load/crash log. Relevant source URLs and safe RO approach recorded in canonical plan commit 08418b8. Pause existing automation while waiting for decisive user log; resume same ID on user upload/繼續.",
     "2026-10-10 uploaded lisa_nfc_init_logs.zip SHA256 866164c26a20201f4051732e99441525972d3cfced1e2cf2d1adabcd7b623ec0, 156 Android vendor init rc files. init.target.rc:38-40 early-init executes /vendor/bin/vendor_modprobe.sh; init.qcom.rc:421-425 defines late_start oneshot nqnfcinfo; vendor NFC HAL service is class hal. No literal nfc_i2c/modules.load in these .rc files. Need vendor_modprobe.sh only, from TWRP RO vendor_a; static intent cannot prove actual Android module loaded. Evidence report 6051af7 and plan action/report contract fd68040. User requires each round exact newest Action URL or 無; only proven new packaged boot.img run label boot打包可準備測試. No kernel rebuild or new boot.",
     "2026-10-10 user supplied lisa_nfc_loader.zip SHA256 3a39c7aa9ec83900de764064dde663b56c269c593277419d16e53e941d4d8f79 (vendor_modprobe.sh 1429 bytes). Validated bash/dash syntax. Android vendor early-init tries first nonblacklisted QGKI module and only on first probe load failure switches entire later batch to 5.4-gki; later per-module errors do not switch. Both vendor NFC candidates are old 5.4.289, no guarded 5.4.302 present. Actual Android selection and root reboot cause unverified. Summary only (proprietary script not reproduced) in evidence commit d8b5e26; plan updated 5d518a1. Need only static blocklists+module lists+dependencies, plus Android live log if possible, before deployment. No new Kernel Build/boot.",
-    "2026-10-10 21:22+08 user uploaded lisa_nfc_module_configs_20261010-212249.zip sha256 3a8717640a28b8facbd46e59bf796a577b462bbce1cc7d521d768e7218b6ac0b: two modules.load+dep pairs, QGKI 107/107 NFC line66, GKI 227/227 NFC line139. 63 common names, QGKI-only 44, GKI-only 164. All dep entries account for load entries, 211/741 edges all internal paths resolvable. Both modules.blocklist pulls failed; file absence not proven. New evidence commit bbe9fd7, plan commit d90c6c3. User specified ALL future PowerShell log commands Set-Location \"D:\\1.ROM_Prot\\lisa\\pull_log\" and outputs there. No new kernel/boot yet; new requested manifest logs received, resume original automation for next ABI review."
+    "2026-10-10 21:22+08 user uploaded lisa_nfc_module_configs_20261010-212249.zip sha256 3a8717640a28b8facbd46e59bf796a577b462bbce1cc7d521d768e7218b6ac0b: two modules.load+dep pairs, QGKI 107/107 NFC line66, GKI 227/227 NFC line139. 63 common names, QGKI-only 44, GKI-only 164. All dep entries account for load entries, 211/741 edges all internal paths resolvable. Both modules.blocklist pulls failed; file absence not proven. New evidence commit bbe9fd7, plan commit d90c6c3. User specified ALL future PowerShell log commands Set-Location \"D:\\1.ROM_Prot\\lisa\\pull_log\" and outputs there. No new kernel/boot yet; new requested manifest logs received, resume original automation for next ABI review.",
+    "2026-10-10: real ELF64 aarch64 NFC imported-symbol CRC checker script a1169ef, workflow f4d3d0f, artifact fix 6c8199a. Action 38056564905 SUCCESS, artifact 11672061727 contains real 830233-byte C0061 Module.symvers and signed checksum-scoped report: 71/71 compiled NFC __versions CRC match integrated Kernel's symbols, zero mismatches/missing; negative control intentionally flips module_layout CRC and is rejected. This is same-build consistency only, not proof 5.4.289 device modules load. Version release mismatch alone insufficient under MODVERSIONS. Need exact two device NFC .ko binaries from TWRP EROFS RO, hashes already known. Plan commit 9ba143a; no new boot. Existing single schedule pause for explicit device evidence."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -627,5 +628,5 @@
     "https://source.android.com/docs/core/architecture/kernel/abi-monitor",
     "https://github.com/MiYume0721/android_kernel_xiaomi_sm8350_miyume"
   ],
-  "last_checked_auxiliary_run": 37969054845
+  "last_checked_auxiliary_run": 38056564905
 }
