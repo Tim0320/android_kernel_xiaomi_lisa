@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_C0061_NFC_BUILTIN_PROTO_STATIC_PASS_DEVICE_DEPLOYMENT_BLOCKED",
+  "current_phase": "PHASE_6_NFC_BUILTIN_CI_PASS_ARTIFACT_SHA_CONFIRMED_DEVICE_DEPLOYMENT_BLOCKED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "dafc7977c18d70c76e8fa0f384cb874802ed4382",
+  "last_checked_commit": "d3ed310770959c6d4701ede7389c74fdf58c44c6",
   "last_checked_run": 38062935154,
-  "blocker": "RUN_38062935154_ALL_JOBS_SUCCESS_THREE_EXPERIMENT_ARTIFACTS_BUT_NOT_FLASHABLE; STOCK_VENDOR_NFC_KO_SECOND_STAGE_AUTOLOAD_DUPLICATE_REGISTRATION_AND_EROFS_AVB_SLOT_ROLLBACK_UNVERIFIED",
-  "next_action": "Inspect actual experiment artifacts 11674463191, 11674263375 for NFC=y, built-in Image guard, no nfc_i2c.ko, exact ABI removed/changed, package identity and boot SHA; then evaluate Android module loader probing of built-in NFC versus stock vendor nfc_i2c.ko and safe reversible rollback/AVB path. Never flash NOT-FLASHABLE experiment or equate CI SUCCESS to device PASS.",
+  "blocker": "EXPERIMENT_38062935154_BOOT_SHA_6d4bde9703183308808825ee2fe726850f9a5bcbd70869c6b269ca745355159e_STATIC_PASS_BUT_NOT_FLASHABLE; OEM_VENDOR_NFC_MODULE_AUTOLOAD_AND_AVB_SLOT_ROLLBACK_UNVERIFIED",
+  "next_action": "Investigate second-stage Android vendor module load of old nfc_i2c.ko when NFC is built-in; determine whether duplicate registration occurs, how to prevent it without modifying EROFS/AVB unsafely, and plan stock partitions/slot rollback. Only then consider guarded boot testing. Reuse already successful run; do not rebuild unchanged source.",
   "next_expected_evidence": [
-    "Artifact contents and actual boot.img SHA256 plus ABI and packaging reports verified",
-    "Exact vendor second-stage modprobe and built-in collision behavior supported by AOSP/Qualcomm and device-specific evidence",
-    "Recoverable deployment checklist including source partitions, hashes, AVB and slot rollback, before changing flashability"
+    "Second-stage vendor_modprobe.sh handling of built-in NFC and original nfc_i2c.ko supported by actual source",
+    "Verifiable, reversible partition and AVB rollback strategy",
+    "Static gate provenance 16/16 stable15 mixed1 removed0 and boot SHA verified against artifacts"
   ],
   "forbidden": [
     "global frequency pin",
@@ -623,7 +623,8 @@
     "2026-10-10 ~23:10: Action 38061878279 FAILED before new kernel compilation at control config incorrectly expected CONFIG_NFC_QTI_I2C=y on frozen C0059 NFC=m. Intermediate workflow df878c8 text corruption caused invalid workflow 38062918078. Restored known-good experiment YAML and fixed isolated C0059=m/C0061=y gates at f13410b; actual new NFC built-in pilot Action 38062935154 now running source-oracle fetch, no boot yet. Original full completed kernel run remains 37655937871. Official linux finit_module EEXIST and AOSP loaded module cache do not prove builtin NFC vs old vendor .ko duplicate safe. Evidence doc 287c235, plan d1dc7a1. No user action/log needed, TWRP-only.",
     "2026-10-10 confirmed Action 38062935154 actual job 114244708406 running C0059 same-run control Image/modules/dtbs; upstream source, stock ABI, config stages PASS; no target build/artifact yet.",
     "2026-10-10 checked Action 38062935154: 21 job steps succeeded and C0061 target Image/modules/dtbs build in progress; no artifacts yet.",
-    "2026-10-10 Action 38062935154 SUCCESS complete job; successful C0059 control, Direct-302 NFC=y compile, NFC built-in check, ABI/KMI/provenance, identity and packaging; artifacts 11674463191 NOT FLASHABLE, 11674263375 evidence, 11674503076 scan. No device PASS."
+    "2026-10-10 Action 38062935154 SUCCESS complete job; successful C0059 control, Direct-302 NFC=y compile, NFC built-in check, ABI/KMI/provenance, identity and packaging; artifacts 11674463191 NOT FLASHABLE, 11674263375 evidence, 11674503076 scan. No device PASS.",
+    "2026-10-10 verified completed run 38062935154 job logs: NFC=y, compile/modpost PASS, ABI removed 0, provenance 16 covered (stable15 mixed1), identity & fixed-region packaging PASS; boot SHA 6d4bde9703183308808825ee2fe726850f9a5bcbd70869c6b269ca745355159e, artifact 11674463191 NOT FLASHABLE."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
