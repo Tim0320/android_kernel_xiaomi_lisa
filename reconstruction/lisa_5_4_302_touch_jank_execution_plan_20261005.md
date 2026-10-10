@@ -806,3 +806,17 @@ https://android.googlesource.com/platform/system/core/+/android16-qpr2-release/t
 **New decisive targeted evidence:** from already usable TWRP ADB=recovery read-only mounted mapped vendor_a, collect `modules.blocklist`, `modules.load`, and `modules.dep` for both `/vendor/lib/modules/` and `/vendor/lib/modules/5.4-gki/`. These are static module-order/dependency/blacklist context, not actual runtime module load proof. Only if Android ADB=device is available during boot, collect its actual `logcat /proc/modules / dmesg` and first error. No repeated unchanged Oops/Logdump or boot flash. Per user request, report `使用者待處理：取日誌`, provide a read-only PowerShell recipe, pause same single automation while awaiting this materially new evidence, then resume when uploaded.
 
 **Every report:** `最新 Action 網址：<new run URL>` or `無`. No Action that only audits metadata is `boot打包可準備測試`. Existing Direct-302 static run 37655937871 is not device PASS; NFC staging 37967884526 is inspection-only.
+
+## 2026-10-10 21:22+08 — two vendor module sets audited; standard Windows log working directory fixed
+
+New ZIP `lisa_nfc_module_configs_20261010-212249.zip`, SHA256 `3a8717640a28b8facbd46e59bf796a577b462bbce1cc7d521d768e7218b6ac0b`, includes valid `modules.load` and `modules.dep` for two read-only Android vendor module locations:
+- `/vendor/lib/modules`: 107 distinct `.ko` in load list and 107 matching dep entries; NFC at position 66, no hard dep listed; 211 dependency links, all resolvable by manifest name.
+- `/vendor/lib/modules/5.4-gki`: 227 distinct `.ko`, 227 matching dep entries; NFC at position 139, no hard dep listed; 741 dependency links, all resolvable by manifest name.
+- 63 names overlap; 44 only in first, 164 only in second. **Both `modules.blocklist` pull operations returned failure**, so blocklist actual existence remains unproven. If absent, the vendor script's pipeline may treat the first `modprobe -l` item as the non-blocklisted probe; its list order is not determined by the first `modules.load` line.
+- This strongly supports a **whole-module-set boot compatibility** investigation, not NFC-only speculation. A clean textual `modules.dep` does not prove 5.4.302 KMI/CRC compatibility or actual Android loading.
+
+Complete evidence and boundaries: `reconstruction/c0061_vendor_module_manifest_audit_20261010.md`, commit `bbe9fd7`. Upstream Android modprobe documents the list, blocklist and dependency behaviors but is not the exact proprietary device binary: https://android.googlesource.com/platform/system/core/+/d5e026e1a/toolbox/modprobe.cpp .
+
+**User fixed path, mandatory for all subsequent Lisa TWRP/ADB PowerShell snippets and collection scripts:** always start with `Set-Location "D:\1.ROM_Prot\lisa\pull_log"` and output/download scripts, logs and ZIP in that directory, explicitly supplying output-root parameters where supported. Do not silently use `D:\1.ROM_Prot\lisa` or `D:\1.ROM_Prot\lisa\boot` as working directories.
+
+**Next:** with this new physical evidence, resume the same paused Lisa automation and work on ABI/module compatibility, loader order and reversible deployment planning. Do not request redundant logs or a repeat boot test yet. If truly decisive additional device data is required, clearly label `使用者待處理：取日誌` and provide a narrow read-only request rooted at the fixed path, then pause according to the prior rule. Always include a new Action URL or `無`; only label `boot打包可準備測試` on a new verified matching boot.img artifact run.
