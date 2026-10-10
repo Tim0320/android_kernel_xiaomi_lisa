@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_RUNTIME_VENDOR_MODPROBE_ROUTE_PENDING_NFC_DEPLOYMENT_AND_FRESH_FAULT",
+  "current_phase": "PHASE_6_VENDOR_MODPROBE_QGKI_GKI_FALLBACK_BRANCH_AND_MODULE_ABI_REVIEW",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,15 +108,15 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "fd680405dccd3918c03232cd8012cc2b8b9f5d45",
+  "last_checked_commit": "5d518a124cc880b3134308f0f0ea868ed3f04229",
   "last_checked_run": 37655937871,
-  "blocker": "ANDROID_VENDOR_INIT_EARLY_INIT_VENDOR_MODPROBE_SCRIPT_UNINSPECTED; TWO_5_4_289_VENDOR_NFC_MODULES_VS_5_4_302_CI_MODULE; ANDROID_ACTUAL_NFC_LOAD_UNVERIFIED; FRESH_SYSTEM_STAGE_FIRST_FAULT_UNKNOWN; USER_TWRP_SINGLE_SCRIPT_LOG_PENDING",
-  "next_action": "USER_ACTION_REQUIRED_GET_LOGS: From already available TWRP ADB=recovery, RO mount /dev/block/mapper/vendor_a (EROFS ro) and pull ONLY /vendor/bin/vendor_modprobe.sh to determine module-loading path; ZIP and upload with no new boot flash. The uploaded 156 Android vendor rc files show init.target.rc early-init runs this script, while init.qcom.rc late_start defines nqnfcinfo; none names nfc_i2c directly. Check script semantics before any matched module deployment. If Android ADB=device available separately, get contemporary Android module-load/crash logs. Keep single automation paused pending this decisive file. Every report MUST include new Action URL or 無, and only mark boot打包可準備測試 for newly validated boot.img artifact.",
+  "blocker": "VENDOR_MODPROBE_WHOLE_DIRECTORY_FALLBACK_STATIC_CONFIRMED; BOTH_VENDOR_NFC_MODULES_REMAIN_5_4_289; FIRST_NONBLACKLISTED_MODULE_AND_ACTUAL_BRANCH_UNKNOWN; ANDROID_MODULE_LOAD_AND_FRESH_FIRST_FAULT_UNKNOWN; USER_TARGETED_MODULE_MANIFEST_LOG_PENDING",
+  "next_action": "USER_ACTION_REQUIRED_GET_LOGS: already provided vendor_modprobe.sh was validated. Loader tries an initial first non-blacklisted module from /vendor/lib/modules and switches all subsequent module loads to 5.4-gki only on that initial failure; no per-module fallback. From TWRP read-only mapped vendor_a, collect ONLY both directories' modules.blocklist, modules.load and modules.dep (not repeat old dmesg/Oops/Logdump), then determine static branch/dependency risks. If Android ADB=device is transiently available, prefer real Android logcat, /proc/modules, permitted dmesg/first-fault to establish actual branch and module failures. Do not change EROFS/AVB vendor, do not flash staging-only NFC, do not blindly rebuild identical boot. New GitHub evidence at d8b5e26; canonical plan 5d518a1. User asks to pause single Lisa schedule while awaiting this specific evidence, then resume original ID upon upload.",
   "next_expected_evidence": [
-    "TWRP RO vendor_a/bin/vendor_modprobe.sh content with exact Android vendor loader directory or delegated scripts; do not repeat 156 .rc files",
-    "Android actual loaded NFC module / first contemporaneous error if Android ADB=device becomes available; recovery dmesg is not Android proof",
-    "Module CRC/modversions, AVB/EROFS rollback-safe packaging decision before any physical deployment",
-    "Every report latest Action URL (or 無); label boot打包可準備測試 only on run with verified new boot.img package artifact"
+    "Read-only TWRP vendor_a /vendor/lib/modules/{modules.blocklist,modules.load,modules.dep} full text",
+    "Read-only TWRP vendor_a /vendor/lib/modules/5.4-gki/{modules.blocklist,modules.load,modules.dep} full text",
+    "Independent Android ADB=device logcat, /proc/modules, permitted dmesg with contemporary kernel module load errors if transient device connection is possible",
+    "Module CRC/modversions and matched whole-module-set/EROFS/AVB rollback assessment before any flash; next Action link in each report, boot label only for verified new boot package"
   ],
   "forbidden": [
     "global frequency pin",
@@ -607,7 +607,8 @@
     "2026-10-10 01:27 TWRP v1.3.9 ZIP raw23 RAM shell exit=0 but TWRP vendor/modules are tmpfs; Android vendor logical partition exists at by-name/vendor -> dm-5 and was not mounted. No valid NFC SHA or fresh kernel first fault; Oops/Logdump unchanged. raw22 fails unmatched if. Collector-only v1.4.0 fix at 0ff4ddd: multiline adbd, CRLF-normalized RAM scripts, strict RO mapped vendor scanner. GitHub CI 37966876041 passed PowerShell AST plus bash/dash syntax. Plan update d6d373e; no kernel build.",
     "2026-10-10 01:35+08 captured v1.4.0 ZIP: raw22/raw23 RAM transport exit_code=0; readonly /dev/block/mapper/vendor_a EROFS mount PASS. Android vendor NFC: 5.4-gki SHA bb1e8994d0dd... vermagic 5.4.289-g5987d69e25da, qgki SHA b37dae41aad8... vermagic 5.4.289-qgki-g5987d69e25da. Both in text modules.load/dep. CI 37655937871 module inspected SHA aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b vermagic 5.4.302-qgki-lisa-c0061-rfb3b3c2 and guard present; not deployed in vendor. User note says system stage then crash. Identical historic Oops/Logdump, no new first-fault. Device provenance report d13cd07, staging workflow d76e971 and SUCCESS run 37967884526 artifact 11634242690 inspection only; plan updated 698fbff. Kernel and C0059 unchanged.",
     "2026-10-10 scheduled workflow updated per user's directive: prioritize label 使用者待處理：取日誌 for next required TWRP/ADB logs; AOSP docs explain kernel module/modversions/loading constraints, community GKI discussion notes vendor-module mismatch after replacing kernel (not Lisa-specific). Need Android vendor init module selection and, if available, Android runtime load/crash log. Relevant source URLs and safe RO approach recorded in canonical plan commit 08418b8. Pause existing automation while waiting for decisive user log; resume same ID on user upload/繼續.",
-    "2026-10-10 uploaded lisa_nfc_init_logs.zip SHA256 866164c26a20201f4051732e99441525972d3cfced1e2cf2d1adabcd7b623ec0, 156 Android vendor init rc files. init.target.rc:38-40 early-init executes /vendor/bin/vendor_modprobe.sh; init.qcom.rc:421-425 defines late_start oneshot nqnfcinfo; vendor NFC HAL service is class hal. No literal nfc_i2c/modules.load in these .rc files. Need vendor_modprobe.sh only, from TWRP RO vendor_a; static intent cannot prove actual Android module loaded. Evidence report 6051af7 and plan action/report contract fd68040. User requires each round exact newest Action URL or 無; only proven new packaged boot.img run label boot打包可準備測試. No kernel rebuild or new boot."
+    "2026-10-10 uploaded lisa_nfc_init_logs.zip SHA256 866164c26a20201f4051732e99441525972d3cfced1e2cf2d1adabcd7b623ec0, 156 Android vendor init rc files. init.target.rc:38-40 early-init executes /vendor/bin/vendor_modprobe.sh; init.qcom.rc:421-425 defines late_start oneshot nqnfcinfo; vendor NFC HAL service is class hal. No literal nfc_i2c/modules.load in these .rc files. Need vendor_modprobe.sh only, from TWRP RO vendor_a; static intent cannot prove actual Android module loaded. Evidence report 6051af7 and plan action/report contract fd68040. User requires each round exact newest Action URL or 無; only proven new packaged boot.img run label boot打包可準備測試. No kernel rebuild or new boot.",
+    "2026-10-10 user supplied lisa_nfc_loader.zip SHA256 3a39c7aa9ec83900de764064dde663b56c269c593277419d16e53e941d4d8f79 (vendor_modprobe.sh 1429 bytes). Validated bash/dash syntax. Android vendor early-init tries first nonblacklisted QGKI module and only on first probe load failure switches entire later batch to 5.4-gki; later per-module errors do not switch. Both vendor NFC candidates are old 5.4.289, no guarded 5.4.302 present. Actual Android selection and root reboot cause unverified. Summary only (proprietary script not reproduced) in evidence commit d8b5e26; plan updated 5d518a1. Need only static blocklists+module lists+dependencies, plus Android live log if possible, before deployment. No new Kernel Build/boot."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
