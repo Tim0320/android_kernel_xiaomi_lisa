@@ -116,5 +116,6 @@ jobs:
           path: |
             candidate-0061-nfc-crc-preflight.json
             candidate-0061-nfc-crc-preflight.log
+            source/kernel/out/Module.symvers
           retention-days: 14
           if-no-files-found: warn
