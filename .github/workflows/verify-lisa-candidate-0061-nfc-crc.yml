@@ -8,6 +8,7 @@ on:
       - .github/workflows/verify-lisa-candidate-0061-nfc-crc.yml
       - reconstruction/scripts/candidate_0061_module_crc_preflight.py
       - reconstruction/scripts/candidate_0061_stock_nfc_crc_compare.py
+      - reconstruction/scripts/candidate_0061_vendor_manifest_graph.py
 
 permissions:
   contents: read
@@ -41,6 +42,8 @@ jobs:
           python3 -m py_compile reconstruction/scripts/candidate_0061_module_crc_preflight.py
           python3 -m py_compile reconstruction/scripts/candidate_0061_stock_nfc_crc_compare.py
           python3 reconstruction/scripts/candidate_0061_stock_nfc_crc_compare.py --help >/dev/null
+          python3 -m py_compile reconstruction/scripts/candidate_0061_vendor_manifest_graph.py
+          python3 reconstruction/scripts/candidate_0061_vendor_manifest_graph.py --self-test
           test -s source/candidate-0061-runtime-modules/nfc_i2c.ko
           test -s source/kernel/out/Module.symvers
           if ! command -v llvm-objcopy >/dev/null; then
