@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_NFC_BUILTIN_CI_PASS_ARTIFACT_SHA_CONFIRMED_DEVICE_DEPLOYMENT_BLOCKED",
+  "current_phase": "PHASE_6_NFC_BUILTIN_STATIC_PASS_VENDOR_MODULE_COLLISION_AND_AVB_ROLLBACK_REVIEW",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "d3ed310770959c6d4701ede7389c74fdf58c44c6",
+  "last_checked_commit": "773eaf58ebf1628aa84e31f90d6290dc6364f471",
   "last_checked_run": 38062935154,
-  "blocker": "EXPERIMENT_38062935154_BOOT_SHA_6d4bde9703183308808825ee2fe726850f9a5bcbd70869c6b269ca745355159e_STATIC_PASS_BUT_NOT_FLASHABLE; OEM_VENDOR_NFC_MODULE_AUTOLOAD_AND_AVB_SLOT_ROLLBACK_UNVERIFIED",
-  "next_action": "Investigate second-stage Android vendor module load of old nfc_i2c.ko when NFC is built-in; determine whether duplicate registration occurs, how to prevent it without modifying EROFS/AVB unsafely, and plan stock partitions/slot rollback. Only then consider guarded boot testing. Reuse already successful run; do not rebuild unchanged source.",
+  "blocker": "NFC_Y_BOOT_6d4bde97_STATIC_PASS_NOT_FLASHABLE; DEVICE_VENDOR_NFC_OLD_KO_STILL_PRESENT; NO_PROOF_SECOND_STAGE_LOAD_HANDLES_BUILTIN_NFC; AVB_HASH_DESCRIPTOR_CHECK_SCRIPT_ONLY_NOT_BOOTLOADER_VERIFICATION",
+  "next_action": "Review OEM vendor_modprobe.sh previously captured semantics and Android libmodprobe behavior for built-in module duplicates (ENOENT/EEXIST/modprobe errors), then verify stock vbmeta descriptor chain, partition/slot rollback and matched artifact. Do not recompile identical boot or flash experimental artifact.",
   "next_expected_evidence": [
-    "Second-stage vendor_modprobe.sh handling of built-in NFC and original nfc_i2c.ko supported by actual source",
-    "Verifiable, reversible partition and AVB rollback strategy",
-    "Static gate provenance 16/16 stable15 mixed1 removed0 and boot SHA verified against artifacts"
+    "Android source-backed behavior on second-stage modprobe of built-in NFC with old vendor .ko and impact on early-init batch",
+    "Verified AVB descriptor and rollback plan based on original partition hashes and checked artifact, not merely a static script PASS",
+    "Candidate0061 prototype remains NOT_FLASHABLE until duplicate NFC registration/fallback resolved"
   ],
   "forbidden": [
     "global frequency pin",
@@ -624,7 +624,8 @@
     "2026-10-10 confirmed Action 38062935154 actual job 114244708406 running C0059 same-run control Image/modules/dtbs; upstream source, stock ABI, config stages PASS; no target build/artifact yet.",
     "2026-10-10 checked Action 38062935154: 21 job steps succeeded and C0061 target Image/modules/dtbs build in progress; no artifacts yet.",
     "2026-10-10 Action 38062935154 SUCCESS complete job; successful C0059 control, Direct-302 NFC=y compile, NFC built-in check, ABI/KMI/provenance, identity and packaging; artifacts 11674463191 NOT FLASHABLE, 11674263375 evidence, 11674503076 scan. No device PASS.",
-    "2026-10-10 verified completed run 38062935154 job logs: NFC=y, compile/modpost PASS, ABI removed 0, provenance 16 covered (stable15 mixed1), identity & fixed-region packaging PASS; boot SHA 6d4bde9703183308808825ee2fe726850f9a5bcbd70869c6b269ca745355159e, artifact 11674463191 NOT FLASHABLE."
+    "2026-10-10 verified completed run 38062935154 job logs: NFC=y, compile/modpost PASS, ABI removed 0, provenance 16 covered (stable15 mixed1), identity & fixed-region packaging PASS; boot SHA 6d4bde9703183308808825ee2fe726850f9a5bcbd70869c6b269ca745355159e, artifact 11674463191 NOT FLASHABLE.",
+    "2026-10-10 reviewed public GitHub vendor init evidence: early-init executes vendor_modprobe.sh, nqnfcinfo late_start; embedded AVB hash descriptor gate script added in 773eaf58, script is not proof of bootloader AVB acceptance."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
