@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_NFC_BUILTIN_PROTOTYPE_C0059_CONTROL_BUILD_RUNNING",
+  "current_phase": "PHASE_6_NFC_BUILTIN_PROTOTYPE_C0061_TARGET_BUILD_RUNNING",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "53e779480553b3f32da2efadb665041a52765732",
+  "last_checked_commit": "3cbda02f39272355711475f53c8695b957df9449",
   "last_checked_run": 37655937871,
-  "blocker": "NFC_Y_PROTOTYPE_ACTION_38062935154_CONTROL_IMAGE_MODULES_DTBS_IN_PROGRESS; TARGET_IMAGE_ABI_KMI_PACKAGING_NOT_YET_EXECUTED; BUILTIN_NFC_OLD_VENDOR_KO_DUPLICATE_PROBE_AND_ROLLBACK_UNVERIFIED",
-  "next_action": "Track actual run 38062935154 job 114244708406 from frozen C0059 same-run ABI control; if failure inspect first failed step/log and fix; if complete validate C0061 NFC=y Image marker, no nfc_i2c.ko, ABI removed=0 and provenance, identity, boot packaging artifact. Prototype stays NOT FLASHABLE until duplicate stock vendor NFC module and AVB/EROFS recovery gate resolved.",
+  "blocker": "RUN_38062935154_JOB_114244708406_C0061_TARGET_IMAGE_MODULES_DTBS_RUNNING; ABI_IDENTITY_PACKAGING_NOT_FINISHED; OLD_VENDOR_NFC_KO_DUPLICATE_PROBE_AND_ROLLBACK_UNVERIFIED",
+  "next_action": "Inspect real Action 38062935154 target build and first failing job step if any; when finished verify NFC=y, guarded Image, no separate nfc_i2c.ko, ABI/KMI 0 removed and provenance, identity and boot packaging. Prototype NOT FLASHABLE before EROFS/AVB recovery and duplicate-module probe risk resolved.",
   "next_expected_evidence": [
-    "Run 38062935154 Candidate0059 control build result and first failure log if any",
-    "C0061 NFC built-in integrated target actual compile, ABI/KMI, identity, packaging results and artifact if passed",
-    "Driver duplicate registration and reversible vendor deployment gate before real flash"
+    "Target build 38062935154 completion or first failed step/log",
+    "C0061 NFC built-in target modpost, ABI/KMI, identity/packaging outcome and artifact hash",
+    "Confirmed safe reversible plan for old vendor NFC module conflicts"
   ],
   "forbidden": [
     "global frequency pin",
@@ -621,7 +621,8 @@
     "2026-10-10: audit run 38061949448 failed only canonical state's last_checked_run pointing to unfinished prototype 38061878279. Corrected last_checked_run to actual completed integrated static CI 37655937871 and added current_in_progress_build_run=38061878279; no claim new kernel completed. Audit failure was report/schema state routing, not compile fault.",
     "2026-10-10 confirmed experimental run 38062918078 failure prior to job creation: jobs=0, artifacts=0; runtime fix remains unproven",
     "2026-10-10 ~23:10: Action 38061878279 FAILED before new kernel compilation at control config incorrectly expected CONFIG_NFC_QTI_I2C=y on frozen C0059 NFC=m. Intermediate workflow df878c8 text corruption caused invalid workflow 38062918078. Restored known-good experiment YAML and fixed isolated C0059=m/C0061=y gates at f13410b; actual new NFC built-in pilot Action 38062935154 now running source-oracle fetch, no boot yet. Original full completed kernel run remains 37655937871. Official linux finit_module EEXIST and AOSP loaded module cache do not prove builtin NFC vs old vendor .ko duplicate safe. Evidence doc 287c235, plan d1dc7a1. No user action/log needed, TWRP-only.",
-    "2026-10-10 confirmed Action 38062935154 actual job 114244708406 running C0059 same-run control Image/modules/dtbs; upstream source, stock ABI, config stages PASS; no target build/artifact yet."
+    "2026-10-10 confirmed Action 38062935154 actual job 114244708406 running C0059 same-run control Image/modules/dtbs; upstream source, stock ABI, config stages PASS; no target build/artifact yet.",
+    "2026-10-10 checked Action 38062935154: 21 job steps succeeded and C0061 target Image/modules/dtbs build in progress; no artifacts yet."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
