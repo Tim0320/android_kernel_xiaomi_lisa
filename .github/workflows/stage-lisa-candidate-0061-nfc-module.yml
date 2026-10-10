@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/stage-lisa-candidate-0061-nfc-module.yml
+      - reconstruction/c0061_twrp_new_nfc_panic_20261010_2245.md
 
 permissions:
   contents: read
@@ -64,7 +65,15 @@ jobs:
                   'vendor/lib/modules/5.4-gki/nfc_i2c.ko': 'bb1e8994d0ddf0b15bd038457a850b2a8b5c7b74e1816b97dea5623c2ea5c80b',
                   'vendor/lib/modules/nfc_i2c.ko': 'b37dae41aad83b6adaa1f2a16253d2a8ca931b83a534fd5fb57ceaea2424bc68'
               },
-              'actual_android_module_loaded': 'UNKNOWN',
+              'device_nfc_i2c_loaded_in_saved_panic': True,
+              'observed_fault': 'nqnfcinfo -> nfc_dev_open -> mutex_lock fault ffffffffffffffc8',
+              'observed_panic_at_boot_sec': 41.797828,
+              'persistent_oops_old_sha256': '5e29f593cfa25b166e28bea8082157544891d34558929531e4fcd3303d20701d',
+              'persistent_oops_new_sha256': '0e034b59946d562344dfb0295ce3cd0e6141f31bf4b685829ff2224f5b277e47',
+              'device_module_exact_source_path': 'UNKNOWN_QGKI_OR_GKI',
+              'guarded_nfc_module_deployed_to_device_vendor': False,
+              'boot_only_flash_fixes_nfc_guard': False,
+              'device_runtime_fix_gate': 'BLOCKED_UNTIL_MATCHED_GUARDED_MODULE_DEPLOYMENT',
               'device_boot_success': False
           }
           (out / 'evidence.json').write_text(json.dumps(report, indent=2) + chr(10))
@@ -73,11 +82,17 @@ jobs:
               '# Candidate0061 NFC - inspection-only staging' + chr(10) + chr(10)
               + 'NOT FLASHABLE. Do not write to EROFS /vendor or change AVB.' + chr(10)
               + 'This .ko matches the CI-built 5.4.302 kernel, not the current vendor modules.' + chr(10)
-              + 'Android module loading and boot success are NOT VERIFIED.' + chr(10)
+              + 'C0061 TWRP persistent oops now shows nqnfcinfo -> nfc_dev_open -> mutex_lock fatal kernel panic.' + chr(10)
+              + 'The current vendor has old module hashes; flashing the same boot.img again cannot install the guard.' + chr(10)
+              + 'Exact original NFC .ko path selected by Android is unknown; do NOT flash this inspection ZIP.' + chr(10)
+              + 'A new safely packaged guarded-module deployment with explicit rollback and EROFS/AVB review is required.' + chr(10)
               + 'A reversible deployment/rollback and init module selection check are required.' + chr(10))
           print('C0061_NFC_INSPECTION_STAGE=PASS')
           print('C0061_NFC_SHA256=' + actual)
-          print('DEVICE_NFC_LOADED=UNVERIFIED')
+          print('C0061_SAVED_PANIC_NFC_MODULE_LOADED=CONFIRMED')
+          print('C0061_GUARDED_NFC_MODULE_ON_VENDOR=NO')
+          print('C0061_BOOT_ONLY_REFLASH_FIXES_PANIC=NO')
+          print('C0061_GUARDED_NFC_DEPLOYMENT_GATE=BLOCKED')
           PY
 
       - name: Upload inspection-only module evidence
