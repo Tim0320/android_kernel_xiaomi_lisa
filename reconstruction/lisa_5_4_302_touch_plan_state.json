@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_NFC_Y_MANUAL_AUDIT_UNDISPATCHED_AVB_HASH_VERIFICATION_GATE",
+  "current_phase": "PHASE_6_AVB_READONLY_EXPERIMENT_AUDIT_WORKFLOW_COMMITTED_UNEXECUTED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "01c54b910253bc89682c3521bc871a172f302dae",
+  "last_checked_commit": "2929f42203562a84b42e07e2e84fc359d9a01f57",
   "last_checked_run": 38062935154,
-  "blocker": "NFC_Y_PROTOTYPE_NOT_FLASHABLE; EMBEDDED_AVB_HASH_DESCRIPTOR_MISMATCH_NEEDS_SIGNATURE_CHAIN_VALIDATION; OEM_NFC_KO_DUPLICATE_MODULE_ROUTE_UNVERIFIED; GITHUB_MANUAL_DISPATCH_UNAVAILABLE",
-  "next_action": "Strengthen static AVB gate in artifact validation using read-only candidate_0061_avb_descriptor_gate.py --require-match; compare stock Boot against experimental Boot, inspect external vbmeta hash chain/signature/slot and vendor_modprobe.sh built-in NFC behavior. Do not run redundant kernel build or promote prototype artifact. Optional audit-only real dispatch remains pending an authorized workflow dispatch action.",
+  "blocker": "NFC_Y_BOOT_AVB_EMBEDDED_MISMATCH_NOT_FLASHABLE; EXISTING_VENDOR_NFC_KO_DUPLICATE_LOAD_NOT_CLOSED; MANUAL_AUDIT_ARTIFACT_DOWNLOAD_NOT_RUN_YET",
+  "next_action": "Validate manually dispatching audit-only workflow and inspect first real failure if any. It downloads immutable historical artifact 11674463191, checks SHA256, audits expected AVB mismatch and emits JSON without kernel rebuild. Then pursue AVB/slot reversible boot design and vendor built-in NFC duplicate-loader guard. Do not flash.",
   "next_expected_evidence": [
-    "Read-only AVB descriptor verification output for stock and prototype with explicit mismatch fail-closed",
-    "Real source evidence for built-in NFC and old vendor nfc_i2c.ko loading behavior",
-    "Signature/slot rollback closure before offering flashable artifact"
+    "Real audit-only workflow run result / artifact SHA and JSON",
+    "AVB fix design preserving stock verification (not merely preserving stale descriptor)",
+    "Safely accounted vendor nfc_i2c.ko load behavior and TWRP rollback gate"
   ],
   "forbidden": [
     "global frequency pin",
@@ -629,7 +629,8 @@
     "2026-10-11 made NFC built-in experiment manual-only workflow_dispatch with run_mode audit-only default vs build-prototype; added plan note; no new boot or device PASS.",
     "2026-10-11 verified optional manual-only workflow source on main after acdf3b4: audit-only default, build-prototype explicit, no push trigger; no manual dispatch run in latest Actions; earlier state-only audit successes do not test the new menu.",
     "2026-10-11 verified current Actions include only automatic evidence audits through 38067158034; no manual NFC dispatch; current GitHub connector has no dispatch operation, so selectable workflow remains source-verified only.",
-    "2026-10-11 reviewed AOSP AVB verify_image and kernel module docs: embedded hash descriptor must match partition content; Module.symvers CRC checks alone cannot certify device runtime; latest 38067287084 is evidence audit, not manual NFC dispatch."
+    "2026-10-11 reviewed AOSP AVB verify_image and kernel module docs: embedded hash descriptor must match partition content; Module.symvers CRC checks alone cannot certify device runtime; latest 38067287084 is evidence audit, not manual NFC dispatch.",
+    "2026-10-11 committed 2929f42: optional audit-only GitHub job downloads known NFC experiment artifact 11674463191, validates its SHA256, audits AVB descriptor expected mismatch and exports JSON; no kernel build or boot flashing; dispatch not yet executed."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
