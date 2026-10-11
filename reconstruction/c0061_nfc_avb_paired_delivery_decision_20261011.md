@@ -35,3 +35,12 @@ The current Git repository tree contains the two stock files `reconstruction/sto
 The current embedded AVB gate only checks the Boot image's hash descriptor against its own bytes. The presence of stock `vbmeta.img` and `vbmeta_system.img` in Git does **not** prove the availability of private signing keys, firmware rollback-index authorization, or a signed vendor_a repack path. Treat any external AVB claim as **UNVERIFIED** until descriptor/public-key/rollback verification is independently executed against original partition images.
 
 **Do not advance to a new kernel build or flashing** based on the available inventory. First audit existing prior TWRP archive contents for missing module metadata or archive them as private evidence. The evidence gate must distinguish (a) bytes verifiable from files, (b) signatures verified against an authorized public key, (c) OEM vendor module selector actual boot path, and (d) real slot restoration on this handset.
+
+## 2026-10-11 Git LFS verification correction
+
+Direct GitHub file reads show that tracked `reconstruction/stock/stock-Image-3.09/vbmeta.img` and `vbmeta_system.img` are **129-byte Git LFS pointer files**, not decoded AVB image bytes. The LFS objects identify expected payloads:
+
+- `vbmeta.img`: 8192 bytes, SHA256 `d200dd45af1b30993764f38492c34c7afef7addccb844ad7642d1bd4558fd907`.
+- `vbmeta_system.img`: 4096 bytes, SHA256 `ea61d50a1cddf84444a6bd89fbcf9c84360d4cacfb6664271ddaa23c502a2420`.
+
+**Do not parse the 129-byte pointers as vbmeta or claim descriptors / signature / rollback are verified.** Fetch actual Git LFS payload bytes (or previously archived identical-hash partition images), check the recorded SHA256 and byte length, then use `avbtool info_image` or a verified parser offline. Even a valid descriptor parse is not OEM signing authority nor on-device rollback clearance. OEM `modules.load`, `modules.dep`, `modules.blocklist` still absent from the checked Git tree; inspect existing private ZIPs first.
