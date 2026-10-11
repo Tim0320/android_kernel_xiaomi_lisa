@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-11T18:55:00+08:00",
+  "updated_at": "2026-10-11T17:13:19.051Z",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -108,15 +108,15 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "BLOCKED_EMBEDDED_AVB_DESCRIPTOR_MISMATCH_38112707005_NOT_FLASHABLE"
   },
-  "last_checked_commit": "6293df6f8757723f7137aca86b0ff02439689424",
-  "last_checked_run": 38131488484,
-  "blocker": "EMBEDDED_AVB_HASH_MISMATCH_BOTH_ARTIFACTS; INTEGRATED_AND_REPACK_BOOT_RELEASE_GATES_MISSING; GUARDED_NFC_UNDEPLOYED; NFC_STAGE_CRC_WORKFLOWS_PIN_OLD_RUN_37655937871; OEM_AVB_SLOT_UNKNOWN; WORKFLOW_WRITE_PERMISSION_BLOCKED",
-  "next_action": "First implement authorized fail-closed staging and --require-match for BOTH integrated and repack release surfaces; avoid auto-triggering unchanged integrated kernel via packaging-only edits. Independently repair NFC inspection-stage/CRC workflows to pin immutable run 38112707005 artifact 11693027992 and same-run guarded .ko SHA256 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c, keep stage non-flashable. Authorized stage update_file was safety-blocked; do not bypass. Verify external OEM AVB signed trust chain, rollback and actual retrofit partition/slot backups before any boot or EROFS vendor write. No duplicate kernel build or boot flash.",
+  "last_checked_commit": "06294b83ea3a0a7d5bccb6f01b495345a612d17f",
+  "last_checked_run": 38158578003,
+  "blocker": "EMBEDDED_AVB_HASH_MISMATCH_HISTORICAL_BOOTS; AVB_RELEASE_GATES_CONFIGURED_BUT_NO_NEW_PACKAGE_PASS; OEM_AVB_TRUST_CHAIN_AND_ROLLBACK_UNVERIFIED; GUARDED_NFC_STAGE_AND_71_71_CRC_PASS_BUT_DEVICE_UNDEPLOYED; RUNTIME_QGKI_OR_GKI_BRANCH_UNVERIFIED; BACKUP_AND_ROLLBACK_UNVERIFIED",
+  "next_action": "Independent audit-only AVB negative test is SUCCESS (run 38158451246): historical boot artifacts both reject with exit=2. Both integrated/repack release workflows now require --require-match before any boot upload, but no newly validated boot exists; avoid duplicating full kernel build. Same-build guarded NFC stage run 38158574297 and CRC/provider run 38158578003 PASS (build 38112707005, module 01013be2, kernel release r16348a6). Next obtain read-only OEM vbmeta/rollback and slot backup evidence, resolve actual QGKI/GKI loader path, then design signed/reversible packaging and re-run release gates; do not flash.",
   "next_expected_evidence": [
-    "Authorized audit-only CI commit proving --require-match rejects both immutable 38112707005 boot artifacts (Exit 2) without publishing a boot image",
-    "Authorized fail-closed integrated AND repack workflow changes with negative tests and zero unverified boot upload paths",
-    "Same-run 38112707005 guarded NFC identity, CRC/provider KMI, and correct OEM QGKI/GKI runtime load provenance",
-    "OEM AVB chain, rollback indexes, actual retrofit partition mapping, and reversible A/B backed-up module deployment evidence"
+    "Read-only OEM vbmeta_a/vbmeta_b plus vbmeta_system_a/b header/signature/rollback metadata and bootloader unlock state; actual rollback counters may need fastboot/bootloader attestation.",
+    "Verified slot A/B boot/vendor_boot/vbmeta backup identities and actual super logical partition mapping from TWRP (2026-10-10 observed slot _a, super, vendor_a EROFS).",
+    "Same-build guarded NFC module deployment proof on correct QGKI/GKI branch, with full restoration method; no EROFS modification without review.",
+    "A new boot image only after embedded descriptor MATCH and OEM external trust-chain signing/rollback/packaging and identity/ABI tests, not simply after audit-only negative PASS."
   ],
   "forbidden": [
     "global frequency pin",
@@ -666,7 +666,11 @@
     "2026-10-11 verified both integrated and repack workflows lack embedded AVB release gate; integrated always-upload evidence includes boot.img; repack workflow remains independently flashable-looking and pinned to historical r60f98e6.",
     "2026-10-11 verified NFC stage and CRC workflows remain pinned to old run 37655937871 / old aa512b... module, not guarded 38112707005 / 01013be... paired module.",
     "2026-10-11 audit-only workflow create_file attempted using ordinary authorized GitHub integration; OpenAI safety check blocked it; no CI/workflow commit created.",
-    "2026-10-11 18:54+08 re-read canonical plan/state and live main 6293df6; latest Action 38131488484 / job 114446560899 completed SUCCESS audit-only, artifact 11699281292, no kernel/device PASS. Confirmed intact integrated run 38112707005 artifact 11693027992. Verified NFC stage workflow still pins 37655937871 and aa512b... despite verified current 38112707005 and guarded 01013be...; normal update_file attempted with run/hash pinned and NOT FLASHABLE metadata, but safety checks blocked with no commit. Release surfaces remain AVB-unsafe; no build or flashing."
+    "2026-10-11 18:54+08 re-read canonical plan/state and live main 6293df6; latest Action 38131488484 / job 114446560899 completed SUCCESS audit-only, artifact 11699281292, no kernel/device PASS. Confirmed intact integrated run 38112707005 artifact 11693027992. Verified NFC stage workflow still pins 37655937871 and aa512b... despite verified current 38112707005 and guarded 01013be...; normal update_file attempted with run/hash pinned and NOT FLASHABLE metadata, but safety checks blocked with no commit. Release surfaces remain AVB-unsafe; no build or flashing.",
+    "Audit-only CI 38158451246 successfully proved both historical AVB mismatched boots reject with exit code 2, without kernel rebuild or boot publish",
+    "Integrated and repack release workflows configured to enforce --require-match prior to boot artifact upload; no new boot validated",
+    "Guarded NFC same-run 38112707005 Stage 38158574297 and CRC 38158578003 success with 71/71 imported symbol CRC matching but not deployed",
+    "2026-10-10 TWRP ZIP read-only reinspection established slot _a, orange state, boot/vbmeta A/B, super (not super_a/b), EROFS vendor_a"
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -694,5 +698,35 @@
   "last_verified_static_ci_run": 38112707005,
   "last_verified_static_ci_sha": "16348a6d3673da9467ade04f15922bcf17a05694",
   "last_verified_static_ci_job_id": 114391400642,
-  "last_verified_static_ci_artifact_id": 11692514228
+  "last_verified_static_ci_artifact_id": 11692514228,
+  "device_evidence_oct10_twrp": {
+    "collected_at": "2026-10-10T22:45:09+08:00",
+    "source": "lisa-twrp-iter-0001_20261010-224509_boot_038e35371c97.zip",
+    "observed_slot": "_a",
+    "verifiedbootstate": "orange",
+    "boot_a": "/dev/block/sde11",
+    "boot_b": "/dev/block/sde35",
+    "vbmeta_a": "/dev/block/sde14",
+    "vbmeta_b": "/dev/block/sde38",
+    "super": "/dev/block/sda20",
+    "logical_vendor_a": "/dev/block/mapper/vendor_a",
+    "vendor_fs": "erofs:ro",
+    "runtime_loader_branch": "unknown",
+    "omitted": "Not current unlock/rollback attestation"
+  },
+  "ci_release_audit": {
+    "negative_test_run": 38158451246,
+    "negative_test": "PASS_EXPECTED_EXIT_2_BOTH_IMMUTABLE_BOOTS",
+    "integrated_workflow_gate": "CONFIGURED_NOT_DEVICE_PROVEN",
+    "repack_workflow_gate": "CONFIGURED_NOT_DEVICE_PROVEN",
+    "nfc_stage_run": 38158574297,
+    "nfc_stage": "PASS_INSPECTION_ONLY",
+    "nfc_crc_run": 38158578003,
+    "nfc_crc": "PASS_71_OF_71_SAME_BUILD",
+    "guarded_nfc_sha256": "01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c",
+    "guarded_nfc_release": "5.4.302-qgki-lisa-c0061-r16348a6-by-Tim0320",
+    "kernel_rebuild": "NOT_PERFORMED",
+    "boot_flash": "NOT_PERFORMED",
+    "boot_flash_authorized": false
+  }
 }
