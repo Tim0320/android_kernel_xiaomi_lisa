@@ -66,7 +66,7 @@ jobs:
             --symvers source/kernel/out/Module.symvers \
             --json candidate-0061-nfc-crc-preflight.json \
             --expected-sha256 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c \
-            --expected-kernelrelease 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320 \
+            --expected-kernelrelease 5.4.302-qgki-lisa-c0061-r16348a6-by-Tim0320 \
             2>&1 | tee candidate-0061-nfc-crc-preflight.log
           grep -q '^C0061_NFC_CRC_PREFLIGHT=PASS$' candidate-0061-nfc-crc-preflight.log
           grep -q '^C0061_VENDOR_5_4_289_CRC_COMPATIBILITY=UNVERIFIED$' candidate-0061-nfc-crc-preflight.log
@@ -117,7 +117,7 @@ jobs:
                   '--module', str(src), '--symvers', str(wrong),
                   '--json', str(pathlib.Path(tmp)/'negative.json'),
                   '--expected-sha256', '01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c',
-                  '--expected-kernelrelease', '5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320',
+                  '--expected-kernelrelease', '5.4.302-qgki-lisa-c0061-r16348a6-by-Tim0320',
               ]
               run = subprocess.run(args, text=True, capture_output=True)
               if run.returncode == 0 or 'C0061_NFC_CRC_PREFLIGHT=FAIL' not in run.stdout:
