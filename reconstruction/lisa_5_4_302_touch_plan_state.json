@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-11T17:13:19.051Z",
+  "updated_at": "2026-10-11T17:20:11.419Z",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -106,17 +106,20 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED",
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
-    "packaging_gate": "BLOCKED_EMBEDDED_AVB_DESCRIPTOR_MISMATCH_38112707005_NOT_FLASHABLE"
+    "packaging_gate": "BLOCKED_C0061_BOOT_EMBEDDED_AVB_DESCRIPTOR_MISMATCH_AND_OEM_CHAIN_UNVERIFIED",
+    "oem_avb_integrity_gate": "BLOCKED_ROOT_VBMETA_FLAGS3_SIGNED_HASH_INVALID_ON_CAPTURE",
+    "bootloader_rollback_gate": "UNVERIFIED_READ_ONLY_CAPTURE_HAS_VBMETA_HEADER_VALUES_ONLY",
+    "boot_signing_gate": "NO_OEM_PRIVATE_KEY_OR_TRUSTED_SIGNING_PROVENANCE"
   },
-  "last_checked_commit": "06294b83ea3a0a7d5bccb6f01b495345a612d17f",
-  "last_checked_run": 38158578003,
-  "blocker": "EMBEDDED_AVB_HASH_MISMATCH_HISTORICAL_BOOTS; AVB_RELEASE_GATES_CONFIGURED_BUT_NO_NEW_PACKAGE_PASS; OEM_AVB_TRUST_CHAIN_AND_ROLLBACK_UNVERIFIED; GUARDED_NFC_STAGE_AND_71_71_CRC_PASS_BUT_DEVICE_UNDEPLOYED; RUNTIME_QGKI_OR_GKI_BRANCH_UNVERIFIED; BACKUP_AND_ROLLBACK_UNVERIFIED",
-  "next_action": "Independent audit-only AVB negative test is SUCCESS (run 38158451246): historical boot artifacts both reject with exit=2. Both integrated/repack release workflows now require --require-match before any boot upload, but no newly validated boot exists; avoid duplicating full kernel build. Same-build guarded NFC stage run 38158574297 and CRC/provider run 38158578003 PASS (build 38112707005, module 01013be2, kernel release r16348a6). Next obtain read-only OEM vbmeta/rollback and slot backup evidence, resolve actual QGKI/GKI loader path, then design signed/reversible packaging and re-run release gates; do not flash.",
+  "last_checked_commit": "260abed03abbe2adef16849b6bcc6ba21da90c90",
+  "last_checked_run": 38158732673,
+  "blocker": "C0061_BOOT_EMBEDDED_AVB_HASH_MISMATCH; CAPTURED_VBMETA_A_B_FLAGS3_AND_SELF_SIGNATURE_INVALID; OEM_ROOT_KEY_ACCEPTANCE_AND_HARDWARE_ROLLBACK_COUNTERS_UNKNOWN; NFC_GUARDED_NOT_DEPLOYED; OEM_QGKI_GKI_RUNTIME_MODULE_LOAD_PATH_UNKNOWN; NO_FLASH_AUTHORIZATION",
+  "next_action": "Review 2026-10-12 user OEM AVB archive forensic analysis (reconstruction/c0061_oem_avb_readonly_analysis_20261012.md): top-level vbmeta_a/b flags 3 invalid stored auth hash and RSA signature, in-memory flags=0 hypothetical passes; vbmeta_system_a/b flags 0 self-contained RSA valid; chain vbmeta_system rollback loc2 index1756684800; not bootloader rollback. No further identical TWRP logs needed. Continue read-only OEM key provenance, device hardware counters and QGKI/GKI loader selection, reversible backups; only then design and validate safe boot packaging, never disable AVB. Existing --require-match on Integrated and Repack must remain fail-closed. NFC Stage and CRC same-build CI PASS but no device deployment. No redundant Kernel Build or boot flash.",
   "next_expected_evidence": [
-    "Read-only OEM vbmeta_a/vbmeta_b plus vbmeta_system_a/b header/signature/rollback metadata and bootloader unlock state; actual rollback counters may need fastboot/bootloader attestation.",
-    "Verified slot A/B boot/vendor_boot/vbmeta backup identities and actual super logical partition mapping from TWRP (2026-10-10 observed slot _a, super, vendor_a EROFS).",
-    "Same-build guarded NFC module deployment proof on correct QGKI/GKI branch, with full restoration method; no EROFS modification without review.",
-    "A new boot image only after embedded descriptor MATCH and OEM external trust-chain signing/rollback/packaging and identity/ABI tests, not simply after audit-only negative PASS."
+    "OEM trust root key identity/real bootloader lock and rollback counters; current vbmeta_a/b flags=3 invalidate self-contained signature.",
+    "Source of stock signed unmodified vbmeta/boot/vendor_boot/dtbo aligned to HyperOS 3.0.9 Android16; do not treat modified flags 3 as valid signature.",
+    "Runtime init/Android module QGKI vs GKI path and guarded NFC deployment rollback mapping (without writing EROFS vendor).",
+    "Release-pipeline embedded hash --require-match, signed trust-chain and A/B full-rollback preflight; negative AVB audit succeeded but no flashable boot."
   ],
   "forbidden": [
     "global frequency pin",
@@ -670,7 +673,8 @@
     "Audit-only CI 38158451246 successfully proved both historical AVB mismatched boots reject with exit code 2, without kernel rebuild or boot publish",
     "Integrated and repack release workflows configured to enforce --require-match prior to boot artifact upload; no new boot validated",
     "Guarded NFC same-run 38112707005 Stage 38158574297 and CRC 38158578003 success with 71/71 imported symbol CRC matching but not deployed",
-    "2026-10-10 TWRP ZIP read-only reinspection established slot _a, orange state, boot/vbmeta A/B, super (not super_a/b), EROFS vendor_a"
+    "2026-10-10 TWRP ZIP read-only reinspection established slot _a, orange state, boot/vbmeta A/B, super (not super_a/b), EROFS vendor_a",
+    "2026-10-12 read-only OEM AVB ZIP proved top-level vbmeta A/B flags3 and invalid signature; in-memory flags0 restores self-contained validation; system vbmeta A/B flags0 valid; hardware rollback unverified; no flash."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -728,5 +732,29 @@
     "kernel_rebuild": "NOT_PERFORMED",
     "boot_flash": "NOT_PERFORMED",
     "boot_flash_authorized": false
+  },
+  "oem_avb_capture_20261012": {
+    "source": "lisa-oem-avb-readonly-20261011T171650Z.zip",
+    "archive_sha256": "b891928e752053bc530ea5f85cf03192f72c911a043af17e64e36eb98a47618d",
+    "crc_and_manifest": "PASS",
+    "observed_slot": "_a",
+    "verified_boot_state": "orange",
+    "vbmeta_ab_sha256": "f2a3f3372017148eb86c1acde73b6d3bb6524bdca57b5d6317f8150ac9da48b5",
+    "vbmeta_system_ab_sha256": "115990a9b5def935f8c458207678cd03b7086eb23539dca1659d45c292e5dfd1",
+    "vbmeta_ab_flags": 3,
+    "vbmeta_ab_stored_auth_sha256_valid": false,
+    "vbmeta_ab_self_rsa2048_signature_valid": false,
+    "vbmeta_ab_hypothetical_in_memory_flags0_would_recover_auth_and_signature": true,
+    "vbmeta_ab_rollback_index_in_image": 0,
+    "vbmeta_system_ab_flags": 0,
+    "vbmeta_system_ab_stored_auth_sha256_valid": true,
+    "vbmeta_system_ab_self_rsa2048_signature_valid": true,
+    "vbmeta_system_ab_rollback_index_in_image": 1756684800,
+    "chain_to_vbmeta_system_rollback_location": 2,
+    "public_key_blob_sha256": "c5d3c71bc70d58e3e0409ca9d9b34c0dbac1d2f09a5de948a4b8f090f1926965",
+    "oem_signature_root_trust_verified": false,
+    "hardware_rollback_counter_verified": false,
+    "boot_flash_authorized": false,
+    "report": "reconstruction/c0061_oem_avb_readonly_analysis_20261012.md"
   }
 }
