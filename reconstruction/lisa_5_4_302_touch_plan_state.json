@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_MODULE_METADATA_INVENTORY_GAP_AND_EXTERNAL_AVB_UNVERIFIED",
+  "current_phase": "PHASE_6_VBMETA_LFS_PAYLOAD_REQUIRED_OEM_MODULE_LISTS_UNVERIFIED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "b04c2c39b8fc3b7248b061f87e85aace248e7716",
-  "last_checked_run": 38111817843,
-  "blocker": "OEM_QGKI_GKI_MODULES_LOAD_DEP_BLOCKLIST_ABSENT_FROM_REPOSITORY_TREE; ACTUAL_BOOT_LOADER_BRANCH_UNVERIFIED; AVB_PRIVATE_SIGNING_AND_SLOT_ROLLBACK_UNVERIFIED; GUARDED_KO_NOT_DEPLOYED",
-  "next_action": "Review existing private TWRP archives for OEM QGKI/GKI modules.load/modules.dep/modules.blocklist before requesting fresh recovery collection; inspect stock vbmeta descriptors and key/rollback provenance offline; design recovery-safe guarded NFC delivery. No new build or flash.",
+  "last_checked_commit": "bd01656f0953424990abddfae13747b145dec528",
+  "last_checked_run": 38111887418,
+  "blocker": "STOCK_VBMETA_FILES_ARE_129_BYTE_LFS_POINTERS_NOT_PARSED_IMAGES; OEM_MODULES_METADATA_NOT_TRACKED; SIGNATURE_ROLLBACK_AND_QGKI_GKI_RUNTIME_BRANCH_UNVERIFIED; GUARDED_NFC_NOT_DEPLOYED",
+  "next_action": "Resolve 8192-byte vbmeta and 4096-byte vbmeta_system actual LFS payloads using recorded SHA256, parse offline descriptor/signature/rollback metadata without presuming signing capability; inspect preexisting TWRP archives for modules.blocklist/load/dep before requesting new logs. No duplicate kernel build or flash.",
   "next_expected_evidence": [
-    "Source-hashed OEM modules metadata from existing private archives",
-    "Parsed signed vbmeta/vendor descriptors and authoritative rollback provenance",
-    "Verified whole-module-set pairing and recovery-capable delivery gates"
+    "LFS vbmeta bytes with SHA256 d200dd45af1b30993764f38492c34c7afef7addccb844ad7642d1bd4558fd907 and parsed AVB metadata",
+    "LFS vbmeta_system bytes with SHA256 ea61d50a1cddf84444a6bd89fbcf9c84360d4cacfb6664271ddaa23c502a2420",
+    "OEM modules.load, dep, blocklist and provable QGKI/GKI loader path"
   ],
   "forbidden": [
     "global frequency pin",
@@ -645,7 +645,8 @@
     "2026-10-11 action 38111563180 SUCCESS optional-audit, artifact 11692280716, full build SKIPPED. Commit fae562c adds negative test proving tampered SHA256 evidence rejected, new CI 38111636485 queued.",
     "2026-10-11 validated Action 38111636485 completed SUCCESS; audit selftest including tampered evidence hash rejection PASS, artifact 11692101193, full kernel build SKIPPED.",
     "2026-10-11 reviewed extracted OEM vendor_modprobe.sh evidence: branch on first unblocked QGKI probe, whole-batch GKI fallback; loaded NFC source still unknown. Created paired-delivery decision doc commit 3c571cf; audit run 38111711862 SUCCESS (metadata only).",
-    "2026-10-11 repository recursive tree audit: stock vbmeta.img/vbmeta_system.img present, OEM modules.load/dep/blocklist absent from Git tracked paths; cannot infer first unblocked probe or actual Android branch. Documentation commit b04c2c3; latest metadata audit run 38111817843 SUCCESS."
+    "2026-10-11 repository recursive tree audit: stock vbmeta.img/vbmeta_system.img present, OEM modules.load/dep/blocklist absent from Git tracked paths; cannot infer first unblocked probe or actual Android branch. Documentation commit b04c2c3; latest metadata audit run 38111817843 SUCCESS.",
+    "2026-10-11 confirmed stock vbmeta.img and vbmeta_system.img in Git are Git LFS pointers of 129 bytes, not 8192/4096-byte AVB payloads; documented sha256 provenance bd01656. Metadata Action 38111887418 SUCCESS; no kernel build."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
