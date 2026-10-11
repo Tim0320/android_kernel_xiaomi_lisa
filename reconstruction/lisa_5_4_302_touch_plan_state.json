@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_VERIFIED_SAME_RUN_KERNEL_NFC_ABI_PAIRED_DELIVERY_BLOCKED",
+  "current_phase": "PHASE_6_EMBEDDED_AVB_MISMATCH_NFC_DELIVERY_BLOCKED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -106,16 +106,17 @@
     "device_baseline_gate": "HYPEROS_3_0_9_A16",
     "bpf_a17_gate": "BLOCKED",
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
-    "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
+    "packaging_gate": "BLOCKED_EMBEDDED_AVB_DESCRIPTOR_MISMATCH_38112707005_NOT_FLASHABLE"
   },
-  "last_checked_commit": "de70669435a9ef72748bc4288ba8d268a68b8311",
-  "last_checked_run": 38118720902,
-  "blocker": "GUARDED_NFC_NOT_DEPLOYED; OEM_QGKI_GKI_MODULE_SELECTION_UNVERIFIED; OEM_AVB_SIGNATURE_AND_ROLLBACK_UNVERIFIED; DEVICE_SLOT_RECOVERY_UNVERIFIED",
-  "next_action": "Use verified integrated 38112707005 static artifact 11692514228 (boot SHA c9ee726da1080d75326a0b6d8ed6cb95f6ca0870a12d384bb039131d90720252) and paired artifact 11693027992 guarded nfc_i2c.ko SHA 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c (same-run Module.symvers 71/71 CRC, all providers vmlinux). Next prove Android QGKI/GKI loader branch, exact module destination, and signed AVB slot rollback feasibility. Do not flash boot-only, modify EROFS in place, or rebuild identical kernel.",
+  "last_checked_commit": "5b70e7a6ead84f58875ea15ac730dd6cdd9541a8",
+  "last_checked_run": 38121950458,
+  "blocker": "EMBEDDED_AVB_HASH_MISMATCH_IN_BOTH_DIRECT302_BOOT_ARTIFACTS; GUARDED_NFC_NOT_DEPLOYED; QGKI_GKI_SELECTION_UNVERIFIED; OEM_AVB_AND_ROLLBACK_UNVERIFIED; DUAL_SLOT_RECOVERY_UNVERIFIED",
+  "next_action": "Add audit-only CI to reproduce pinned dual-artifact embedded AVB mismatch and change integrated packaging upload to fail-closed on --require-match before publishing boot; exclude boot.img from always-uploaded evidence; no rebuild of same kernel. Separately verify OEM signed AVB, loader branch and reversible NFC module delivery.",
   "next_expected_evidence": [
-    "Source-hash verified OEM modules.load, modules.blocklist, modules.dep and exact first unblocked QGKI modprobe probe, with Android actual selected NFC .ko origin still unknown",
-    "Signed AVB chain, rollback index and super logical vendor slot mapping backed by real partition/bootloader evidence",
-    "Independent _a/_b recovery backup hashes and usable rollback plan; guarded NFC loaded on device before any boot gate claim"
+    "Actual CI --require-match exit 2 for pinned boot artifacts with exact expected SHA256, and no promotion of any boot artifact",
+    "Integrated packaging and repack workflows fail closed on embedded AVB mismatch; evidence-only artifacts contain no boot.img",
+    "OEM signed AVB chain/rollback and actual QGKI/GKI nfc_i2c.ko selection source-hash verified",
+    "Both real slot backup and dynamic super vendor mapping with tested recovery procedure"
   ],
   "forbidden": [
     "global frequency pin",
@@ -657,7 +658,8 @@
     "2026-10-11 repaired device audit to use independently pinned last_verified_static_ci_run/sha with exact workflow, integrated-302 job and static-verified artifact checks, instead of last_checked_run. Workflow commit 117a6dea.",
     "2026-10-11 repaired device evidence audit run 38118610699 SUCCESS; output VERIFIED_STATIC_CI=SUCCESS, DEVICE_RUNTIME=UNVERIFIED; artifact 11694248417. Independent pinned integrated Build reference prevents last_checked_run misclassification.",
     "2026-10-11 Windows/WSL2 TCP+stdio MCP local install ZIP v1.0 assembled, 10 Python safety unit tests PASS and bash syntax PASS; real Windows/WSL/MCP 2.3 endpoint untested, user install pending; repository overview documented at 2fbb3c5.",
-    "2026-10-11 directly downloaded integrated Action 38112707005 artifacts 11692514228/11693027992, verified boot SHA256 c9ee726da1080d75326a0b6d8ed6cb95f6ca0870a12d384bb039131d90720252 and same-run guarded nfc_i2c.ko SHA256 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c; ELF __versions 71/71 exact CRC against bundled Module.symvers with 71/71 exports provided by vmlinux, zero external module imports. This supersedes older aa512b module hash for the latest compiled pairing; runtime loader path, AVB and slot recovery remain unverified; NOT FLASHABLE."
+    "2026-10-11 directly downloaded integrated Action 38112707005 artifacts 11692514228/11693027992, verified boot SHA256 c9ee726da1080d75326a0b6d8ed6cb95f6ca0870a12d384bb039131d90720252 and same-run guarded nfc_i2c.ko SHA256 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c; ELF __versions 71/71 exact CRC against bundled Module.symvers with 71/71 exports provided by vmlinux, zero external module imports. This supersedes older aa512b module hash for the latest compiled pairing; runtime loader path, AVB and slot recovery remain unverified; NOT FLASHABLE.",
+    "2026-10-11 verified integrated workflow upload path publishes boot.img on static PASS without invoking embedded AVB --require-match; always-run evidence artifact also includes boot.img. Packaging script writes output before its checks are enforced. GitHub audit-only workflow create was safety-blocked; no new commit or CI."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
