@@ -34,7 +34,7 @@ jobs:
           path: source
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: 37655937871
+          run-id: 38112707005
 
       - name: Check binutils, artifact paths and Python script syntax
         shell: bash
@@ -65,7 +65,7 @@ jobs:
             --module source/candidate-0061-runtime-modules/nfc_i2c.ko \
             --symvers source/kernel/out/Module.symvers \
             --json candidate-0061-nfc-crc-preflight.json \
-            --expected-sha256 aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b \
+            --expected-sha256 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c \
             --expected-kernelrelease 5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320 \
             2>&1 | tee candidate-0061-nfc-crc-preflight.log
           grep -q '^C0061_NFC_CRC_PREFLIGHT=PASS$' candidate-0061-nfc-crc-preflight.log
@@ -116,7 +116,7 @@ jobs:
                   sys.executable, 'reconstruction/scripts/candidate_0061_module_crc_preflight.py',
                   '--module', str(src), '--symvers', str(wrong),
                   '--json', str(pathlib.Path(tmp)/'negative.json'),
-                  '--expected-sha256', 'aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b',
+                  '--expected-sha256', '01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c',
                   '--expected-kernelrelease', '5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320',
               ]
               run = subprocess.run(args, text=True, capture_output=True)
