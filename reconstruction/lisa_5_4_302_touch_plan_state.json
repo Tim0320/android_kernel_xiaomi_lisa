@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_WINDOWS_WSL_OFFLINE_EVIDENCE_WORKFLOW_READY_DEPLOYMENT_BLOCKED",
+  "current_phase": "PHASE_6_IMMUTABLE_STOCK_BOOT_CACHE_TEST_CI_QUEUED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,10 +108,10 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "bdc07a65c7ce07f298fe8e6834118dd69d7278c8",
-  "last_checked_run": 38112393663,
-  "blocker": "OEM_QGKI_GKI_ACTUAL_LOADER_BRANCH_UNVERIFIED; MODULE_METADATA_MISSING; EXTERNAL_SIGNING_ROLLBACK_UNVERIFIED; GUARDED_NFC_UNDEPLOYED",
-  "next_action": "Last device audit 38112393663 SUCCESS; Windows/WSL offline read-only workflow documented. Next inspect verified stock vbmeta parsed JSON artifact and archived OEM module metadata to select fully reversible guarded NFC delivery design. No duplicate build or boot flash.",
+  "last_checked_commit": "16348a6d3673da9467ade04f15922bcf17a05694",
+  "last_checked_run": 38112707005,
+  "blocker": "BUILD_TRIGGERED_BY_WORKFLOW_CHANGE_NEEDS_MONITORING; OEM_MODULE_LOADER_AND_AVB_ROLLBACK_UNVERIFIED; GUARDED_NFC_UNDEPLOYED",
+  "next_action": "Check integrated run 38112707005, which was auto-triggered by stock LFS SHA-pinned cache change; verify cache HIT/MISS and existing SHA/size guards, avoid repeating build if CI succeeds. Next prioritize OEM module metadata and AVB/slot recovery rather than repeating a kernel build; existing candidate remains NOT FLASHABLE.",
   "next_expected_evidence": [
     "Actual validated VBMeta metadata from 38112173940 artifact",
     "OEM QGKI and GKI modules.load, blocklist, dep files and loader first module",
@@ -651,7 +651,8 @@
     "2026-10-11 run 38112098914 FAIL: NameError EXPECT is not defined; corrected EXPECTED in script commit 9b4a8b7. New run 38112173940 queued; device audit 38112107837 also failed and needs independent triage.",
     "2026-10-11 vbmeta LFS real image audit run 38112173940 SUCCESS artifact 11691712872. Device evidence run 38112182620 failed REFERENCED_STATIC_CI_NOT_SUCCESS because state referenced queued CI; corrected last_checked_run to completed SUCCESS.",
     "2026-10-11 verified corrective device evidence Action 38112307021 completed SUCCESS; prior referenced CI failure cleared, VBMeta LFS Action 38112173940 also SUCCESS. No new boot.",
-    "2026-10-11 latest device audit run 38112393663 SUCCESS; published Windows+WSL2 offline read-only workstation instructions commit bdc07a6; device pairing still NOT FLASHABLE."
+    "2026-10-11 latest device audit run 38112393663 SUCCESS; published Windows+WSL2 offline read-only workstation instructions commit bdc07a6; device pairing still NOT FLASHABLE.",
+    "2026-10-11 committed hash-pinned 192MiB stock boot LFS oracle cache 16348a6; old clang cache already existed. GitHub push unexpectedly auto-triggers integrated run 38112707005 (queued); monitor and no flash claim."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
