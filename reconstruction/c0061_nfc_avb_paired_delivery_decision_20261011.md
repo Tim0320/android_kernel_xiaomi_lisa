@@ -27,3 +27,11 @@ Status: **BLOCKED_NOT_FLASHABLE**. No new image, flash command, signature or dev
 - Maintain immutable run/asset hashes and return a matched, restore-capable Boot+module package only after all explicit gates pass.
 
 Relevant upstream design documentation: https://source.android.com/docs/core/architecture/kernel/kernel-module-support ; https://source.android.com/docs/core/architecture/kernel/loadable-kernel-modules .
+
+## 2026-10-11 repository artifact inventory audit
+
+The current Git repository tree contains the two stock files `reconstruction/stock/stock-Image-3.09/vbmeta.img` and `vbmeta_system.img`, plus `candidate_0061_avb_descriptor_gate.py`, but **does not contain any complete OEM QGKI/GKI `modules.load`, `modules.dep`, or `modules.blocklist` file**. This is a repository-tree absence, not proof the user's earlier ZIP archives lack those files. The earlier extracted `vendor_modprobe.sh` branch evidence remains strong static evidence, but the probe module cannot be derived from a file not actually inspected. No actual branch selection is established.
+
+The current embedded AVB gate only checks the Boot image's hash descriptor against its own bytes. The presence of stock `vbmeta.img` and `vbmeta_system.img` in Git does **not** prove the availability of private signing keys, firmware rollback-index authorization, or a signed vendor_a repack path. Treat any external AVB claim as **UNVERIFIED** until descriptor/public-key/rollback verification is independently executed against original partition images.
+
+**Do not advance to a new kernel build or flashing** based on the available inventory. First audit existing prior TWRP archive contents for missing module metadata or archive them as private evidence. The evidence gate must distinguish (a) bytes verifiable from files, (b) signatures verified against an authorized public key, (c) OEM vendor module selector actual boot path, and (d) real slot restoration on this handset.
