@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_DEVICE_AUDIT_RECOVERED_VBMETA_STATIC_PASS_NFC_DELIVERY_BLOCKED",
+  "current_phase": "PHASE_6_WINDOWS_WSL_OFFLINE_EVIDENCE_WORKFLOW_READY_DEPLOYMENT_BLOCKED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "a1091cf950312c9f8be447b6a83e96392c5239cf",
-  "last_checked_run": 38112307021,
-  "blocker": "OEM_QGKI_GKI_MODULE_LOADER_ACTUAL_BRANCH_AND_DEPENDENCIES_UNVERIFIED; EXTERNAL_AVB_SIGNATURE_ROLLBACK_AUTHORITY_UNVERIFIED; GUARDED_NFC_NOT_DEPLOYED; NO_FLASHABLE_BOOT",
-  "next_action": "Action 38112307021 device audit SUCCESS after correcting referenced run; VBMeta LFS static audit 38112173940 SUCCESS. Inspect offline metadata artifact for AVB rollback details, then prioritize actual OEM QGKI/GKI modules metadata, guarded NFC delivery and recovery-safe AVB/slot packaging; no duplicate kernel build.",
+  "last_checked_commit": "bdc07a65c7ce07f298fe8e6834118dd69d7278c8",
+  "last_checked_run": 38112393663,
+  "blocker": "OEM_QGKI_GKI_ACTUAL_LOADER_BRANCH_UNVERIFIED; MODULE_METADATA_MISSING; EXTERNAL_SIGNING_ROLLBACK_UNVERIFIED; GUARDED_NFC_UNDEPLOYED",
+  "next_action": "Last device audit 38112393663 SUCCESS; Windows/WSL offline read-only workflow documented. Next inspect verified stock vbmeta parsed JSON artifact and archived OEM module metadata to select fully reversible guarded NFC delivery design. No duplicate build or boot flash.",
   "next_expected_evidence": [
-    "Parsed VBMeta LFS metadata artifact with explicit rollback index and descriptor details",
-    "Actual OEM QGKI/GKI first probe, module dependency and blocklist evidence",
-    "Recoverable signed Boot+guarded NFC matched package validation"
+    "Actual validated VBMeta metadata from 38112173940 artifact",
+    "OEM QGKI and GKI modules.load, blocklist, dep files and loader first module",
+    "AVB signing/rollback trust chain and reversible module deployment"
   ],
   "forbidden": [
     "global frequency pin",
@@ -650,7 +650,8 @@
     "2026-10-11 added script 5530b95 for source-hash-verified actual LFS vbmeta header audit and workflow bc316c8, run 38112098914 queued; read-only; no signature/device rollback claims.",
     "2026-10-11 run 38112098914 FAIL: NameError EXPECT is not defined; corrected EXPECTED in script commit 9b4a8b7. New run 38112173940 queued; device audit 38112107837 also failed and needs independent triage.",
     "2026-10-11 vbmeta LFS real image audit run 38112173940 SUCCESS artifact 11691712872. Device evidence run 38112182620 failed REFERENCED_STATIC_CI_NOT_SUCCESS because state referenced queued CI; corrected last_checked_run to completed SUCCESS.",
-    "2026-10-11 verified corrective device evidence Action 38112307021 completed SUCCESS; prior referenced CI failure cleared, VBMeta LFS Action 38112173940 also SUCCESS. No new boot."
+    "2026-10-11 verified corrective device evidence Action 38112307021 completed SUCCESS; prior referenced CI failure cleared, VBMeta LFS Action 38112173940 also SUCCESS. No new boot.",
+    "2026-10-11 latest device audit run 38112393663 SUCCESS; published Windows+WSL2 offline read-only workstation instructions commit bdc07a6; device pairing still NOT FLASHABLE."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
