@@ -90,13 +90,30 @@ jobs:
               package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz.part03 \
             > package/reconstruction/overlays/candidate_0058_bpf_ringbuf.patch.gz
 
+      - name: Restore immutable stock Boot LFS oracle cache
+        id: stock_boot_cache
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/lisa-stock-boot-oracle/boot.img
+          key: lisa-stock-boot-e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1-v1
+
       - name: Materialize durable stock ABI oracle
         id: stock_abi
         run: |
           set -euo pipefail
-          git -C package lfs install --local
-          git -C package lfs pull --include="reconstruction/stock/stock-Image/boot.img"
           boot="package/reconstruction/stock/stock-Image/boot.img"
+          oracle="${RUNNER_TEMP}/lisa-stock-boot-oracle/boot.img"
+          expected=e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
+          if [[ -f "$oracle" ]] && [[ "$(stat -c %s "$oracle")" -eq 201326592 ]] && [[ "$(sha256sum "$oracle" | awk '{print $1}')" == "$expected" ]]; then
+            cp "$oracle" "$boot"
+            echo "C0061_STOCK_BOOT_CACHE=HIT_VERIFIED"
+          else
+            git -C package lfs install --local
+            git -C package lfs pull --include="reconstruction/stock/stock-Image/boot.img"
+            mkdir -p "$(dirname "$oracle")"
+            cp "$boot" "$oracle"
+            echo "C0061_STOCK_BOOT_CACHE=MISS_FETCHED"
+          fi
           test -s "$boot"
           test "$(stat -c %s "$boot")" -eq 201326592
           test "$(sha256sum "$boot" | awk '{print $1}')" = e6f8c978c2cf0a9473d0ac73cdcf3ffb14747246fdc47f82245c43221eb4cbf1
