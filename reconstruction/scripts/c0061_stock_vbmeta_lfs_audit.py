@@ -14,7 +14,7 @@ def u32(x, off): return struct.unpack_from(">I", x, off)[0]
 def u64(x, off): return struct.unpack_from(">Q", x, off)[0]
 def inspect(path):
     raw = pathlib.Path(path).read_bytes()
-    expected_size, digest = EXPECT[pathlib.Path(path).name]
+    expected_size, digest = EXPECTED[pathlib.Path(path).name]
     if len(raw) != expected_size or hashlib.sha256(raw).hexdigest() != digest:
         raise ValueError("LFS_PAYLOAD_HASH_OR_SIZE_MISMATCH")
     if raw[:4] != b"AVB0" or len(raw) < 256:
