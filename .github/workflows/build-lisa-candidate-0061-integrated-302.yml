@@ -5,7 +5,6 @@ on:
   push:
     branches: [main]
     paths:
-      - .github/workflows/build-lisa-candidate-0061-integrated-302.yml
       - reconstruction/scripts/candidate_0061_direct_302_scan.py
       - reconstruction/scripts/candidate_0061_recreate_c0059_uplift.py
       - reconstruction/scripts/candidate_0061_c0059_runtime_contract_gate.py
@@ -509,6 +508,17 @@ jobs:
           grep -q '^check_stock_avb0_metadata_byte_exact=1$' candidate-0061-integrated-boot-validation.txt
           grep -q '^check_stock_avbf_footer_byte_exact=1$' candidate-0061-integrated-boot-validation.txt
 
+      - name: Enforce embedded AVB hash before releasing boot
+        id: embedded_avb
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 package/reconstruction/scripts/candidate_0061_avb_descriptor_gate.py \
+            --boot boot.img \
+            --json candidate-0061-integrated-embedded-avb.json \
+            --require-match
+          echo 'C0061_EMBEDDED_AVB_HASH_GATE=PASS'
+
       - name: Report integrated 5.4.302 gate evidence
         if: ${{ always() }}
         env:
@@ -584,8 +594,6 @@ jobs:
           path: |
             candidate-0061-integrated-*
             candidate-0061-direct-302-*
-            boot.img
-            boot.img.sha256
             kernel/out/.config
             kernel/out/Module.symvers
             kernel/out/System.map
