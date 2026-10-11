@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_IMMUTABLE_STOCK_BOOT_CACHE_TEST_CI_QUEUED",
+  "current_phase": "PHASE_6_DIRECT_302_BUILD_VERIFIED_NFC_MODULE_DELIVERY_PENDING",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "16348a6d3673da9467ade04f15922bcf17a05694",
-  "last_checked_run": 38112707005,
-  "blocker": "BUILD_TRIGGERED_BY_WORKFLOW_CHANGE_NEEDS_MONITORING; OEM_MODULE_LOADER_AND_AVB_ROLLBACK_UNVERIFIED; GUARDED_NFC_UNDEPLOYED",
-  "next_action": "Check integrated run 38112707005, which was auto-triggered by stock LFS SHA-pinned cache change; verify cache HIT/MISS and existing SHA/size guards, avoid repeating build if CI succeeds. Next prioritize OEM module metadata and AVB/slot recovery rather than repeating a kernel build; existing candidate remains NOT FLASHABLE.",
+  "last_checked_commit": "117a6dea256947b85b721ddc6fab844dfb46d69a",
+  "last_checked_run": 38112718025,
+  "blocker": "GUARDED_NFC_UNDEPLOYED; OEM_QGKI_GKI_LOADER_BRANCH_UNVERIFIED; SIGNED_AVB_CHAIN_ROLLBACK_AND_SLOT_RECOVERY_UNVERIFIED",
+  "next_action": "Read the first run of repaired device-audit workflow and confirm pinned integrated run 38112707005 / source 16348a6 / job integrated-302 / static artifact 11692514228 PASS without relying on last_checked_run; then implement reversible Kernel + guarded NFC module paired-delivery preflight. Do not rebuild or flash until signature/slot/loader gates pass.",
   "next_expected_evidence": [
-    "Actual validated VBMeta metadata from 38112173940 artifact",
-    "OEM QGKI and GKI modules.load, blocklist, dep files and loader first module",
-    "AVB signing/rollback trust chain and reversible module deployment"
+    "Device-audit CI validates last_verified_static_ci_run=38112707005 and last_verified_static_ci_sha=16348a6d3673da9467ade04f15922bcf17a05694",
+    "Verified QGKI/GKI OEM loader branch, modules.blocklist and first unblocked probe",
+    "AVB chain/rollback, exact partition identities, both-slot backup and reversible guarded NFC module delivery"
   ],
   "forbidden": [
     "global frequency pin",
@@ -652,7 +652,9 @@
     "2026-10-11 vbmeta LFS real image audit run 38112173940 SUCCESS artifact 11691712872. Device evidence run 38112182620 failed REFERENCED_STATIC_CI_NOT_SUCCESS because state referenced queued CI; corrected last_checked_run to completed SUCCESS.",
     "2026-10-11 verified corrective device evidence Action 38112307021 completed SUCCESS; prior referenced CI failure cleared, VBMeta LFS Action 38112173940 also SUCCESS. No new boot.",
     "2026-10-11 latest device audit run 38112393663 SUCCESS; published Windows+WSL2 offline read-only workstation instructions commit bdc07a6; device pairing still NOT FLASHABLE.",
-    "2026-10-11 committed hash-pinned 192MiB stock boot LFS oracle cache 16348a6; old clang cache already existed. GitHub push unexpectedly auto-triggers integrated run 38112707005 (queued); monitor and no flash claim."
+    "2026-10-11 committed hash-pinned 192MiB stock boot LFS oracle cache 16348a6; old clang cache already existed. GitHub push unexpectedly auto-triggers integrated run 38112707005 (queued); monitor and no flash claim.",
+    "2026-10-11 verified Direct-302 integrated Build Action 38112707005 SUCCESS, job 114391400642 and static-verified artifact 11692514228; new boot/module pair remains NOT FLASHABLE because guarded NFC delivery and external AVB/slot gate are unverified.",
+    "2026-10-11 repaired device audit to use independently pinned last_verified_static_ci_run/sha with exact workflow, integrated-302 job and static-verified artifact checks, instead of last_checked_run. Workflow commit 117a6dea."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -676,5 +678,9 @@
     38111185496,
     38111193214,
     38111193939
-  ]
+  ],
+  "last_verified_static_ci_run": 38112707005,
+  "last_verified_static_ci_sha": "16348a6d3673da9467ade04f15922bcf17a05694",
+  "last_verified_static_ci_job_id": 114391400642,
+  "last_verified_static_ci_artifact_id": 11692514228
 }
