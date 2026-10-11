@@ -1,0 +1,63 @@
+name: Audit Candidate0061 embedded AVB mismatch (no build or boot release)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/audit-c0061-embedded-avb-only.yml
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: c0061-embedded-avb-audit-only
+  cancel-in-progress: true
+
+jobs:
+  prove-release-block:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout audit script (no kernel compile)
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Download immutable integrated evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: lisa-c0061-integrated-302-evidence-a1
+          path: evidence
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 38112707005
+      - name: Download immutable static boot artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: lisa-c0061-5.4.302-static-verified-pending-device-a1
+          path: static
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: 38112707005
+      - name: Both historical boots must fail the release gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          for boot in evidence/boot.img static/boot.img; do
+            test -s "$boot"
+            echo "AUDIT_BOOT_PATH=$boot"
+            test "$(sha256sum "$boot" | cut -d' ' -f1)" = "c9ee726da1080d75326a0b6d8ed6cb95f6ca0870a12d384bb039131d90720252"
+            python3 reconstruction/scripts/candidate_0061_avb_descriptor_gate.py --boot "$boot" --expect-mismatch
+            set +e
+            python3 reconstruction/scripts/candidate_0061_avb_descriptor_gate.py --boot "$boot" --require-match
+            rc=$?
+            set -e
+            if [[ "$rc" -ne 2 ]]; then
+              echo "FAIL_CLOSED_NOT_PROVEN expected_exit_2=$rc for $boot" >&2
+              exit 1
+            fi
+            echo "EXPECTED_RELEASE_BLOCK=PASS path=$boot exit=2"
+          done
+          echo "C0061_EMBEDDED_AVB_AUDIT=PASS_TWO_REJECTED"
+          echo "NO_FLASHABLE_BOOT_PRODUCED=1"
