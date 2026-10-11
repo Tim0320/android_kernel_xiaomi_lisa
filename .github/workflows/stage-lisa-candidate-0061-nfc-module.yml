@@ -24,7 +24,7 @@ jobs:
           path: source
           github-token: ${{ github.token }}
           repository: ${{ github.repository }}
-          run-id: 37655937871
+          run-id: 38112707005
 
       - name: Verify and package guarded NFC module for inspection (NO FLASH)
         shell: bash
@@ -37,7 +37,7 @@ jobs:
           identity = source / 'candidate-0061-integrated-identity.txt'
           abi = json.loads((source / 'candidate-0061-integrated-abi.json').read_text())
           actual = hashlib.sha256(module.read_bytes()).hexdigest()
-          expected = 'aa512b78538003a2be63c1c28c03eaa05ff691e54d4f8b1556b282b14c52152b'
+          expected = '01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c'
           release = '5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320'
           if actual != expected or module.read_bytes()[:4] != bytes.fromhex('7f454c46'):
               raise SystemExit('NFC_CI_HASH_OR_ELF_MISMATCH')
@@ -56,10 +56,12 @@ jobs:
           shutil.copyfile(module, out / 'nfc_i2c.ko')
           report = {
               'purpose': 'INSPECTION_ONLY_NOT_FLASHABLE',
-              'ci_run': 37655937871, 'ci_kernelrelease': release,
+              'ci_run': 38112707005, 'ci_kernelrelease': release,
               'module_sha256': actual, 'module_vermagic': vermagic.group(1).decode(),
               'module_guard_marker': True, 'abi_removed': 0,
               'tested_boot_sha256': '038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6',
+              'ci_build_boot_sha256': 'c9ee726da1080d75326a0b6d8ed6cb95f6ca0870a12d384bb039131d90720252',
+              'ci_boot_embedded_avb_match': False,
               'vendor_a_filesystem': 'erofs:ro',
               'device_nfc_modules': {
                   'vendor/lib/modules/5.4-gki/nfc_i2c.ko': 'bb1e8994d0ddf0b15bd038457a850b2a8b5c7b74e1816b97dea5623c2ea5c80b',
