@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-09T23:18:08+08:00",
+  "updated_at": "2026-10-11T17:31:09+08:00",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -108,15 +108,15 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "BLOCKED_EMBEDDED_AVB_DESCRIPTOR_MISMATCH_38112707005_NOT_FLASHABLE"
   },
-  "last_checked_commit": "5b70e7a6ead84f58875ea15ac730dd6cdd9541a8",
-  "last_checked_run": 38121950458,
-  "blocker": "EMBEDDED_AVB_HASH_MISMATCH_IN_BOTH_DIRECT302_BOOT_ARTIFACTS; GUARDED_NFC_NOT_DEPLOYED; QGKI_GKI_SELECTION_UNVERIFIED; OEM_AVB_AND_ROLLBACK_UNVERIFIED; DUAL_SLOT_RECOVERY_UNVERIFIED",
-  "next_action": "Add audit-only CI to reproduce pinned dual-artifact embedded AVB mismatch and change integrated packaging upload to fail-closed on --require-match before publishing boot; exclude boot.img from always-uploaded evidence; no rebuild of same kernel. Separately verify OEM signed AVB, loader branch and reversible NFC module delivery.",
+  "last_checked_commit": "21a7d4d393552448db59c398f6f83521a8ae11a6",
+  "last_checked_run": 38128491202,
+  "blocker": "EMBEDDED_AVB_HASH_MISMATCH_BOTH_ARTIFACTS; GUARDED_NFC_UNDEPLOYED; OEM_AVB_SLOT_UNKNOWN; WORKFLOW_WRITE_PERMISSION_BLOCKED",
+  "next_action": "Apply fail-closed integrated workflow only through normal authorized GitHub update_file: quarantine staging boot, run candidate_0061_avb_descriptor_gate.py --require-match before naming/promoting boot.img, and exclude boot images from always-uploaded evidence. On successful authorized push inspect first CI blocker. Do not rebuild unchanged kernel just to repeat known AVB failure. Continue signed NFC and A/B rollback investigation.",
   "next_expected_evidence": [
-    "Actual CI --require-match exit 2 for pinned boot artifacts with exact expected SHA256, and no promotion of any boot artifact",
-    "Integrated packaging and repack workflows fail closed on embedded AVB mismatch; evidence-only artifacts contain no boot.img",
-    "OEM signed AVB chain/rollback and actual QGKI/GKI nfc_i2c.ko selection source-hash verified",
-    "Both real slot backup and dynamic super vendor mapping with tested recovery procedure"
+    "Authorized workflow commit with --require-match before promotion and no boot in always evidence",
+    "CI negative test showing known pinned image exits 2 and never publishes a boot image",
+    "OEM AVB signed delivery and rollback provenance",
+    "Guarded NFC real module selection and reversible delivery proven"
   ],
   "forbidden": [
     "global frequency pin",
@@ -659,7 +659,8 @@
     "2026-10-11 repaired device evidence audit run 38118610699 SUCCESS; output VERIFIED_STATIC_CI=SUCCESS, DEVICE_RUNTIME=UNVERIFIED; artifact 11694248417. Independent pinned integrated Build reference prevents last_checked_run misclassification.",
     "2026-10-11 Windows/WSL2 TCP+stdio MCP local install ZIP v1.0 assembled, 10 Python safety unit tests PASS and bash syntax PASS; real Windows/WSL/MCP 2.3 endpoint untested, user install pending; repository overview documented at 2fbb3c5.",
     "2026-10-11 directly downloaded integrated Action 38112707005 artifacts 11692514228/11693027992, verified boot SHA256 c9ee726da1080d75326a0b6d8ed6cb95f6ca0870a12d384bb039131d90720252 and same-run guarded nfc_i2c.ko SHA256 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c; ELF __versions 71/71 exact CRC against bundled Module.symvers with 71/71 exports provided by vmlinux, zero external module imports. This supersedes older aa512b module hash for the latest compiled pairing; runtime loader path, AVB and slot recovery remain unverified; NOT FLASHABLE.",
-    "2026-10-11 verified integrated workflow upload path publishes boot.img on static PASS without invoking embedded AVB --require-match; always-run evidence artifact also includes boot.img. Packaging script writes output before its checks are enforced. GitHub audit-only workflow create was safety-blocked; no new commit or CI."
+    "2026-10-11 verified integrated workflow upload path publishes boot.img on static PASS without invoking embedded AVB --require-match; always-run evidence artifact also includes boot.img. Packaging script writes output before its checks are enforced. GitHub audit-only workflow create was safety-blocked; no new commit or CI.",
+    "2026-10-11 17:31+08 latest main 21a7d4d; Action 38128491202 SUCCESS audit-only; integrated workflow source 4515474 verified: boot output precedes AVB digest gate and always-upload evidence contains boot.img. Minimal authorized update_file attempt to quarantine staging and require digest MATCH was BLOCKED by OpenAI safety checks. No repo workflow change or kernel build."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
