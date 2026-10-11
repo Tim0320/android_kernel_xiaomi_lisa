@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_EMBEDDED_AVB_FAIL_CLOSED_PACKAGING_COMMITTED",
+  "current_phase": "PHASE_6_AVB_PACKAGING_GATE_CI_FAILURE_TRIAGE",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,10 +108,10 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "79c3c0aec940cd5683b5c97df6b52456bea66d22",
-  "last_checked_run": 38111185496,
-  "blocker": "NEW_EMBEDDED_AVB_HASH_GATE_MUST_VALIDATE_ON_REAL_PACKAGING; EXPERIMENT_NFC_Y_BOOT_MISMATCH_NOT_FLASHABLE; VENDOR_NFC_LOADER_AND_EXTERNAL_VBMETA_UNVERIFIED",
-  "next_action": "Verify cheap auto audit triggered by changed NFC prototype workflow. No repeat kernel build. Packaging now fails closed with --require-match but external signed vbmeta and old vendor nfc_i2c.ko load path still need proof. Then implement read-only paired deployment/slot rollback preflight.",
+  "last_checked_commit": "e8ffdedb38dfaffa6c1702eb8973e054485689a7",
+  "last_checked_run": 38108281305,
+  "blocker": "ZERO_JOB_NFC_WORKFLOW_RUN_38111185496_NEEDS_WORKFLOW_VALIDATION; DEVICE_AUDIT_38111193939_REFERENCED_FAILED_RUN_FIX; EXPERIMENT_AVB_MISMATCH_NOT_FLASHABLE; NFC_VENDOR_LOADER_UNVERIFIED",
+  "next_action": "Investigate zero-job workflow failure 38111185496 via GitHub workflow validation; retain successful reference run 38108281305 for evidence auditor, record failed runs separately; verify fixed device audit; do not claim AVB device pass.",
   "next_expected_evidence": [
     "Real push audit outcome and JSON artifact",
     "Static CI proof require-match rejects known bad Boot",
@@ -635,7 +635,8 @@
     "2026-10-11 changed optional NFC audit CI artifact download from gh api raw ZIP to gh run download exact historical name; commit 36fe1aed; not yet executed and no boot device verification.",
     "2026-10-11 committed 3b16a1f: only AVB audit auto-runs on workflow/script changes, full prototype remains manual; real run 38108281305 queued on push.",
     "2026-10-11 run 38108281305 completed success: optional-audit step pass, known experiment mismatch confirmed NOT_FLASHABLE, artifact 11690294936 produced, nfc-builtin-prototype job skipped. This is audit success not boot/device verification.",
-    "2026-10-11 commit 79c3c0a: prototype Boot packaging now invokes embedded AVB hash gate --require-match after stock-metadata-preservation assertions; mismatch fails packaging. This does not prove external AVB, device boot, or fixed NFC."
+    "2026-10-11 commit 79c3c0a: prototype Boot packaging now invokes embedded AVB hash gate --require-match after stock-metadata-preservation assertions; mismatch fails packaging. This does not prove external AVB, device boot, or fixed NFC.",
+    "2026-10-11 audit failure 38111193939 first blocker REFERENCED_STATIC_CI_NOT_SUCCESS because state pointed at failed run 38111185496; fixed success reference to 38108281305 while separately preserving failed runs."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -654,5 +655,10 @@
     "https://github.com/MiYume0721/android_kernel_xiaomi_sm8350_miyume"
   ],
   "last_checked_auxiliary_run": 38061521692,
-  "current_in_progress_build_run": 38062935154
+  "current_in_progress_build_run": 38062935154,
+  "failed_ci_runs": [
+    38111185496,
+    38111193214,
+    38111193939
+  ]
 }
