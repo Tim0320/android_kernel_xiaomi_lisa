@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_PAIRED_NFC_READONLY_PREFLIGHT_CI_PASS_RUNTIME_DEPLOYMENT_BLOCKED",
+  "current_phase": "PHASE_6_HASH_BACKED_EVIDENCE_PREFLIGHT_CI_QUEUED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "3ea9a1e549dfd1f2b903cffcfeec1ffb13d41257",
-  "last_checked_run": 38111505947,
-  "blocker": "SIGNED_EXTERNAL_VBMETA_SLOT_ROLLBACK_UNVERIFIED; OEM_QGKI_GKI_NFC_LOADER_PATH_UNVERIFIED; GUARDED_NFC_NOT_DEPLOYED; NO_FLASHABLE_BOOT",
-  "next_action": "Run 38111505947 optional-audit PASS including paired deployment fail-closed self-test and known AVB mismatch; full kernel SKIPPED. Next validate guarded NFC loader replacement, stock partition backup and slot rollback, and external signed vbmeta chain; no boot rebuild or flash until complete.",
+  "last_checked_commit": "bf4769cc1e76a50e06dc2e9954e3ffc0d21158c0",
+  "last_checked_run": 38111563180,
+  "blocker": "HASH_BACKED_PREFLIGHT_CI_PENDING; EXTERNAL_VBMETA_TRUST_AND_SLOT_RECOVERY_UNVERIFIED; OEM_NFC_MODULE_PATH_UNVERIFIED; NO_FLASHABLE_BOOT",
+  "next_action": "Inspect Action 38111563180 results and verify fail-closed self-test; enforce source-backed AVB/rollback, vendor loader and recovery evidence before attempting pairing. No duplicate kernel build.",
   "next_expected_evidence": [
-    "CI self-test fail-closed paired preflight PASS and full kernel build skipped",
-    "Verified hashes/slot backups and AVB trusted chain evidence",
-    "Guarded NFC loader and compatibility evidence"
+    "CI 38111563180 syntax/self-test outcome and skipped kernel job",
+    "Actual source-backed OEM loader and AVB trust-chain evidence",
+    "Source-backed stock partition backups and slot rollback verification"
   ],
   "forbidden": [
     "global frequency pin",
@@ -640,7 +640,8 @@
     "2026-10-11 repaired malformed YAML content duplication/truncated grep from prior workflow edit. Commit ab39cce; auto audit run 38111375516 queued, not yet verified; full kernel remains manual.",
     "2026-10-11 run 38111375516 completed SUCCESS with AVB audit artifact 11691871021; full kernel prototype SKIPPED. Device state audit 38111385469 SUCCESS. Evidence auditing != safe flashing.",
     "2026-10-11 commit 744801a created read-only paired deployment preflight requiring hashes, partition backup slots, NFC and signed AVB evidence; cannot grant flash authorization. Commit b0b2683 added audit CI selftest; run 38111505947 queued.",
-    "2026-10-11 verified actual run 38111505947: optional-audit PASS, paired deployment preflight self-test PASS, known AVB mismatch gate PASS, nfc-builtin-prototype SKIPPED."
+    "2026-10-11 verified actual run 38111505947: optional-audit PASS, paired deployment preflight self-test PASS, known AVB mismatch gate PASS, nfc-builtin-prototype SKIPPED.",
+    "2026-10-11 strengthened paired preflight to require a verified SHA256-matched source_path for each gate, not merely booleans; commit bf4769c; CI 38111563180 queued."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
