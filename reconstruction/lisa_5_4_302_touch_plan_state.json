@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-11T17:20:11.419Z",
+  "updated_at": "2026-10-11T17:22:47.385Z",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -111,10 +111,10 @@
     "bootloader_rollback_gate": "UNVERIFIED_READ_ONLY_CAPTURE_HAS_VBMETA_HEADER_VALUES_ONLY",
     "boot_signing_gate": "NO_OEM_PRIVATE_KEY_OR_TRUSTED_SIGNING_PROVENANCE"
   },
-  "last_checked_commit": "260abed03abbe2adef16849b6bcc6ba21da90c90",
+  "last_checked_commit": "9d5d8e7e66fe65fa5528ececb1430b8845e633d0",
   "last_checked_run": 38158732673,
   "blocker": "C0061_BOOT_EMBEDDED_AVB_HASH_MISMATCH; CAPTURED_VBMETA_A_B_FLAGS3_AND_SELF_SIGNATURE_INVALID; OEM_ROOT_KEY_ACCEPTANCE_AND_HARDWARE_ROLLBACK_COUNTERS_UNKNOWN; NFC_GUARDED_NOT_DEPLOYED; OEM_QGKI_GKI_RUNTIME_MODULE_LOAD_PATH_UNKNOWN; NO_FLASH_AUTHORIZATION",
-  "next_action": "Review 2026-10-12 user OEM AVB archive forensic analysis (reconstruction/c0061_oem_avb_readonly_analysis_20261012.md): top-level vbmeta_a/b flags 3 invalid stored auth hash and RSA signature, in-memory flags=0 hypothetical passes; vbmeta_system_a/b flags 0 self-contained RSA valid; chain vbmeta_system rollback loc2 index1756684800; not bootloader rollback. No further identical TWRP logs needed. Continue read-only OEM key provenance, device hardware counters and QGKI/GKI loader selection, reversible backups; only then design and validate safe boot packaging, never disable AVB. Existing --require-match on Integrated and Repack must remain fail-closed. NFC Stage and CRC same-build CI PASS but no device deployment. No redundant Kernel Build or boot flash.",
+  "next_action": "Exact stock VBMeta comparison now recovered using existing repo pinned 3.09 LFS hashes: captured vbmeta_system A/B prefix 4096 identical to stock; captured top-level vbmeta A/B flags3 bytes differ from stock; hypothetical in-memory flags0 yields stock exact 8192 SHA256 and RSA signature PASS. Do not rewrite/flash vbmeta to alter flags; original C0061 embedded AVB boot hash still MISMATCH. Continue read-only OEM signed trust-chain and backup mapping, bootloader security state/rollback where available, and QGKI/GKI NFC loader selection; no duplicate integrated kernel build or flash until actual gates pass. If requesting evidence, ask for narrowly scoped bootloader getvar log rather than old TWRP zip.",
   "next_expected_evidence": [
     "OEM trust root key identity/real bootloader lock and rollback counters; current vbmeta_a/b flags=3 invalidate self-contained signature.",
     "Source of stock signed unmodified vbmeta/boot/vendor_boot/dtbo aligned to HyperOS 3.0.9 Android16; do not treat modified flags 3 as valid signature.",
@@ -674,7 +674,8 @@
     "Integrated and repack release workflows configured to enforce --require-match prior to boot artifact upload; no new boot validated",
     "Guarded NFC same-run 38112707005 Stage 38158574297 and CRC 38158578003 success with 71/71 imported symbol CRC matching but not deployed",
     "2026-10-10 TWRP ZIP read-only reinspection established slot _a, orange state, boot/vbmeta A/B, super (not super_a/b), EROFS vendor_a",
-    "2026-10-12 read-only OEM AVB ZIP proved top-level vbmeta A/B flags3 and invalid signature; in-memory flags0 restores self-contained validation; system vbmeta A/B flags0 valid; hardware rollback unverified; no flash."
+    "2026-10-12 read-only OEM AVB ZIP proved top-level vbmeta A/B flags3 and invalid signature; in-memory flags0 restores self-contained validation; system vbmeta A/B flags0 valid; hardware rollback unverified; no flash.",
+    "Captured 2026-10-11T171650Z VBMeta compared with stock 3.09 LFS exact reference: system vbmeta first4096 already matches, root vbmeta first8192 matches only with flags3=>0 memory-only comparison; never wrote phone or packaged this hypothetical."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -755,6 +756,20 @@
     "oem_signature_root_trust_verified": false,
     "hardware_rollback_counter_verified": false,
     "boot_flash_authorized": false,
-    "report": "reconstruction/c0061_oem_avb_readonly_analysis_20261012.md"
+    "report": "reconstruction/c0061_oem_avb_readonly_analysis_20261012.md",
+    "stock_3_09_hash_comparison": {
+      "root_stock_expected_sha256": "d200dd45af1b30993764f38492c34c7afef7addccb844ad7642d1bd4558fd907",
+      "root_stock_len_bytes": 8192,
+      "root_captured_flags3_sha256_first8192": "03517ad08b616f52afe9cfccbadc4708b4d6a828df4677cc5dca6e52669566fe",
+      "root_inmemory_flags0_sha256_first8192": "d200dd45af1b30993764f38492c34c7afef7addccb844ad7642d1bd4558fd907",
+      "root_flags0_would_exactly_match_stock": true,
+      "system_stock_expected_sha256": "ea61d50a1cddf84444a6bd89fbcf9c84360d4cacfb6664271ddaa23c502a2420",
+      "system_stock_len_bytes": 4096,
+      "system_captured_unmodified_sha256_first4096": "ea61d50a1cddf84444a6bd89fbcf9c84360d4cacfb6664271ddaa23c502a2420",
+      "system_exactly_matches_stock": true,
+      "reference_script": "reconstruction/scripts/c0061_stock_vbmeta_lfs_audit.py",
+      "comparison_mode": "READ_ONLY_MEMORY_NO_IMAGE_FLASHED",
+      "boot_flash_authorized": false
+    }
   }
 }
