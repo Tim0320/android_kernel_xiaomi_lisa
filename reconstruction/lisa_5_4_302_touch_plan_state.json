@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_DIRECT_302_BUILD_VERIFIED_NFC_MODULE_DELIVERY_PENDING",
+  "current_phase": "PHASE_6_VERIFIED_BUILD_AND_CI_AUDIT_PASS_PAIRED_NFC_DELIVERY_PENDING",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "117a6dea256947b85b721ddc6fab844dfb46d69a",
-  "last_checked_run": 38112718025,
-  "blocker": "GUARDED_NFC_UNDEPLOYED; OEM_QGKI_GKI_LOADER_BRANCH_UNVERIFIED; SIGNED_AVB_CHAIN_ROLLBACK_AND_SLOT_RECOVERY_UNVERIFIED",
-  "next_action": "Read the first run of repaired device-audit workflow and confirm pinned integrated run 38112707005 / source 16348a6 / job integrated-302 / static artifact 11692514228 PASS without relying on last_checked_run; then implement reversible Kernel + guarded NFC module paired-delivery preflight. Do not rebuild or flash until signature/slot/loader gates pass.",
+  "last_checked_commit": "2fbb3c56a3020105ebf1a1bacd8de3b0d817de67",
+  "last_checked_run": 38118610699,
+  "blocker": "RUNTIME_NFC_GUARD_NOT_DEPLOYED; OEM_MODULE_LOADER_BRANCH_UNVERIFIED; EXTERNAL_AVB_SIGNATURE_ROLLBACK_AND_SLOT_ROLLBACK_UNVERIFIED",
+  "next_action": "Evaluate practical reversible paired delivery of the verified C0061 kernel Image and guarded nfc_i2c.ko without editing EROFS vendor_a in place; inspect actual Qualcomm/Xiaomi init loader branch/QGKI modules.blocklist and vendor_boot stage, sign/verify AVB chain and slot recovery constraints before any packaging. The Windows WSL2 MCP local installer has unit tests only and still needs real TCP/MCP handshake verification.",
   "next_expected_evidence": [
-    "Device-audit CI validates last_verified_static_ci_run=38112707005 and last_verified_static_ci_sha=16348a6d3673da9467ade04f15922bcf17a05694",
-    "Verified QGKI/GKI OEM loader branch, modules.blocklist and first unblocked probe",
-    "AVB chain/rollback, exact partition identities, both-slot backup and reversible guarded NFC module delivery"
+    "Paired module-delivery preflight provides exact kernel/module SHA, CRC/KMI, loader stage, signing and per-slot rollback proof",
+    "Read-only inspection of OEM vendor_modprobe.sh first unblocked QGKI probe, blocklist and GKI fallback behavior",
+    "Local Windows WSL2 MCP installation completes and TCP/HTTP MCP handshake passes on operator host"
   ],
   "forbidden": [
     "global frequency pin",
@@ -654,7 +654,9 @@
     "2026-10-11 latest device audit run 38112393663 SUCCESS; published Windows+WSL2 offline read-only workstation instructions commit bdc07a6; device pairing still NOT FLASHABLE.",
     "2026-10-11 committed hash-pinned 192MiB stock boot LFS oracle cache 16348a6; old clang cache already existed. GitHub push unexpectedly auto-triggers integrated run 38112707005 (queued); monitor and no flash claim.",
     "2026-10-11 verified Direct-302 integrated Build Action 38112707005 SUCCESS, job 114391400642 and static-verified artifact 11692514228; new boot/module pair remains NOT FLASHABLE because guarded NFC delivery and external AVB/slot gate are unverified.",
-    "2026-10-11 repaired device audit to use independently pinned last_verified_static_ci_run/sha with exact workflow, integrated-302 job and static-verified artifact checks, instead of last_checked_run. Workflow commit 117a6dea."
+    "2026-10-11 repaired device audit to use independently pinned last_verified_static_ci_run/sha with exact workflow, integrated-302 job and static-verified artifact checks, instead of last_checked_run. Workflow commit 117a6dea.",
+    "2026-10-11 repaired device evidence audit run 38118610699 SUCCESS; output VERIFIED_STATIC_CI=SUCCESS, DEVICE_RUNTIME=UNVERIFIED; artifact 11694248417. Independent pinned integrated Build reference prevents last_checked_run misclassification.",
+    "2026-10-11 Windows/WSL2 TCP+stdio MCP local install ZIP v1.0 assembled, 10 Python safety unit tests PASS and bash syntax PASS; real Windows/WSL/MCP 2.3 endpoint untested, user install pending; repository overview documented at 2fbb3c5."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -672,7 +674,7 @@
     "https://source.android.com/docs/core/architecture/kernel/abi-monitor",
     "https://github.com/MiYume0721/android_kernel_xiaomi_sm8350_miyume"
   ],
-  "last_checked_auxiliary_run": 38061521692,
+  "last_checked_auxiliary_run": 38118610699,
   "current_in_progress_build_run": 38062935154,
   "failed_ci_runs": [
     38111185496,
