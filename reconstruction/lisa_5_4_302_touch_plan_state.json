@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-11T17:22:47.385Z",
+  "updated_at": "2026-10-11T18:48:56.988Z",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -109,17 +109,20 @@
     "packaging_gate": "BLOCKED_C0061_BOOT_EMBEDDED_AVB_DESCRIPTOR_MISMATCH_AND_OEM_CHAIN_UNVERIFIED",
     "oem_avb_integrity_gate": "BLOCKED_ROOT_VBMETA_FLAGS3_SIGNED_HASH_INVALID_ON_CAPTURE",
     "bootloader_rollback_gate": "UNVERIFIED_READ_ONLY_CAPTURE_HAS_VBMETA_HEADER_VALUES_ONLY",
-    "boot_signing_gate": "NO_OEM_PRIVATE_KEY_OR_TRUSTED_SIGNING_PROVENANCE"
+    "boot_signing_gate": "NO_OEM_PRIVATE_KEY_OR_TRUSTED_SIGNING_PROVENANCE",
+    "vendor_init_static_action_gate": "PASS_CONFIG_ONLY_NOT_ANDROID_C0061_RUNTIME",
+    "vendor_modprobe_exit_observability_gate": "BASIC_SCRIPT_ZERO_EXIT_MASKS_BACKGROUND_FAILURES_NO_PID_WAIT",
+    "vendor_wlan_qca6390_alias_gate": "UNVERIFIED_NO_DIRECT_MODULES_LOAD_OR_DEP_ENTRY_BOTH_TREES_ALIAS_UNKNOWN"
   },
-  "last_checked_commit": "9d5d8e7e66fe65fa5528ececb1430b8845e633d0",
-  "last_checked_run": 38158732673,
-  "blocker": "C0061_BOOT_EMBEDDED_AVB_HASH_MISMATCH; CAPTURED_VBMETA_A_B_FLAGS3_AND_SELF_SIGNATURE_INVALID; OEM_ROOT_KEY_ACCEPTANCE_AND_HARDWARE_ROLLBACK_COUNTERS_UNKNOWN; NFC_GUARDED_NOT_DEPLOYED; OEM_QGKI_GKI_RUNTIME_MODULE_LOAD_PATH_UNKNOWN; NO_FLASH_AUTHORIZATION",
-  "next_action": "Exact stock VBMeta comparison now recovered using existing repo pinned 3.09 LFS hashes: captured vbmeta_system A/B prefix 4096 identical to stock; captured top-level vbmeta A/B flags3 bytes differ from stock; hypothetical in-memory flags0 yields stock exact 8192 SHA256 and RSA signature PASS. Do not rewrite/flash vbmeta to alter flags; original C0061 embedded AVB boot hash still MISMATCH. Continue read-only OEM signed trust-chain and backup mapping, bootloader security state/rollback where available, and QGKI/GKI NFC loader selection; no duplicate integrated kernel build or flash until actual gates pass. If requesting evidence, ask for narrowly scoped bootloader getvar log rather than old TWRP zip.",
+  "last_checked_commit": "5cee97f61915a2be6b40ffa6c3cdeff70967f410",
+  "last_checked_run": 38159397434,
+  "blocker": "EMBEDDED_BOOT_AND_OEM_ROOT_SIGNED_HASH_MISMATCH; GUARDED_NFC_NOT_DEVICE_DEPLOYED; ANDROID_FIRST_PROBE_AND_QGKI_GKI_RUNTIME_BRANCH_UNVERIFIED; VENDOR_MODPROBE_BARE_WAIT_MASKS_BACKGROUND_FAILURE; OEM_TRUST_ROLLBACK_UNKNOWN; DUAL_SLOT_SUPER_BACKUP_GEOMETRY_UNVERIFIED; BOOT_NOT_FLASHABLE",
+  "next_action": "Use the existing 2026-10-12 vendor init static evidence in Library /Lisa-C0061-Engineering/lisa_c0061_vendor_init_crosscheck_20261012.md and JSON. init.target.rc early-init line39 blocking vendor_modprobe.sh, early-fs 86-87 async QGKI/GKI cnss2 icnss2, boot 270-271 async QGKI/GKI qca_cld3_wlan qca_cld3_qca6390. No direct qca6390 modules.dep/load entry in either captured tree, but modules.alias/OEM modprobe resolution unverified: warning not proven failure. The named lisa_nfc_init_logs.zip contains only vendor rc CONFIGS, not runtime logs. Existing 2026-10-10 TWRP Dropbox SYSTEM_BOOT entries identify old C0058 and C0059, not C0061 Android first probe. Next check existing legally available sources for trusted vendor modules.alias, binary provenance or genuine C0061 Android-stage modprobe stderr/exit; do not infer WiFi root cause, do not repeat recovery logs. A/B super geometry real read-only evidence and OEM root-of-trust remain gates; do not build/flash/edit vbmeta/vendor.",
   "next_expected_evidence": [
-    "OEM trust root key identity/real bootloader lock and rollback counters; current vbmeta_a/b flags=3 invalidate self-contained signature.",
-    "Source of stock signed unmodified vbmeta/boot/vendor_boot/dtbo aligned to HyperOS 3.0.9 Android16; do not treat modified flags 3 as valid signature.",
-    "Runtime init/Android module QGKI vs GKI path and guarded NFC deployment rollback mapping (without writing EROFS vendor).",
-    "Release-pipeline embedded hash --require-match, signed trust-chain and A/B full-rollback preflight; negative AVB audit succeeded but no flashable boot."
+    "Independent actual C0061 Android-stage first vendor-modprobe result, kernel module errors, and identity of loaded NFC .ko; not TWRP recovery last_kmsg or old C0058/C0059 dropbox.",
+    "Trusted Stock 3.0.9 vendor modules.alias or proprietary modprobe alias behavior for qca_cld3_qca6390 and QGKI/GKI, plus runtime execution order evidence if feasible.",
+    "OEM root-of-trust, hardware rollback and signed original boot/vbmeta provenance, plus verified physical A/B/super metadata geometry and reversible backups.",
+    "Two independent boot hash gates must PASS before delivery: embedded boot AVB --require-match and signed root vbmeta external boot descriptor; current immutable boot FAIL both."
   ],
   "forbidden": [
     "global frequency pin",
@@ -675,7 +678,8 @@
     "Guarded NFC same-run 38112707005 Stage 38158574297 and CRC 38158578003 success with 71/71 imported symbol CRC matching but not deployed",
     "2026-10-10 TWRP ZIP read-only reinspection established slot _a, orange state, boot/vbmeta A/B, super (not super_a/b), EROFS vendor_a",
     "2026-10-12 read-only OEM AVB ZIP proved top-level vbmeta A/B flags3 and invalid signature; in-memory flags0 restores self-contained validation; system vbmeta A/B flags0 valid; hardware rollback unverified; no flash.",
-    "Captured 2026-10-11T171650Z VBMeta compared with stock 3.09 LFS exact reference: system vbmeta first4096 already matches, root vbmeta first8192 matches only with flags3=>0 memory-only comparison; never wrote phone or packaged this hypothetical."
+    "Captured 2026-10-11T171650Z VBMeta compared with stock 3.09 LFS exact reference: system vbmeta first4096 already matches, root vbmeta first8192 matches only with flags3=>0 memory-only comparison; never wrote phone or packaged this hypothetical.",
+    "2026-10-12 read-only vendor RC control-flow: init.qcom.rc imports init.target.rc; static early-init blocking vendor_modprobe.sh and audio modules, early-fs async cnss2/icnss2 both QGKI and GKI, boot async qca_cld3_wlan/qca_cld3_qca6390 both paths; QCA6390 has no direct modules.dep/load entry in supplied QGKI/GKI manifests and module aliases are unknown. Static only, not C0061 runtime."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -771,5 +775,31 @@
       "comparison_mode": "READ_ONLY_MEMORY_NO_IMAGE_FLASHED",
       "boot_flash_authorized": false
     }
+  },
+  "vendor_init_static_evidence_20261012": {
+    "report": "/Lisa-C0061-Engineering/lisa_c0061_vendor_init_crosscheck_20261012.md",
+    "json": "/Lisa-C0061-Engineering/lisa_c0061_vendor_init_crosscheck_20261012.json",
+    "reproduction": "/Lisa-C0061-Engineering/c0061_vendor_init_crosscheck_20261012.py",
+    "source_rc_archive_sha256": "866164c26a20201f4051732e99441525972d3cfced1e2cf2d1adabcd7b623ec0",
+    "parent_import_confirmed": true,
+    "early_init_blocking_vendor_loader_at_line": 39,
+    "early_fs_async_cnss_line_numbers": [
+      86,
+      87
+    ],
+    "boot_async_wlan_line_numbers": [
+      270,
+      271
+    ],
+    "qca_cld3_qca6390_direct_module_entry_in_qgki_gki": false,
+    "qca_cld3_qca6750_direct_entry_in_both": true,
+    "modules_alias_not_in_archive": true,
+    "actual_runtime_loader_verified": false,
+    "static_config_not_runtime_log": true,
+    "old_dropbox_system_boot_only_candidates": [
+      "0058",
+      "0059"
+    ],
+    "flash_authorized": false
   }
 }
