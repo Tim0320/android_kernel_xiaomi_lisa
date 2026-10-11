@@ -6,6 +6,7 @@ on:
     paths:
       - '.github/workflows/build-lisa-candidate-0061-nfc-builtin-prototype.yml'
       - 'reconstruction/scripts/candidate_0061_avb_descriptor_gate.py'
+      - 'reconstruction/scripts/c0061_paired_deployment_preflight.py'
   workflow_dispatch:
     inputs:
       run_mode:
@@ -37,6 +38,11 @@ jobs:
           set -euo pipefail
           python3 -m py_compile reconstruction/scripts/candidate_0061_avb_descriptor_gate.py
           echo 'AUDIT_TOOL_SYNTAX=PASS; DEVICE_AVB=UNVERIFIED; NOT_FLASHABLE'
+      - name: Self-test fail-closed paired deployment preflight (read-only)
+        run: |
+          set -euo pipefail
+          python3 -m py_compile reconstruction/scripts/c0061_paired_deployment_preflight.py
+          python3 reconstruction/scripts/c0061_paired_deployment_preflight.py --self-test
       - name: Gate known experimental Boot embedded AVB mismatch (no kernel build)
         env:
           GH_TOKEN: ${{ github.token }}
