@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_AVB_PACKAGING_GATE_CI_FAILURE_TRIAGE",
+  "current_phase": "PHASE_6_REPAIRED_MALFORMED_NFC_AVB_WORKFLOW_CI_QUEUED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "e8ffdedb38dfaffa6c1702eb8973e054485689a7",
-  "last_checked_run": 38108281305,
-  "blocker": "ZERO_JOB_NFC_WORKFLOW_RUN_38111185496_NEEDS_WORKFLOW_VALIDATION; DEVICE_AUDIT_38111193939_REFERENCED_FAILED_RUN_FIX; EXPERIMENT_AVB_MISMATCH_NOT_FLASHABLE; NFC_VENDOR_LOADER_UNVERIFIED",
-  "next_action": "Investigate zero-job workflow failure 38111185496 via GitHub workflow validation; retain successful reference run 38108281305 for evidence auditor, record failed runs separately; verify fixed device audit; do not claim AVB device pass.",
+  "last_checked_commit": "ab39cce6ed9053a58eb0849e2aea6723bdd9c7bd",
+  "last_checked_run": 38111301172,
+  "blocker": "REAL_NFC_AVB_AUDIT_RUN_38111375516_QUEUED; EXPERIMENT_BOOT_AVB_MISMATCH_NOT_FLASHABLE; GUARDED_NFC_DEPLOYMENT_AND_EXTERNAL_VBMETA_UNVERIFIED",
+  "next_action": "Read jobs, logs, and AVB JSON artifact of workflow run 38111375516. The previous zero-job failure was caused by malformed YAML injected into the workflow during commit 79c3c0a; repaired in ab39cce. Verify audit-only success and full kernel build skipped. Continue signed AVB and vendor NFC reversible deployment gates before any flash.",
   "next_expected_evidence": [
-    "Real push audit outcome and JSON artifact",
-    "Static CI proof require-match rejects known bad Boot",
-    "Vendor NFC loader route with rollback verified"
+    "Action 38111375516 actual optional-audit job and evidence JSON",
+    "No expensive kernel build triggered on push",
+    "Vendor NFC loader and external AVB slot rollback verification"
   ],
   "forbidden": [
     "global frequency pin",
@@ -636,7 +636,8 @@
     "2026-10-11 committed 3b16a1f: only AVB audit auto-runs on workflow/script changes, full prototype remains manual; real run 38108281305 queued on push.",
     "2026-10-11 run 38108281305 completed success: optional-audit step pass, known experiment mismatch confirmed NOT_FLASHABLE, artifact 11690294936 produced, nfc-builtin-prototype job skipped. This is audit success not boot/device verification.",
     "2026-10-11 commit 79c3c0a: prototype Boot packaging now invokes embedded AVB hash gate --require-match after stock-metadata-preservation assertions; mismatch fails packaging. This does not prove external AVB, device boot, or fixed NFC.",
-    "2026-10-11 audit failure 38111193939 first blocker REFERENCED_STATIC_CI_NOT_SUCCESS because state pointed at failed run 38111185496; fixed success reference to 38108281305 while separately preserving failed runs."
+    "2026-10-11 audit failure 38111193939 first blocker REFERENCED_STATIC_CI_NOT_SUCCESS because state pointed at failed run 38111185496; fixed success reference to 38108281305 while separately preserving failed runs.",
+    "2026-10-11 repaired malformed YAML content duplication/truncated grep from prior workflow edit. Commit ab39cce; auto audit run 38111375516 queued, not yet verified; full kernel remains manual."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
