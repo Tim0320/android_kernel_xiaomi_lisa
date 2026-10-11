@@ -48,9 +48,19 @@ def check(manifest):
     module_digest = module.get("sha256", "")
     if not module_path.is_file() or len(module_digest) != 64 or sha256(module_path) != module_digest.lower():
         errors.append("GUARDED_NFC_HASH_UNVERIFIED")
+    # Bare true claims are not enough: require each claim to cite a hashed source file.
+    evidence = manifest.get("evidence", {})
     for field in REQUIRED_EVIDENCE:
-        if manifest.get(field) is not True:
+        item = evidence.get(field) if isinstance(evidence, dict) else None
+        if not isinstance(item, dict) or item.get("verified") is not True:
             errors.append("EVIDENCE_NOT_VERIFIED:" + field)
+            continue
+        source = item.get("source_path")
+        digest = item.get("source_sha256", "")
+        source_path = pathlib.Path(source) if isinstance(source, str) and source else pathlib.Path("/nonexistent")
+        if not source_path.is_file() or not isinstance(digest, str) or len(digest) != 64 or sha256(source_path) != digest.lower():
+            errors.append("EVIDENCE_SOURCE_HASH_UNVERIFIED:" + field)
+    # The evidence gate does not validate OEM signing keys or runtime by itself.
     return {"status": "BLOCKED_NOT_FLASHABLE" if errors else "STATIC_PREFLIGHT_PASS_DEVICE_UNVERIFIED",
             "errors": errors, "flash_authorized": False}
 
