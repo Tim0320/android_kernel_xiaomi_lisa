@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_HASH_EVIDENCE_TAMPER_REJECTION_CI_QUEUED",
+  "current_phase": "PHASE_6_HASH_TAMPER_NEGATIVE_TEST_PASS_RUNTIME_NFC_AVB_BLOCKED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "fae562c8fbd4c5bfc37cc429bfedbcf7abf6a116",
-  "last_checked_run": 38111563180,
-  "blocker": "TAMPER_SELFTEST_RUN_38111636485_PENDING; EXTERNAL_VBMETA_TRUST_AND_SLOT_RECOVERY_UNVERIFIED; OEM_NFC_MODULE_PATH_UNVERIFIED; NO_FLASHABLE_BOOT",
-  "next_action": "Verify run 38111636485 self-test exercises genuine SHA256 tampered source rejection and NFC build remains skipped. Last completed run 38111563180 SUCCESS artifact 11692280716. Then obtain OEM NFC loader/AVB/rollback evidence without asking Android ADB or repeating device logs.",
+  "last_checked_commit": "b4f5d3db5aa9750b2460c1e3344862a5062de7e0",
+  "last_checked_run": 38111636485,
+  "blocker": "OEM_NFC_QGKI_GKI_RUNTIME_MODULE_PATH_UNVERIFIED; EXTERNAL_VBMETA_SIGNING_SLOT_ROLLBACK_UNVERIFIED; GUARDED_NFC_NOT_DEPLOYED; NOT_FLASHABLE",
+  "next_action": "Run 38111636485 SUCCESS, optional-audit and tamper rejection test passed, prototype kernel build SKIPPED, artifact 11692101193. Stop refining generic self-tests; investigate original OEM vendor_modprobe.sh loader paths, vendor EROFS and stock signed vbmeta/rollback evidence to design actual reversible guarded NFC delivery.",
   "next_expected_evidence": [
-    "Run 38111636485 hashed evidence tamper self-test result",
-    "Signed external vbmeta and slot rollback evidence",
-    "OEM vendor QGKI/GKI NFC actual loader route"
+    "Actual OEM vendor_modprobe.sh and QGKI/GKI module selection code evidenced by source hashes",
+    "External signed vbmeta descriptors and slot rollback provenance",
+    "Guarded NFC kernel ABI/matching vendor delivery preflight beyond synthetic checks"
   ],
   "forbidden": [
     "global frequency pin",
@@ -642,7 +642,8 @@
     "2026-10-11 commit 744801a created read-only paired deployment preflight requiring hashes, partition backup slots, NFC and signed AVB evidence; cannot grant flash authorization. Commit b0b2683 added audit CI selftest; run 38111505947 queued.",
     "2026-10-11 verified actual run 38111505947: optional-audit PASS, paired deployment preflight self-test PASS, known AVB mismatch gate PASS, nfc-builtin-prototype SKIPPED.",
     "2026-10-11 strengthened paired preflight to require a verified SHA256-matched source_path for each gate, not merely booleans; commit bf4769c; CI 38111563180 queued.",
-    "2026-10-11 action 38111563180 SUCCESS optional-audit, artifact 11692280716, full build SKIPPED. Commit fae562c adds negative test proving tampered SHA256 evidence rejected, new CI 38111636485 queued."
+    "2026-10-11 action 38111563180 SUCCESS optional-audit, artifact 11692280716, full build SKIPPED. Commit fae562c adds negative test proving tampered SHA256 evidence rejected, new CI 38111636485 queued.",
+    "2026-10-11 validated Action 38111636485 completed SUCCESS; audit selftest including tampered evidence hash rejection PASS, artifact 11692101193, full kernel build SKIPPED."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
