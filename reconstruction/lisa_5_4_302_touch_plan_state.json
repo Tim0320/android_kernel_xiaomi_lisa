@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_OEM_NFC_LOADER_FORENSIC_DECISION_AVB_DEPLOYMENT_BLOCKED",
+  "current_phase": "PHASE_6_MODULE_METADATA_INVENTORY_GAP_AND_EXTERNAL_AVB_UNVERIFIED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "3c571cf319c67f5b6c97bff4dca12f6bebe87809",
-  "last_checked_run": 38111711862,
-  "blocker": "OEM_LOADER_STATIC_BATCH_BRANCH_KNOWN_BUT_ACTUAL_QGKI_GKI_SELECTION_UNPROVEN; MISSING_FULL_MODULES_LISTS_AND_DEPENDENCY_PROVENANCE; SIGNED_EXTERNAL_VBMETA_AND_SLOT_ROLLBACK_UNVERIFIED; GUARDED_KO_NOT_DEPLOYED",
-  "next_action": "Use reconstruction/c0061_nfc_avb_paired_delivery_decision_20261011.md. Inspect archived OEM modules.blocklist/modules.load/modules.dep for both QGKI/GKI and identify actual first unblocked probe; audit stock AVB descriptors and authoritative signing/rollback feasibility. No duplicate kernel build, no device flash or log request unless truly necessary.",
+  "last_checked_commit": "b04c2c39b8fc3b7248b061f87e85aace248e7716",
+  "last_checked_run": 38111817843,
+  "blocker": "OEM_QGKI_GKI_MODULES_LOAD_DEP_BLOCKLIST_ABSENT_FROM_REPOSITORY_TREE; ACTUAL_BOOT_LOADER_BRANCH_UNVERIFIED; AVB_PRIVATE_SIGNING_AND_SLOT_ROLLBACK_UNVERIFIED; GUARDED_KO_NOT_DEPLOYED",
+  "next_action": "Review existing private TWRP archives for OEM QGKI/GKI modules.load/modules.dep/modules.blocklist before requesting fresh recovery collection; inspect stock vbmeta descriptors and key/rollback provenance offline; design recovery-safe guarded NFC delivery. No new build or flash.",
   "next_expected_evidence": [
-    "OEM QGKI/GKI full modules load/blocklist/dependency provenance with loader probe",
-    "Stock AVB descriptors plus signed external vbmeta/slot rollback feasibility",
-    "Reversible guarded NFC matched module delivery strategy"
+    "Source-hashed OEM modules metadata from existing private archives",
+    "Parsed signed vbmeta/vendor descriptors and authoritative rollback provenance",
+    "Verified whole-module-set pairing and recovery-capable delivery gates"
   ],
   "forbidden": [
     "global frequency pin",
@@ -644,7 +644,8 @@
     "2026-10-11 strengthened paired preflight to require a verified SHA256-matched source_path for each gate, not merely booleans; commit bf4769c; CI 38111563180 queued.",
     "2026-10-11 action 38111563180 SUCCESS optional-audit, artifact 11692280716, full build SKIPPED. Commit fae562c adds negative test proving tampered SHA256 evidence rejected, new CI 38111636485 queued.",
     "2026-10-11 validated Action 38111636485 completed SUCCESS; audit selftest including tampered evidence hash rejection PASS, artifact 11692101193, full kernel build SKIPPED.",
-    "2026-10-11 reviewed extracted OEM vendor_modprobe.sh evidence: branch on first unblocked QGKI probe, whole-batch GKI fallback; loaded NFC source still unknown. Created paired-delivery decision doc commit 3c571cf; audit run 38111711862 SUCCESS (metadata only)."
+    "2026-10-11 reviewed extracted OEM vendor_modprobe.sh evidence: branch on first unblocked QGKI probe, whole-batch GKI fallback; loaded NFC source still unknown. Created paired-delivery decision doc commit 3c571cf; audit run 38111711862 SUCCESS (metadata only).",
+    "2026-10-11 repository recursive tree audit: stock vbmeta.img/vbmeta_system.img present, OEM modules.load/dep/blocklist absent from Git tracked paths; cannot infer first unblocked probe or actual Android branch. Documentation commit b04c2c3; latest metadata audit run 38111817843 SUCCESS."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
