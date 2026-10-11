@@ -1,6 +1,11 @@
 name: Prototype Lisa Candidate0061 NFC built-in Image (NOT FLASHABLE)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-lisa-candidate-0061-nfc-builtin-prototype.yml'
+      - 'reconstruction/scripts/candidate_0061_avb_descriptor_gate.py'
   workflow_dispatch:
     inputs:
       run_mode:
@@ -23,7 +28,7 @@ concurrency:
 
 jobs:
   optional-audit:
-    if: ${{ inputs.run_mode == 'audit-only' }}
+    if: ${{ github.event_name == 'push' || inputs.run_mode == 'audit-only' }}
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
