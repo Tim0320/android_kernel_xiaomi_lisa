@@ -5,6 +5,7 @@ import hashlib
 import json
 import pathlib
 import sys
+import tempfile
 
 REQUIRED_PARTITIONS = ("boot", "vendor_boot", "vbmeta", "vendor")
 REQUIRED_EVIDENCE = ("external_vbmeta_verified", "rollback_index_verified",
@@ -74,6 +75,21 @@ def main():
         result = check({})
         assert result["status"] == "BLOCKED_NOT_FLASHABLE"
         assert not result["flash_authorized"]
+        with tempfile.TemporaryDirectory() as temp:
+            proof = pathlib.Path(temp) / "proof.txt"
+            proof.write_text("original")
+            m = {"evidence": {key: {
+                "verified": True, "source_path": str(proof),
+                "source_sha256": sha256(proof)} for key in REQUIRED_EVIDENCE}}
+            initial = check(m)
+            assert not any(e.startswith("EVIDENCE_SOURCE_HASH_UNVERIFIED:")
+                           for e in initial["errors"])
+            proof.write_text("tampered")
+            altered = check(m)
+            assert all("EVIDENCE_SOURCE_HASH_UNVERIFIED:" + key in altered["errors"]
+                       for key in REQUIRED_EVIDENCE)
+            assert not altered["flash_authorized"]
+        print("HASHED_EVIDENCE_TAMPER_REJECTION=PASS")
         print("FAIL_CLOSED_SELF_TEST=PASS")
         return 0
     if a.manifest is None:
