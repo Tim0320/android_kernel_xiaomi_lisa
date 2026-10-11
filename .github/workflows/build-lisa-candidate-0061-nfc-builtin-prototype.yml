@@ -38,9 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p avb-audit
-          gh api -H 'Accept: application/vnd.github+json' \
-            /repos/${GITHUB_REPOSITORY}/actions/artifacts/11674463191/zip > avb-audit/artifact.zip
-          unzip -oq avb-audit/artifact.zip -d avb-audit
+          gh run download 38062935154 --repo "$GITHUB_REPOSITORY" --name lisa-c0061-nfc-builtin-prototype-NOT-FLASHABLE-a1 --dir avb-audit
           test -f avb-audit/boot.img
           echo '6d4bde9703183308808825ee2fe726850f9a5bcbd70869c6b269ca745355159e  avb-audit/boot.img' | sha256sum -c -
           python3 reconstruction/scripts/candidate_0061_avb_descriptor_gate.py \
