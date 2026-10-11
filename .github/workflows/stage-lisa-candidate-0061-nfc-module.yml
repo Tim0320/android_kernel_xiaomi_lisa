@@ -38,7 +38,7 @@ jobs:
           abi = json.loads((source / 'candidate-0061-integrated-abi.json').read_text())
           actual = hashlib.sha256(module.read_bytes()).hexdigest()
           expected = '01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c'
-          release = '5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320'
+          release = '5.4.302-qgki-lisa-c0061-r16348a6-by-Tim0320'
           if actual != expected or module.read_bytes()[:4] != bytes.fromhex('7f454c46'):
               raise SystemExit('NFC_CI_HASH_OR_ELF_MISMATCH')
           raw = module.read_bytes()
@@ -100,6 +100,6 @@ jobs:
       - name: Upload inspection-only module evidence
         uses: actions/upload-artifact@v4
         with:
-          name: lisa-c0061-guarded-nfc-inspection-only-fb3b3c2
+          name: lisa-c0061-guarded-nfc-inspection-only-16348a6
           path: staged-nfc/
           retention-days: 14
