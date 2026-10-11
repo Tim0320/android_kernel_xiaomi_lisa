@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_VBMETA_LFS_AUDIT_NAMEERROR_FIXED_CI_QUEUED",
+  "current_phase": "PHASE_6_STOCK_VBMETA_LFS_METADATA_CI_PASS_NFC_DEPLOYMENT_BLOCKED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -110,12 +110,12 @@
   },
   "last_checked_commit": "9b4a8b7afb2675538a0d10c5b26c1343458fd06c",
   "last_checked_run": 38112173940,
-  "blocker": "RUN_38112098914_FAILED_EXPECT_UNDEFINED; FIX_9b4a8b7_RUN_38112173940_PENDING; OEM_SIGNING_AND_MODULE_DEPLOYMENT_UNVERIFIED",
-  "next_action": "Check run 38112173940 job first failure or successful actual LFS payload metadata JSON; run 38112098914 failed NameError EXPECT vs EXPECTED, fixed 9b4a8b7. Follow up failed device audit 38112107837, retain last verified successful static reference, avoid falsely reporting successful AVB/device gate.",
+  "blocker": "OEM_SIGNING_AND_DEVICE_ROLLBACK_UNVERIFIED; OEM_QGKI_GKI_MODULES_METADATA_AND_RUNTIME_BRANCH_UNVERIFIED; GUARDED_NFC_NOT_DEPLOYED",
+  "next_action": "Run 38112173940 stock vbmeta LFS metadata audit SUCCESS, artifact 11691712872; device audit 38112182620 failed due stale last_checked_run, corrected to successful 38112173940. Verify newly triggered state audit then inspect parsed vbmeta JSON for actual rollback metadata and continue OEM modules loader work.",
   "next_expected_evidence": [
-    "CI 38112173940 parsed real 8192/4096-byte LFS payloads",
-    "CI device evidence audit recoverable success based on successful reference",
-    "NFC vendor module loader and verified AVB rollback authority"
+    "Corrected device audit with successful referenced run 38112173940",
+    "Verified actual VBMeta metadata artifact 11691712872 details",
+    "OEM QGKI/GKI modules metadata and reversible guarded NFC delivery"
   ],
   "forbidden": [
     "global frequency pin",
@@ -648,7 +648,8 @@
     "2026-10-11 repository recursive tree audit: stock vbmeta.img/vbmeta_system.img present, OEM modules.load/dep/blocklist absent from Git tracked paths; cannot infer first unblocked probe or actual Android branch. Documentation commit b04c2c3; latest metadata audit run 38111817843 SUCCESS.",
     "2026-10-11 confirmed stock vbmeta.img and vbmeta_system.img in Git are Git LFS pointers of 129 bytes, not 8192/4096-byte AVB payloads; documented sha256 provenance bd01656. Metadata Action 38111887418 SUCCESS; no kernel build.",
     "2026-10-11 added script 5530b95 for source-hash-verified actual LFS vbmeta header audit and workflow bc316c8, run 38112098914 queued; read-only; no signature/device rollback claims.",
-    "2026-10-11 run 38112098914 FAIL: NameError EXPECT is not defined; corrected EXPECTED in script commit 9b4a8b7. New run 38112173940 queued; device audit 38112107837 also failed and needs independent triage."
+    "2026-10-11 run 38112098914 FAIL: NameError EXPECT is not defined; corrected EXPECTED in script commit 9b4a8b7. New run 38112173940 queued; device audit 38112107837 also failed and needs independent triage.",
+    "2026-10-11 vbmeta LFS real image audit run 38112173940 SUCCESS artifact 11691712872. Device evidence run 38112182620 failed REFERENCED_STATIC_CI_NOT_SUCCESS because state referenced queued CI; corrected last_checked_run to completed SUCCESS."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
