@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-11T18:16:58+08:00",
+  "updated_at": "2026-10-11T18:55:00+08:00",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -108,10 +108,10 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "BLOCKED_EMBEDDED_AVB_DESCRIPTOR_MISMATCH_38112707005_NOT_FLASHABLE"
   },
-  "last_checked_commit": "e638bcfa6bd2433810e48c345f5cd753149994c2",
-  "last_checked_run": 38130013998,
+  "last_checked_commit": "6293df6f8757723f7137aca86b0ff02439689424",
+  "last_checked_run": 38131488484,
   "blocker": "EMBEDDED_AVB_HASH_MISMATCH_BOTH_ARTIFACTS; INTEGRATED_AND_REPACK_BOOT_RELEASE_GATES_MISSING; GUARDED_NFC_UNDEPLOYED; NFC_STAGE_CRC_WORKFLOWS_PIN_OLD_RUN_37655937871; OEM_AVB_SLOT_UNKNOWN; WORKFLOW_WRITE_PERMISSION_BLOCKED",
-  "next_action": "At normal authorized GitHub write access, add read-only negative-control AVB audit CI and fail-closed release gates to BOTH integrated and repack workflows; do not circumvent rejected workflow writes. Existing integrated run 38112707005 boot.img is NOT FLASHABLE. Verify the same-run guarded NFC module provenance before changing the staging/CRC workflows pinned to 37655937871; then resolve OEM QGKI/GKI loader, EROFS vendor mapping, signed AVB chain and slot rollback. Do not rebuild identical kernel or flash device.",
+  "next_action": "First implement authorized fail-closed staging and --require-match for BOTH integrated and repack release surfaces; avoid auto-triggering unchanged integrated kernel via packaging-only edits. Independently repair NFC inspection-stage/CRC workflows to pin immutable run 38112707005 artifact 11693027992 and same-run guarded .ko SHA256 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c, keep stage non-flashable. Authorized stage update_file was safety-blocked; do not bypass. Verify external OEM AVB signed trust chain, rollback and actual retrofit partition/slot backups before any boot or EROFS vendor write. No duplicate kernel build or boot flash.",
   "next_expected_evidence": [
     "Authorized audit-only CI commit proving --require-match rejects both immutable 38112707005 boot artifacts (Exit 2) without publishing a boot image",
     "Authorized fail-closed integrated AND repack workflow changes with negative tests and zero unverified boot upload paths",
@@ -665,7 +665,8 @@
     "2026-10-11 GitHub current main e638bcf and latest run 38130013998 verified completed SUCCESS only for device-evidence audit; no new build or device runtime success.",
     "2026-10-11 verified both integrated and repack workflows lack embedded AVB release gate; integrated always-upload evidence includes boot.img; repack workflow remains independently flashable-looking and pinned to historical r60f98e6.",
     "2026-10-11 verified NFC stage and CRC workflows remain pinned to old run 37655937871 / old aa512b... module, not guarded 38112707005 / 01013be... paired module.",
-    "2026-10-11 audit-only workflow create_file attempted using ordinary authorized GitHub integration; OpenAI safety check blocked it; no CI/workflow commit created."
+    "2026-10-11 audit-only workflow create_file attempted using ordinary authorized GitHub integration; OpenAI safety check blocked it; no CI/workflow commit created.",
+    "2026-10-11 18:54+08 re-read canonical plan/state and live main 6293df6; latest Action 38131488484 / job 114446560899 completed SUCCESS audit-only, artifact 11699281292, no kernel/device PASS. Confirmed intact integrated run 38112707005 artifact 11693027992. Verified NFC stage workflow still pins 37655937871 and aa512b... despite verified current 38112707005 and guarded 01013be...; normal update_file attempted with run/hash pinned and NOT FLASHABLE metadata, but safety checks blocked with no commit. Release surfaces remain AVB-unsafe; no build or flashing."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
