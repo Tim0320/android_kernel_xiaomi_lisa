@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_VERIFIED_BUILD_AND_CI_AUDIT_PASS_PAIRED_NFC_DELIVERY_PENDING",
+  "current_phase": "PHASE_6_VERIFIED_SAME_RUN_KERNEL_NFC_ABI_PAIRED_DELIVERY_BLOCKED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "2fbb3c56a3020105ebf1a1bacd8de3b0d817de67",
-  "last_checked_run": 38118610699,
-  "blocker": "RUNTIME_NFC_GUARD_NOT_DEPLOYED; OEM_MODULE_LOADER_BRANCH_UNVERIFIED; EXTERNAL_AVB_SIGNATURE_ROLLBACK_AND_SLOT_ROLLBACK_UNVERIFIED",
-  "next_action": "Evaluate practical reversible paired delivery of the verified C0061 kernel Image and guarded nfc_i2c.ko without editing EROFS vendor_a in place; inspect actual Qualcomm/Xiaomi init loader branch/QGKI modules.blocklist and vendor_boot stage, sign/verify AVB chain and slot recovery constraints before any packaging. The Windows WSL2 MCP local installer has unit tests only and still needs real TCP/MCP handshake verification.",
+  "last_checked_commit": "de70669435a9ef72748bc4288ba8d268a68b8311",
+  "last_checked_run": 38118720902,
+  "blocker": "GUARDED_NFC_NOT_DEPLOYED; OEM_QGKI_GKI_MODULE_SELECTION_UNVERIFIED; OEM_AVB_SIGNATURE_AND_ROLLBACK_UNVERIFIED; DEVICE_SLOT_RECOVERY_UNVERIFIED",
+  "next_action": "Use verified integrated 38112707005 static artifact 11692514228 (boot SHA c9ee726da1080d75326a0b6d8ed6cb95f6ca0870a12d384bb039131d90720252) and paired artifact 11693027992 guarded nfc_i2c.ko SHA 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c (same-run Module.symvers 71/71 CRC, all providers vmlinux). Next prove Android QGKI/GKI loader branch, exact module destination, and signed AVB slot rollback feasibility. Do not flash boot-only, modify EROFS in place, or rebuild identical kernel.",
   "next_expected_evidence": [
-    "Paired module-delivery preflight provides exact kernel/module SHA, CRC/KMI, loader stage, signing and per-slot rollback proof",
-    "Read-only inspection of OEM vendor_modprobe.sh first unblocked QGKI probe, blocklist and GKI fallback behavior",
-    "Local Windows WSL2 MCP installation completes and TCP/HTTP MCP handshake passes on operator host"
+    "Source-hash verified OEM modules.load, modules.blocklist, modules.dep and exact first unblocked QGKI modprobe probe, with Android actual selected NFC .ko origin still unknown",
+    "Signed AVB chain, rollback index and super logical vendor slot mapping backed by real partition/bootloader evidence",
+    "Independent _a/_b recovery backup hashes and usable rollback plan; guarded NFC loaded on device before any boot gate claim"
   ],
   "forbidden": [
     "global frequency pin",
@@ -656,7 +656,8 @@
     "2026-10-11 verified Direct-302 integrated Build Action 38112707005 SUCCESS, job 114391400642 and static-verified artifact 11692514228; new boot/module pair remains NOT FLASHABLE because guarded NFC delivery and external AVB/slot gate are unverified.",
     "2026-10-11 repaired device audit to use independently pinned last_verified_static_ci_run/sha with exact workflow, integrated-302 job and static-verified artifact checks, instead of last_checked_run. Workflow commit 117a6dea.",
     "2026-10-11 repaired device evidence audit run 38118610699 SUCCESS; output VERIFIED_STATIC_CI=SUCCESS, DEVICE_RUNTIME=UNVERIFIED; artifact 11694248417. Independent pinned integrated Build reference prevents last_checked_run misclassification.",
-    "2026-10-11 Windows/WSL2 TCP+stdio MCP local install ZIP v1.0 assembled, 10 Python safety unit tests PASS and bash syntax PASS; real Windows/WSL/MCP 2.3 endpoint untested, user install pending; repository overview documented at 2fbb3c5."
+    "2026-10-11 Windows/WSL2 TCP+stdio MCP local install ZIP v1.0 assembled, 10 Python safety unit tests PASS and bash syntax PASS; real Windows/WSL/MCP 2.3 endpoint untested, user install pending; repository overview documented at 2fbb3c5.",
+    "2026-10-11 directly downloaded integrated Action 38112707005 artifacts 11692514228/11693027992, verified boot SHA256 c9ee726da1080d75326a0b6d8ed6cb95f6ca0870a12d384bb039131d90720252 and same-run guarded nfc_i2c.ko SHA256 01013be20f9940cb5a8d1ba768511a480ccfab9c1032990b8f1d3741ad65a36c; ELF __versions 71/71 exact CRC against bundled Module.symvers with 71/71 exports provided by vmlinux, zero external module imports. This supersedes older aa512b module hash for the latest compiled pairing; runtime loader path, AVB and slot recovery remain unverified; NOT FLASHABLE."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
