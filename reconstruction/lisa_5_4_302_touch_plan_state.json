@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_REAL_AVB_READONLY_AUTO_AUDIT_PASS_DEVICE_DEPLOYMENT_BLOCKED",
+  "current_phase": "PHASE_6_EMBEDDED_AVB_FAIL_CLOSED_PACKAGING_COMMITTED",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -108,14 +108,14 @@
     "identity_gate": "PASS_FB3B3C2_DIRECT_5_4_302",
     "packaging_gate": "PASS_FIXED_REGION_FB3B3C2_BOOT_SHA256_038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6_RUNTIME_MODULE_SEPARATE"
   },
-  "last_checked_commit": "68ada041580ef2557ec5a4f65ccd09df2e2a8868",
-  "last_checked_run": 38108281305,
-  "blocker": "EXPERIMENT_AVB_MISMATCH_CONFIRMED_NOT_FLASHABLE; OEM_NFC_KO_RUNTIME_PATH_UNVERIFIED; EXTERNAL_VBMETA_SIGNING_ROLLBACK_SLOT_RECOVERY_NOT_PROVEN",
-  "next_action": "Audit run 38108281305 SUCCESS: optional-audit confirms immutable historical Boot SHA, expected AVB MISMATCH and JSON artifact 11690294936; full kernel prototype job SKIPPED. Next design genuinely signed AVB-consistent packaging fail-closed against experimental boot and stock, and close guarded NFC vs old vendor loader + recoverable slot/partition gates; no repeat build/flash.",
+  "last_checked_commit": "79c3c0aec940cd5683b5c97df6b52456bea66d22",
+  "last_checked_run": 38111185496,
+  "blocker": "NEW_EMBEDDED_AVB_HASH_GATE_MUST_VALIDATE_ON_REAL_PACKAGING; EXPERIMENT_NFC_Y_BOOT_MISMATCH_NOT_FLASHABLE; VENDOR_NFC_LOADER_AND_EXTERNAL_VBMETA_UNVERIFIED",
+  "next_action": "Verify cheap auto audit triggered by changed NFC prototype workflow. No repeat kernel build. Packaging now fails closed with --require-match but external signed vbmeta and old vendor nfc_i2c.ko load path still need proof. Then implement read-only paired deployment/slot rollback preflight.",
   "next_expected_evidence": [
-    "Fail-closed --require-match packaging validation and external vbmeta/rollback verification",
-    "NFC guarded module deployment loading path proven from vendor loader evidence",
-    "Verified backups and slot rollback before flash"
+    "Real push audit outcome and JSON artifact",
+    "Static CI proof require-match rejects known bad Boot",
+    "Vendor NFC loader route with rollback verified"
   ],
   "forbidden": [
     "global frequency pin",
@@ -634,7 +634,8 @@
     "2026-10-11 01:07+08: read canonical plan/state, latest head 003f638, last evidence audit 38069174300 jobs/log/artifacts; latest audit checks metadata only, not 2929f42 AVB artifact gate. Verified artifact 11674463191 unexpired, SHA and known mismatch historical; reviewed stock vendor_boot: first-stage modules.load only msm_drm, so standalone guarded NFC vendor_boot placement cannot fix second-stage vendor file selection. Attempted to add cheap audit smoke push path and strict manual heavy gate, but GitHub workflow write was explicitly blocked by OpenAI safety checks; no new workflow run or boot generated.",
     "2026-10-11 changed optional NFC audit CI artifact download from gh api raw ZIP to gh run download exact historical name; commit 36fe1aed; not yet executed and no boot device verification.",
     "2026-10-11 committed 3b16a1f: only AVB audit auto-runs on workflow/script changes, full prototype remains manual; real run 38108281305 queued on push.",
-    "2026-10-11 run 38108281305 completed success: optional-audit step pass, known experiment mismatch confirmed NOT_FLASHABLE, artifact 11690294936 produced, nfc-builtin-prototype job skipped. This is audit success not boot/device verification."
+    "2026-10-11 run 38108281305 completed success: optional-audit step pass, known experiment mismatch confirmed NOT_FLASHABLE, artifact 11690294936 produced, nfc-builtin-prototype job skipped. This is audit success not boot/device verification.",
+    "2026-10-11 commit 79c3c0a: prototype Boot packaging now invokes embedded AVB hash gate --require-match after stock-metadata-preservation assertions; mismatch fails packaging. This does not prove external AVB, device boot, or fixed NFC."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
