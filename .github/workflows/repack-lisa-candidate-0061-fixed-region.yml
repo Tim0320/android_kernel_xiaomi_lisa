@@ -5,7 +5,6 @@ on:
   push:
     branches: [main]
     paths:
-      - .github/workflows/repack-lisa-candidate-0061-fixed-region.yml
       - reconstruction/scripts/candidate_0061_fixed_region_boot.py
       - reconstruction/scripts/candidate_0061_abi_provenance_gate.py
 
@@ -121,6 +120,16 @@ jobs:
           grep -q '^check_changed_bytes_outside_kernel_region_zero=1$' candidate-0061-r60f98e6-fixed-region-validation.txt
           grep -q '^check_stock_avb0_metadata_byte_exact=1$' candidate-0061-r60f98e6-fixed-region-validation.txt
           grep -q '^check_stock_avbf_footer_byte_exact=1$' candidate-0061-r60f98e6-fixed-region-validation.txt
+
+      - name: Require embedded AVB consistency before any Boot artifact upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 reconstruction/scripts/candidate_0061_avb_descriptor_gate.py \
+            --boot boot.img \
+            --json candidate-0061-fixed-region-embedded-avb.json \
+            --require-match
+          echo 'C0061_REPACK_EMBEDDED_AVB_HASH_GATE=PASS'
 
       - name: Record recovery provenance
         run: |
