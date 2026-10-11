@@ -104,7 +104,10 @@ jobs:
               raise SystemExit("STATE_SCHEMA_MISSING=" + ",".join(missing))
           if not isinstance(s["completed_steps"], list) or not isinstance(s["next_expected_evidence"], list):
               raise SystemExit("STATE_SCHEMA_BAD_LIST")
-          run_id = int(s["last_checked_run"])
+          run_id = int(s["last_verified_static_ci_run"])
+          static_head = str(s["last_verified_static_ci_sha"]).strip()
+          if len(static_head) != 40:
+              raise SystemExit("VERIFIED_STATIC_CI_SHA_MISSING")
           repo = os.environ["GITHUB_REPOSITORY"]
           url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}"
           req = urllib.request.Request(url, headers={
@@ -115,7 +118,20 @@ jobs:
           with urllib.request.urlopen(req, timeout=25) as response:
               run = json.load(response)
           if run.get("status") != "completed" or run.get("conclusion") != "success":
-              raise SystemExit("REFERENCED_STATIC_CI_NOT_SUCCESS")
+              raise SystemExit("VERIFIED_STATIC_CI_NOT_SUCCESS")
+          if run.get("head_sha") != static_head or run.get("name") != "Build Lisa Candidate0061 Integrated 5.4.302":
+              raise SystemExit("VERIFIED_STATIC_CI_IDENTITY_MISMATCH")
+          jobs_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/jobs?per_page=100"
+          with urllib.request.urlopen(urllib.request.Request(jobs_url, headers=req.headers), timeout=25) as response:
+              jobs = json.load(response).get("jobs", [])
+          if not any(j.get("name") == "integrated-302" and j.get("conclusion") == "success" for j in jobs):
+              raise SystemExit("VERIFIED_STATIC_CI_JOB_NOT_SUCCESS")
+          artifacts_url = f"https://api.github.com/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100"
+          with urllib.request.urlopen(urllib.request.Request(artifacts_url, headers=req.headers), timeout=25) as response:
+              artifacts = json.load(response).get("artifacts", [])
+          verified_artifact = next((a for a in artifacts if a.get("name", "").startswith("lisa-c0061-5.4.302-static-verified") and not a.get("expired")), None)
+          if verified_artifact is None:
+              raise SystemExit("VERIFIED_STATIC_CI_ARTIFACT_MISSING")
           note = {
               "audit_type": "READ_ONLY_DEVICE_EVIDENCE_CHECKPOINT",
               "kernel_rebuilt": False,
@@ -124,8 +140,10 @@ jobs:
               "nfc_android_load_verified": False,
               "latest_source_checkout": os.environ["GITHUB_SHA"],
               "last_checked_commit": s["last_checked_commit"],
-              "last_checked_run": run_id,
+              "last_checked_run": s["last_checked_run"],
               "static_ci_head_sha": run.get("head_sha"),
+              "verified_static_ci_run": run_id,
+              "verified_static_ci_artifact_id": verified_artifact.get("id"),
               "static_ci_status": run.get("conclusion"),
               "current_phase": s["current_phase"],
               "blocker": s["blocker"],
@@ -153,7 +171,7 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write(report)
           print("STATE_SCHEMA=PASS")
-          print("REFERENCED_STATIC_CI=SUCCESS")
+          print("VERIFIED_STATIC_CI=SUCCESS")
           print("DEVICE_RUNTIME=UNVERIFIED")
           print("C0061_DEVICE_EVIDENCE_AUDIT=RUNTIME_EVIDENCE_PENDING")
           PY
