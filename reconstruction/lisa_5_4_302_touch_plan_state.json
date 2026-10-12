@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-11T18:48:56.988Z",
+  "updated_at": "2026-10-12T02:00:00Z",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_EMBEDDED_AVB_MISMATCH_NFC_DELIVERY_BLOCKED",
+  "current_phase": "PHASE_6_DIAGNOSTIC_OEM_OOPS_BOOT_PREPARATION_NOT_BUILT",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -114,15 +114,15 @@
     "vendor_modprobe_exit_observability_gate": "BASIC_SCRIPT_ZERO_EXIT_MASKS_BACKGROUND_FAILURES_NO_PID_WAIT",
     "vendor_wlan_qca6390_alias_gate": "UNVERIFIED_NO_DIRECT_MODULES_LOAD_OR_DEP_ENTRY_BOTH_TREES_ALIAS_UNKNOWN"
   },
-  "last_checked_commit": "5cee97f61915a2be6b40ffa6c3cdeff70967f410",
+  "last_checked_commit": "682445003da88aa00748249664e898f3e093d7a3",
   "last_checked_run": 38159397434,
-  "blocker": "EMBEDDED_BOOT_AND_OEM_ROOT_SIGNED_HASH_MISMATCH; GUARDED_NFC_NOT_DEVICE_DEPLOYED; ANDROID_FIRST_PROBE_AND_QGKI_GKI_RUNTIME_BRANCH_UNVERIFIED; VENDOR_MODPROBE_BARE_WAIT_MASKS_BACKGROUND_FAILURE; OEM_TRUST_ROLLBACK_UNKNOWN; DUAL_SLOT_SUPER_BACKUP_GEOMETRY_UNVERIFIED; BOOT_NOT_FLASHABLE",
-  "next_action": "Use the existing 2026-10-12 vendor init static evidence in Library /Lisa-C0061-Engineering/lisa_c0061_vendor_init_crosscheck_20261012.md and JSON. init.target.rc early-init line39 blocking vendor_modprobe.sh, early-fs 86-87 async QGKI/GKI cnss2 icnss2, boot 270-271 async QGKI/GKI qca_cld3_wlan qca_cld3_qca6390. No direct qca6390 modules.dep/load entry in either captured tree, but modules.alias/OEM modprobe resolution unverified: warning not proven failure. The named lisa_nfc_init_logs.zip contains only vendor rc CONFIGS, not runtime logs. Existing 2026-10-10 TWRP Dropbox SYSTEM_BOOT entries identify old C0058 and C0059, not C0061 Android first probe. Next check existing legally available sources for trusted vendor modules.alias, binary provenance or genuine C0061 Android-stage modprobe stderr/exit; do not infer WiFi root cause, do not repeat recovery logs. A/B super geometry real read-only evidence and OEM root-of-trust remain gates; do not build/flash/edit vbmeta/vendor.",
+  "blocker": "LOG_BACKEND_IDENTIFIED_OEM_OOPS; NEW_DIAGNOSTIC_KERNEL_NOT_BUILT; GUARDED_NFC_NOT_DEPLOYED; QGKI_GKI_BRANCH_UNKNOWN; MODULE_DEPLOYMENT_AND_ROLLBACK_NOT_VERIFIED",
+  "next_action": "Prepare C0061 OEM-Oops-first diagnostic kernel build: inspect actual .config, existing OEM Oops logger and boot packaging, select minimal diagnostic identification/config instrumentation only where safe, build one changed 5.4.302 kernel locally with ABI/KMI/identity/provenance and stock-preserving packaging. Do not claim existing boot is diagnostic. A boot-only image does not install guarded NFC in OEM EROFS; maintain NOT_FLASHABLE until compatible NFC deployment and rollback validated. Do not re-request old TWRP; OEM Oct10 nqnfcinfo -> nfc_dev_open panic already recorded.",
   "next_expected_evidence": [
-    "Independent actual C0061 Android-stage first vendor-modprobe result, kernel module errors, and identity of loaded NFC .ko; not TWRP recovery last_kmsg or old C0058/C0059 dropbox.",
-    "Trusted Stock 3.0.9 vendor modules.alias or proprietary modprobe alias behavior for qca_cld3_qca6390 and QGKI/GKI, plus runtime execution order evidence if feasible.",
-    "OEM root-of-trust, hardware rollback and signed original boot/vbmeta provenance, plus verified physical A/B/super metadata geometry and reversible backups.",
-    "Two independent boot hash gates must PASS before delivery: embedded boot AVB --require-match and signed root vbmeta external boot descriptor; current immutable boot FAIL both."
+    "Actual logger implementation/config/DT contract for existing OEM 16MiB oops and whether modified kernel messages persist",
+    "A new, distinct diagnostic boot.img from changed kernel Image with matched build/ABI identity, hashes and NOT_FLASHABLE manifest",
+    "Proven guarded NFC source integrated safely without double-loading OEM vendor nfc_i2c.ko, with original module CRC compatibility",
+    "Verified recovery rollback and true Android-stage QGKI/GKI first-probe result before flash authorization"
   ],
   "forbidden": [
     "global frequency pin",
