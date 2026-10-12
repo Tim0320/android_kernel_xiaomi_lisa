@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-12T02:00:00Z",
+  "updated_at": "2026-10-12",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_DIAGNOSTIC_OEM_OOPS_BOOT_PREPARATION_NOT_BUILT",
+  "current_phase": "PHASE_6_NFC_BUILTIN_BLACKLIST_DIAGNOSTIC_BOOT_PACKAGED_NOT_FLASHABLE",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -114,15 +114,15 @@
     "vendor_modprobe_exit_observability_gate": "BASIC_SCRIPT_ZERO_EXIT_MASKS_BACKGROUND_FAILURES_NO_PID_WAIT",
     "vendor_wlan_qca6390_alias_gate": "UNVERIFIED_NO_DIRECT_MODULES_LOAD_OR_DEP_ENTRY_BOTH_TREES_ALIAS_UNKNOWN"
   },
-  "last_checked_commit": "682445003da88aa00748249664e898f3e093d7a3",
-  "last_checked_run": 38159397434,
-  "blocker": "LOG_BACKEND_IDENTIFIED_OEM_OOPS; NEW_DIAGNOSTIC_KERNEL_NOT_BUILT; GUARDED_NFC_NOT_DEPLOYED; QGKI_GKI_BRANCH_UNKNOWN; MODULE_DEPLOYMENT_AND_ROLLBACK_NOT_VERIFIED",
-  "next_action": "Prepare C0061 OEM-Oops-first diagnostic kernel build: inspect actual .config, existing OEM Oops logger and boot packaging, select minimal diagnostic identification/config instrumentation only where safe, build one changed 5.4.302 kernel locally with ABI/KMI/identity/provenance and stock-preserving packaging. Do not claim existing boot is diagnostic. A boot-only image does not install guarded NFC in OEM EROFS; maintain NOT_FLASHABLE until compatible NFC deployment and rollback validated. Do not re-request old TWRP; OEM Oct10 nqnfcinfo -> nfc_dev_open panic already recorded.",
+  "last_checked_commit": "98d60a1d1a7c3f8c60be4d9f2ac9cc7a9b753982",
+  "last_checked_run": 38193835050,
+  "blocker": "DIAGNOSTIC_BOOT_STATIC_PACKAGED_BUT_UNFLASHABLE; OEM_FIRST_QGKI_PROBE_UNKNOWN; GKI_FALLBACK_RISK; BOOT_HEADER_AVB_SIGNED_MATCH_NOT_RESTORED; OEM_ROLLBACK_UNVERIFIED; DEVICE_NFC_FIX_UNPROVEN",
+  "next_action": "New locally repacked C0061 boot from previously successful NFC=y guarded build exists, NOT FLASHABLE. Before a controlled device test, use authentic OEM vendor modprobe -l enumeration and modules.blocklist/alias evidence to identify first QGKI probe and whether module_blacklist=nfc_i2c triggers global GKI fallback; verify bootloader actually composes Android boot v3 cmdline and A/B recovery/rollback, and account for header-signature mismatch. Current compiled guard is in vmlinux, OEM LKM blocked only hypothetically. Keep OEM Oops as first-fault capture. Do not repeat Kernel build; no flash.",
   "next_expected_evidence": [
-    "Actual logger implementation/config/DT contract for existing OEM 16MiB oops and whether modified kernel messages persist",
-    "A new, distinct diagnostic boot.img from changed kernel Image with matched build/ABI identity, hashes and NOT_FLASHABLE manifest",
-    "Proven guarded NFC source integrated safely without double-loading OEM vendor nfc_i2c.ko, with original module CRC compatibility",
-    "Verified recovery rollback and true Android-stage QGKI/GKI first-probe result before flash authorization"
+    "True OEM proprietary modprobe -l enumeration, actual first non-blocklisted QGKI module, and whether -EPERM for nfc_i2c causes all-GKI fallback",
+    "Vendor modules.alias/modules.blocklist provenance; no assumptions from modules.load first entry",
+    "Android boot v3 command-line acceptance and independent rollback/AVB enforcement assessment for new header-modified payload",
+    "Controlled runtime after user authorization, OEM Oops first fault and module branch, boot_completed, NFC/WLAN/battery/touch"
   ],
   "forbidden": [
     "global frequency pin",
@@ -801,5 +801,31 @@
       "0059"
     ],
     "flash_authorized": false
+  },
+  "nfc_builtin_blacklist_experiment_20261012": {
+    "source_run": 38062935154,
+    "source_artifact_id": 11674463191,
+    "source_artifact_zip_sha256": "fd3dd9d5d377472a6902942c87a5e799bf81da69a611476ebe4197610c399be8",
+    "source_boot_sha256": "6d4bde9703183308808825ee2fe726850f9a5bcbd70869c6b269ca745355159e",
+    "compiled_image_sha256": "771e7420bd3dacb76cbace2b4cf7a8d2f7a8f89457a23bf3d1cf7bc49c7794a4",
+    "config_sha256": "80b3d3f814a2d6d8e44ff8b9e1f8eec25723d8c92c2a7726f8df81596f6e1795",
+    "built_in_nfc_guard": true,
+    "config_nfc_qti_i2c": "y",
+    "boot_v3_cmdline": "module_blacklist=nfc_i2c",
+    "local_repacked_boot_sha256": "a4918b11c1f7ad2ae8df7444c587a3613afade2c91d800e494f06b331cb989c8",
+    "local_zip_sha256": "c4181a81973f98c499482525fa08172ab896bd42f1b986db1a973ebee085f6c5",
+    "local_zip_file": "C0061_NFC_GuardedBuiltin_Diagnostic_NOT_FLASHABLE.zip",
+    "local_zip_lib_save": "FAILED_container_session_unavailable",
+    "only_boot_header_cmdline_modified": true,
+    "kernel_image_unchanged": true,
+    "vendor_erofs_unchanged": true,
+    "new_kernel_build_this_cycle": false,
+    "actual_device_test": false,
+    "flash_authorized": false,
+    "qgki_first_probe": "UNKNOWN",
+    "qgki_gki_fallback": "UNKNOWN",
+    "avb_match": "UNVERIFIED_HEADER_MODIFIED",
+    "rpm_log_sink": "INHERITED_OEM_OOPS_HISTORICALLY_VERIFIED",
+    "read_only_triage_repo_commit": "178c0acde72763ecb8ad68952edcf3752b6533e0"
   }
 }
