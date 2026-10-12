@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_AUTHENTIC_OEM_OOPS_QGKI_SET_CORRELATED_NEW_DIAGNOSTIC_BOOT_NOT_FLASHABLE",
+  "current_phase": "PHASE_6_C0061_REAL_CMDLINE_PROVENANCE_CONFIRMED_LOCAL_CONFIG_DRAFT_READY_BOOT_NOT_FLASHABLE",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -114,15 +114,15 @@
     "vendor_modprobe_exit_observability_gate": "BASIC_SCRIPT_ZERO_EXIT_MASKS_BACKGROUND_FAILURES_NO_PID_WAIT",
     "vendor_wlan_qca6390_alias_gate": "UNVERIFIED_NO_DIRECT_MODULES_LOAD_OR_DEP_ENTRY_BOTH_TREES_ALIAS_UNKNOWN"
   },
-  "last_checked_commit": "691d205f004aaae4f43e183449ded02e81b86fe0",
-  "last_checked_run": 38201455001,
-  "blocker": "ORIGINAL_BOOT_STRONG_QGKI_SET_NOT_NEW_BOOT; CAPTURED_BLOCKLIST_MISSING_MARKERS_BOTH_TREES_BUT_DEVICE_REAL_FILE_STATE_UNKNOWN; OEM_FIRST_MODPROBE_L_CANDIDATE_AND_EXIT_UNKNOWN; ALIAS_SOFTDEP_UNKNOWN; NEW_BUILTIN_NFC_BLACKLIST_BOOT_CMDLINE_AND_ROUTE_UNKNOWN; OEM_AVB_ROLLBACK_DUAL_SLOT_RECOVERY_UNKNOWN; DEVICE_NFC_FIX_UNVERIFIED",
-  "next_action": "2026-10-12 manual-turn update: prior state GitHub upload succeeded commit 691d205 and audit-only Action 38201455001 SUCCESS. Rechecked original private ZIPs: both vendor modules.blocklist filenames are explicitly MISSING in archive capture notes (not proof absent in running system); OEM loader cat|grep would treat candidates unblocked IF file actually absent, but first modprobe -l stdout, first sync probe status, module alias/softdep and loaded NFC ELF route stay UNKNOWN. Continue with existing lawful read-only evidence; do not infer first probe from modules.load line order, first-stage hwkm or audio exec. Maintain 5.4.302 NFC built-in Guard Boot NOT_FLASHABLE and no new duplicate kernel compile/flash/vendor/AVB change. Check OEM rollback, true A/B recovery, boot cmdline forwarding before any physical testing; preserve C0059 freeze/A16 baseline/A17-BPF hold.",
+  "last_checked_commit": "f3657cbe82c00a1c27faf1f77fe3a53c479331de",
+  "last_checked_run": 38202188136,
+  "blocker": "NEW_HEADER_ONLY_BLACKLIST_BOOT_RUNTIME_EFFECT_UNVERIFIED; OEM_QGKI_FIRST_PROBE_AND_REAL_MODULE_ALIASES_BLOCKLIST_UNAVAILABLE; NEW_LOCAL_KERNEL_CONFIG_ONLY_NOT_BUILT; AVB_ROLLBACK_DUAL_SLOT_RECOVERY_UNVERIFIED; NFC_RUNTIME_FIX_NOT_PROVEN",
+  "next_action": "Genuine Oct10 failed C0061 target config + blank Boot v3 header + same-boot OEM Oops kernel log now strongly verify CONFIG_CMDLINE=\"ramoops_memreserve=4M\" + EXTEND path at runtime; new header-only module_blacklist=nfc_i2c remains unproven. Local exact one-line NFC=y CONFIG_CMDLINE variant is prepared UNBUILT (Library) to eliminate dependency on Boot v3 header forwarding if a later reviewed local FULL Kernel build is justified; do not compile/flash until OEM first-probe and full return-to-stock/AVB gates reviewed. Windows TWRP-only read-only script scripts/collect_c0061_vendor_loader_readonly.ps1 can collect missing actual vendor_a EROFS modules.blocklist/alias/softdep and modprobe ELF identity when user runs locally; Android MCP denies direct adb shell and script has NOT run on device. Keep existing OEM Oops NFC panic as primary fault. No duplicate build or flash.",
   "next_expected_evidence": [
-    "Authentic vendor modprobe -l first synchronous non-blocklisted QGKI probe and status on device; actual modules.alias and modules.blocklist to evaluate NEW blacklist boot fallback, not original QGKI loaded-set",
-    "Effective Android kernel cmdline/boot v3/vendor_boot parameter forwarding on handset; target blacklist applied to LKM but guarded NFC built-in initcall still functions",
-    "OEM AVB/rollback and verified full dual-slot boot/vendor_boot/dtbo/vbmeta recovery coverage before controlled physical test",
-    "User-authorized, safely reversible real device boot with new variant plus same-boot OEM Oops; verify nfc panic absent, Android boot completion and hardware NFC/WLAN/charging/touch; do not claim any current success"
+    "Real OEM TWRP vendor_a EROFS file evidence for QGKI/GKI modules.blocklist, modules.alias, modules.softdep and real OEM modprobe binary identity, then actual vendor modprobe -l FIRST nonblocklisted candidate; no modules.load-first-row inference",
+    "Authoritative independent per-slot boot/vendor_boot/dtbo/vbmeta and super-liblp backup/rollback plus OEM AVB enforcement evidence; user unlocked/AVB-disabled statements alone are not that verification",
+    "Only after initial-probe risk and recovery gates: reviewed SINGLE new LOCAL full kernel compile from exact guarded NFC=y source using unique release ID and verified in-kernel CONFIG_CMDLINE; ABI/KMI/identity/boot packaging checks; no header-only boot proven active",
+    "Controlled user-authorized real Android device test with same-boot OEM Oops and effective cmdline, NFC no panic beyond 41.8s, sys.boot_completed, WiFi/touch/charging, root cause and rollback if failure"
   ],
   "forbidden": [
     "global frequency pin",
@@ -682,7 +682,8 @@
     "2026-10-12 read-only vendor RC control-flow: init.qcom.rc imports init.target.rc; static early-init blocking vendor_modprobe.sh and audio modules, early-fs async cnss2/icnss2 both QGKI and GKI, boot async qca_cld3_wlan/qca_cld3_qca6390 both paths; QCA6390 has no direct modules.dep/load entry in supplied QGKI/GKI manifests and module aliases are unknown. Static only, not C0061 runtime.",
     "2026-10-12 authentic original C0061 OEM Oops: 41 QGKI-only vs 0 GKI-only modules at panic; 42 vs 0 load markers; NFC probe success +15.57s then panic +41.80s. Fail-closed per-record/clock segment offline parser and audit-only CI 38199585068 synthetic self-test PASS. New built-in blacklist Boot remains NOT FLASHABLE.",
     "2026-10-12 manual-user continuation: authentic TWRP readonly sha256sum transcript identifies two different vendor nfc_i2c.ko files (QGKI b37dae41...; GKI bb1e8994...), no ELF bytes included, no actual runtime NFC path proof; 4 potential unanchored blocklist grep lexical collisions, actual blocklist absent, no observed false positives. Library report/JSON/tool saved; new Boot stays NOT_FLASHABLE. Latest audit-only Action 38200844732 SUCCESS. Prior state write safety-blocked, legitimately retried on explicit user message.",
-    "2026-10-12 read-only original user archive revalidation: both modules.blocklist paths explicitly marked MISSING in captured manifest ZIP, conditional OEM cat|grep loop would treat first enumerated module as unblocked if truly absent; this is NOT device absence attestation, first real modprobe -l probe still UNKNOWN. ZIP SHA/CRC verified, static 7/7 and 6/6 synthetic checks PASS; three output artifacts saved in Library; no kernel/boot/device write. GitHub manual-trigger state write 691d205 and audit-only run 38201455001 SUCCESS."
+    "2026-10-12 read-only original user archive revalidation: both modules.blocklist paths explicitly marked MISSING in captured manifest ZIP, conditional OEM cat|grep loop would treat first enumerated module as unblocked if truly absent; this is NOT device absence attestation, first real modprobe -l probe still UNKNOWN. ZIP SHA/CRC verified, static 7/7 and 6/6 synthetic checks PASS; three output artifacts saved in Library; no kernel/boot/device write. GitHub manual-trigger state write 691d205 and audit-only run 38201455001 SUCCESS.",
+    "2026-10-12 genuine original C0061 failed-build .config/blank Boot-v3 header/same-record OEM Oops prove compiled ramoops CONFIG_CMDLINE prefix at Android runtime. Prepared single-line NFC=y embedded module_blacklist .config (UNBUILT) and TWRP-only read-only OEM loader metadata collector. GitHub Audit-only 38202188136 SUCCESS with PowerShell syntax/selftest, real source private check and CI synthetic gates. Release NOT_FLASHABLE."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -938,5 +939,49 @@
     "code_source_private_OEM_text_uploaded": false,
     "boot_readiness": "NOT_FLASHABLE",
     "flash_authorized": false
+  },
+  "real_cmdline_provenance_20261012": {
+    "baseline_full_build_run": 37655937871,
+    "baseline_full_build_artifact": 11500359180,
+    "baseline_full_build_zip_sha256": "74601294086e554adf5a1869eff2e08fd9c53133c1db76f85031483d09237a4c",
+    "baseline_boot_sha256": "038e35371c9705fd44908157ce456576100dfcb07f14ef60aa31e3b669c2eed6",
+    "baseline_boot_v3_header_cmdline": "",
+    "baseline_config_cmdline": "ramoops_memreserve=4M",
+    "baseline_config_extend": true,
+    "baseline_nfc_mode": "m",
+    "real_failed_boot_oops_cmdline_starts_with_config_param": true,
+    "real_oops_same_record_nfc_panic": true,
+    "actual_runtime_logging_terms": [
+      "ramoops_memreserve=4M",
+      "mtdoops.mtddev=0",
+      "mtdoops.record_size=2097152",
+      "mtdoops.dump_oops=0",
+      "printk.always_kmsg_dump=1"
+    ],
+    "full_private_kernel_cmdline_published": false,
+    "builtin_nfc_full_build_run": 38062935154,
+    "builtin_nfc_mode": "y",
+    "existing_header_only_blacklist_boot_sha256": "a4918b11c1f7ad2ae8df7444c587a3613afade2c91d800e494f06b331cb989c8",
+    "header_blacklist_real_runtime_seen": false,
+    "candidate_embedded_cmdline_config": "ramoops_memreserve=4M module_blacklist=nfc_i2c",
+    "candidate_embedded_config_source_sha256": "80b3d3f814a2d6d8e44ff8b9e1f8eec25723d8c92c2a7726f8df81596f6e1795",
+    "candidate_embedded_config_sha256": "487c8b10c918aeee34dc98a660966ab97d88bf7ebb2242bc6b0c4ca4e92fbabe",
+    "candidate_embedded_config_library_path": "/Lisa-C0061-Engineering/C0061_NFC_BUILTIN_EMBEDDED_BLACKLIST_UNBUILT.config",
+    "candidate_kernel_built": false,
+    "candidate_boot_built": false,
+    "candidate_flash_authorized": false,
+    "gates": [
+      "reconstruction/scripts/c0061_cmdline_provenance_gate.py",
+      "reconstruction/scripts/c0061_embedded_cmdline_config_prepare.py"
+    ],
+    "redacted_report": "reconstruction/c0061_kernel_cmdline_delivery_20261012.md",
+    "oem_loader_readonly_script": "scripts/collect_c0061_vendor_loader_readonly.ps1",
+    "oem_loader_private_collection_executed": false,
+    "audit_only_ci_run": 38202188136,
+    "audit_only_ci_job": 114657785866,
+    "audit_only_ci_result": "SUCCESS_WITH_ALL_SYNTHETIC_STEPS_PASS",
+    "prior_failed_audit_run": 38202109676,
+    "prior_failed_audit_caused_by_invalid_placeholder_script": true,
+    "not_device_test": true
   }
 }
