@@ -114,10 +114,10 @@
     "vendor_modprobe_exit_observability_gate": "BASIC_SCRIPT_ZERO_EXIT_MASKS_BACKGROUND_FAILURES_NO_PID_WAIT",
     "vendor_wlan_qca6390_alias_gate": "UNVERIFIED_NO_DIRECT_MODULES_LOAD_OR_DEP_ENTRY_BOTH_TREES_ALIAS_UNKNOWN"
   },
-  "last_checked_commit": "d520ff1fdb47548c4d27b1d40feb6d9e8f9727c1",
-  "last_checked_run": 38199585068,
-  "blocker": "ORIGINAL_BOOT_QGKI_SET_STRONGLY_SUPPORTED_BUT_NEW_BOOT_UNTESTED; OEM_FIRST_QGKI_PROBE_UNKNOWN; BUILTIN_NFC_PLUS_MODULE_BLACKLIST_MAY_TRIGGER_GKI_FALLBACK; OEM_AVB_ROLLBACK_DUAL_SLOT_RECOVERY_NOT_VERIFIED; DEVICE_FIX_UNPROVEN",
-  "next_action": "New authenticated device evidence in reconstruction/c0061_oem_oops_qgki_loaded_set_20261012.md: in same OEM mtdoops record/clock segment, 41 panic-time QGKI-only modules and 0 GKI-only; 42 QGKI-only module load markers and 0 GKI-only. Original failing boot strongly used QGKI set, had NFC probe success +15.57s then nqnfcinfo NFC panic +41.80s. Initial vendor modprobe -l candidate STILL UNKNOWN. Separate first-stage GKI hwkm CRC rejection +10.58s and audio/DSP explicit exec exit 1 +17.04s are NOT evidence of proprietary QGKI-to-GKI fallback. Prioritize actual NFC guarded built-in/LKM compatibility and conditional first-probe risk; keep existing blacklist variant NOT FLASHABLE until effective boot cmdline, OEM AVB/rollback and truly reversible A/B backup established. Existing OEM Oops, not recovery pstore, supplies real first fault. No repeat build/flash.",
+  "last_checked_commit": "407dd39b541382c37017bee994244c5b0789c399",
+  "last_checked_run": 38199674132,
+  "blocker": "ORIGINAL_BOOT_QGKI_SET_STRONGLY_SUPPORTED_BUT_NEW_BOOT_UNTESTED; OEM_FIRST_QGKI_PROBE_UNKNOWN; BOOT_V3_CMDLINE_FORWARDING_UNKNOWN_BOTH_BLACKLIST_AND_LEGACY_LKM_LOAD_RISKS; OEM_AVB_ROLLBACK_DUAL_SLOT_RECOVERY_NOT_VERIFIED; DEVICE_FIX_UNPROVEN",
+  "next_action": "Existing Library /Lisa-C0061-Engineering/lisa_c0061_nfc_cmdline_dualpath_risk_20261012.md and c0061_nfc_dualpath_failclosed_gate_20261012.py prove 9/9 fail-closed static conditional cases: effective Boot v3 module_blacklist=nfc_i2c YES may alter OEM first probe and global QGKI/GKI route; NO may permit older OEM nfc_i2c.ko duplicate attempt alongside CONFIG_NFC_QTI_I2C=y built-in. These kernel cmdline and OEM modules.blocklist mechanisms are separate; real device cmdline, OEM first nonblocklisted modprobe -l output/status, module alias/softdep/blocklist and bootloader forwarding remain UNKNOWN. Prior OEM Oops strongly confirms old QGKI set and nqnfcinfo NFC panic +41.8s but does not prove new Boot. Wait for safe authorized original evidence, and separately verify AVB trust, hardware rollback and complete true A/B recovery before any boot test. Existing Action 38062935154 build unchanged. NOT_FLASHABLE; no repeat compile, flash, vendor edits or C0059 edits.",
   "next_expected_evidence": [
     "Authentic vendor modprobe -l first synchronous non-blocklisted QGKI probe and status on device; actual modules.alias and modules.blocklist to evaluate NEW blacklist boot fallback, not original QGKI loaded-set",
     "Effective Android kernel cmdline/boot v3/vendor_boot parameter forwarding on handset; target blacklist applied to LKM but guarded NFC built-in initcall still functions",
@@ -863,6 +863,22 @@
     "code_self_test_ci_job": 114649786929,
     "library_report": "/Lisa-C0061-Engineering/lisa_c0061_oem_oops_qgki_runtime_correlation_20261012.md",
     "library_parser": "/Lisa-C0061-Engineering/c0061_oem_oops_module_route_gate.py",
+    "flash_authorized": false
+  },
+  "nfc_cmdline_dualpath_static_review_20261012": {
+    "external_aosp_guide": "https://android.googlesource.com/platform/system/core/+/android16-qpr2-release/libmodprobe/libmodprobe.cpp",
+    "external_aosp_header": "https://android.googlesource.com/platform/system/core/+/android16-qpr2-release/libmodprobe/include/modprobe/modprobe.h",
+    "aosp_deps_type": "std::unordered_map, not modules.load enumeration; OEM proprietary binary remains unverified",
+    "original_qgki_loaded_set": "STRONG_CORRELATION_ONLY",
+    "built_in_boot_sha256": "a4918b11c1f7ad2ae8df7444c587a3613afade2c91d800e494f06b331cb989c8",
+    "shell_first_probe": "UNKNOWN",
+    "new_effective_boot_cmdline": "UNKNOWN",
+    "branch_if_blacklist_effective": "FIRST_NFC_PROBE_MAY_CAUSE_GLOBAL_GKI_FALLBACK",
+    "branch_if_not_effective": "OLDER_NFC_LKM_MAY_BE_ATTEMPTED_AGAINST_BUILTIN_DRIVER",
+    "static_conditional_test": "PASS_9_CASES_NO_DEVICE_TEST",
+    "test_json_sha256": "410c4af31e7a5614d723b59fa210b5205efb01e954c646a76d8142318118bc91",
+    "library_report": "/Lisa-C0061-Engineering/lisa_c0061_nfc_cmdline_dualpath_risk_20261012.md",
+    "library_script": "/Lisa-C0061-Engineering/c0061_nfc_dualpath_failclosed_gate_20261012.py",
     "flash_authorized": false
   }
 }
