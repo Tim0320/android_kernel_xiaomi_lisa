@@ -7,6 +7,8 @@ on:
     paths:
       - .github/workflows/audit-lisa-candidate-0061-device-evidence.yml
       - reconstruction/lisa_5_4_302_touch_plan_state.json
+      - reconstruction/scripts/c0061_cmdline_provenance_gate.py
+      - reconstruction/scripts/c0061_embedded_cmdline_config_prepare.py
       - reconstruction/scripts/c0061_oem_oops_module_route_gate.py
       - reconstruction/tools/collect_lisa_touch_runtime.ps1
       - scripts/collect_lisa_twrp_logs.ps1
@@ -28,6 +30,16 @@ jobs:
     steps:
       - name: Checkout project state
         uses: actions/checkout@v4
+
+      - name: Self-test NFC Kernel Kconfig cmdline and draft-preflight (synthetic data only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile reconstruction/scripts/c0061_cmdline_provenance_gate.py
+          python3 -m py_compile reconstruction/scripts/c0061_embedded_cmdline_config_prepare.py
+          python3 reconstruction/scripts/c0061_cmdline_provenance_gate.py --self-test
+          python3 reconstruction/scripts/c0061_embedded_cmdline_config_prepare.py --self-test
+          echo 'C0061_CMDLINE_AUDIT=SYNTAX_AND_SYNTHETIC_PASS; REAL_DEVICE_CMDLINE=UNVERIFIED; NOT_FLASHABLE'
 
       - name: Self-test OEM Oops per-record QGKI evidence parser (synthetic data only)
         shell: bash
