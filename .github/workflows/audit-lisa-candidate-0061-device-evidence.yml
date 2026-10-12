@@ -9,6 +9,7 @@ on:
       - reconstruction/lisa_5_4_302_touch_plan_state.json
       - reconstruction/scripts/c0061_cmdline_provenance_gate.py
       - reconstruction/scripts/c0061_embedded_cmdline_config_prepare.py
+      - scripts/collect_c0061_vendor_loader_readonly.ps1
       - reconstruction/scripts/c0061_oem_oops_module_route_gate.py
       - reconstruction/tools/collect_lisa_touch_runtime.ps1
       - scripts/collect_lisa_twrp_logs.ps1
@@ -48,6 +49,19 @@ jobs:
           python3 -m py_compile reconstruction/scripts/c0061_oem_oops_module_route_gate.py
           python3 reconstruction/scripts/c0061_oem_oops_module_route_gate.py --self-test
           echo 'C0061_OEM_OOPS_ROUTE_AUDIT=STATIC_SELF_TEST_PASS; DEVICE_RUNTIME_UNVERIFIED'
+
+      - name: Test C0061 OEM vendor read-only collector (syntax plus synthetic allowlist)
+        shell: pwsh
+        run: |
+          $tokens = $null
+          $errors = $null
+          $path = 'scripts/collect_c0061_vendor_loader_readonly.ps1'
+          $null = [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors)
+          if ($errors.Count -ne 0) { $errors | ForEach-Object { Write-Host $_.Message }; throw 'C0061_VENDOR_LOADER_POWERSHELL_PARSE=FAIL' }
+          Write-Host 'C0061_VENDOR_LOADER_POWERSHELL_PARSE=PASS'
+          $result = & pwsh -NoProfile -NonInteractive -File $path -SelfTest
+          if ($LASTEXITCODE -ne 0 -or $result -notcontains 'C0061_VENDOR_LOADER_READONLY_SELF_TEST=PASS') { throw 'C0061_VENDOR_LOADER_READONLY_SELF_TEST=FAIL' }
+          Write-Host 'C0061_VENDOR_LOADER_READONLY_SELF_TEST=PASS; NO_DEVICE_ACCESS'
 
       - name: Parse TWRP collector PowerShell syntax
         shell: pwsh
