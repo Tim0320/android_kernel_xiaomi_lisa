@@ -114,8 +114,8 @@
     "vendor_modprobe_exit_observability_gate": "BASIC_SCRIPT_ZERO_EXIT_MASKS_BACKGROUND_FAILURES_NO_PID_WAIT",
     "vendor_wlan_qca6390_alias_gate": "UNVERIFIED_NO_DIRECT_MODULES_LOAD_OR_DEP_ENTRY_BOTH_TREES_ALIAS_UNKNOWN"
   },
-  "last_checked_commit": "f3657cbe82c00a1c27faf1f77fe3a53c479331de",
-  "last_checked_run": 38202188136,
+  "last_checked_commit": "b535f3671ea8de9c332f8a81916d4d73a3e911a9",
+  "last_checked_run": 38203485927,
   "blocker": "NEW_HEADER_ONLY_BLACKLIST_BOOT_RUNTIME_EFFECT_UNVERIFIED; OEM_QGKI_FIRST_PROBE_AND_REAL_MODULE_ALIASES_BLOCKLIST_UNAVAILABLE; NEW_LOCAL_KERNEL_CONFIG_ONLY_NOT_BUILT; AVB_ROLLBACK_DUAL_SLOT_RECOVERY_UNVERIFIED; NFC_RUNTIME_FIX_NOT_PROVEN",
   "next_action": "Genuine Oct10 failed C0061 target config + blank Boot v3 header + same-boot OEM Oops kernel log now strongly verify CONFIG_CMDLINE=\"ramoops_memreserve=4M\" + EXTEND path at runtime; new header-only module_blacklist=nfc_i2c remains unproven. Local exact one-line NFC=y CONFIG_CMDLINE variant is prepared UNBUILT (Library) to eliminate dependency on Boot v3 header forwarding if a later reviewed local FULL Kernel build is justified; do not compile/flash until OEM first-probe and full return-to-stock/AVB gates reviewed. Windows TWRP-only read-only script scripts/collect_c0061_vendor_loader_readonly.ps1 can collect missing actual vendor_a EROFS modules.blocklist/alias/softdep and modprobe ELF identity when user runs locally; Android MCP denies direct adb shell and script has NOT run on device. Keep existing OEM Oops NFC panic as primary fault. No duplicate build or flash.",
   "next_expected_evidence": [
@@ -683,7 +683,8 @@
     "2026-10-12 authentic original C0061 OEM Oops: 41 QGKI-only vs 0 GKI-only modules at panic; 42 vs 0 load markers; NFC probe success +15.57s then panic +41.80s. Fail-closed per-record/clock segment offline parser and audit-only CI 38199585068 synthetic self-test PASS. New built-in blacklist Boot remains NOT FLASHABLE.",
     "2026-10-12 manual-user continuation: authentic TWRP readonly sha256sum transcript identifies two different vendor nfc_i2c.ko files (QGKI b37dae41...; GKI bb1e8994...), no ELF bytes included, no actual runtime NFC path proof; 4 potential unanchored blocklist grep lexical collisions, actual blocklist absent, no observed false positives. Library report/JSON/tool saved; new Boot stays NOT_FLASHABLE. Latest audit-only Action 38200844732 SUCCESS. Prior state write safety-blocked, legitimately retried on explicit user message.",
     "2026-10-12 read-only original user archive revalidation: both modules.blocklist paths explicitly marked MISSING in captured manifest ZIP, conditional OEM cat|grep loop would treat first enumerated module as unblocked if truly absent; this is NOT device absence attestation, first real modprobe -l probe still UNKNOWN. ZIP SHA/CRC verified, static 7/7 and 6/6 synthetic checks PASS; three output artifacts saved in Library; no kernel/boot/device write. GitHub manual-trigger state write 691d205 and audit-only run 38201455001 SUCCESS.",
-    "2026-10-12 genuine original C0061 failed-build .config/blank Boot-v3 header/same-record OEM Oops prove compiled ramoops CONFIG_CMDLINE prefix at Android runtime. Prepared single-line NFC=y embedded module_blacklist .config (UNBUILT) and TWRP-only read-only OEM loader metadata collector. GitHub Audit-only 38202188136 SUCCESS with PowerShell syntax/selftest, real source private check and CI synthetic gates. Release NOT_FLASHABLE."
+    "2026-10-12 genuine original C0061 failed-build .config/blank Boot-v3 header/same-record OEM Oops prove compiled ramoops CONFIG_CMDLINE prefix at Android runtime. Prepared single-line NFC=y embedded module_blacklist .config (UNBUILT) and TWRP-only read-only OEM loader metadata collector. GitHub Audit-only 38202188136 SUCCESS with PowerShell syntax/selftest, real source private check and CI synthetic gates. Release NOT_FLASHABLE.",
+    "2026-10-12 manual message safely retried previously blocked C0061 historical OEM/NFC capture-boundary guard: workflow commit b535f367, Audit-only Action 38203485927 job 114661753230 SUCCESS, actual log C0061_NFC_CAPTURE_BOUNDARY=FAIL_CLOSED_PASS; new Boot runtime remains UNVERIFIED and NOT_FLASHABLE. No kernel rebuild/flash."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -983,5 +984,19 @@
     "prior_failed_audit_run": 38202109676,
     "prior_failed_audit_caused_by_invalid_placeholder_script": true,
     "not_device_test": true
+  },
+  "capture_boundary_audit_20261012": {
+    "workflow_commit": "b535f3671ea8de9c332f8a81916d4d73a3e911a9",
+    "run_id": 38203485927,
+    "job_id": 114661753230,
+    "artifact_id": 11726336656,
+    "ci_conclusion": "SUCCESS_AUDIT_ONLY",
+    "job_log_marker": "C0061_NFC_CAPTURE_BOUNDARY=FAIL_CLOSED_PASS",
+    "device_runtime": "UNVERIFIED",
+    "kernel_rebuilt": false,
+    "boot_flashing": false,
+    "first_probe": "UNKNOWN",
+    "captured_blocklist": "UNKNOWN",
+    "flash_authorized": false
   }
 }
