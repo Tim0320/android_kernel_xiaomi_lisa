@@ -114,10 +114,10 @@
     "vendor_modprobe_exit_observability_gate": "BASIC_SCRIPT_ZERO_EXIT_MASKS_BACKGROUND_FAILURES_NO_PID_WAIT",
     "vendor_wlan_qca6390_alias_gate": "UNVERIFIED_NO_DIRECT_MODULES_LOAD_OR_DEP_ENTRY_BOTH_TREES_ALIAS_UNKNOWN"
   },
-  "last_checked_commit": "571d4e86b6e18777ec85b08c06bfed080d7c9b29",
-  "last_checked_run": 38200844732,
-  "blocker": "AUTHENTIC_ORIGINAL_QGKI_SET_STRONGLY_CORRELATED_NOT_NEW_BOOT; OEM_VENDOR_NFC_QGKI_GKI_ELF_HASHES_DIFFER_BUT_LOADED_ELF_PATH_UNKNOWN; OEM_FIRST_MODPROBE_L_PROBE_AND_MODULES_BLOCKLIST_ALIAS_SOFTDEP_UNKNOWN; BUILTIN_BLACKLIST_NEW_BOOT_UNTESTED; BOOT_V3_CMDLINE_FORWARDING_UNKNOWN; OEM_AVB_ROLLBACK_DUAL_SLOT_RECOVERY_NOT_VERIFIED; DEVICE_FIX_UNPROVEN",
-  "next_action": "Manual user-initiated continuation has retried canonical state update for read-only Library vendor NFC ELF static review. Preserve original C0061 +41.8s nqnfcinfo->nfc_dev_open->mutex_lock first-fault and original QGKI loaded-set. Vendor recovery transcript records distinct QGKI and GKI nfc_i2c.ko SHA256/vermagic, NOT independently rehashed ELF and NOT runtime module-path attestation; QGKI modules.load line 66/GKI line 139 ARE NOT first-probe proof. Next inspect ALREADY AVAILABLE genuine OEM modules.blocklist, modules.alias/softdep and actual proprietary modprobe -l FIRST synchronous nonblocked probe/status, if absent UNKNOWN. Do not infer fallback from first-stage hwkm mismatch, separate audio modprobe error, or unanchored grep lexical collision absent blocklist. Do not flash, modify EROFS/vendor_boot/vbmeta, rerun unchanged kernel build, edit frozen C0059 or advance A17/BPF; hold NOT_FLASHABLE until OEM AVB/rollback, full A/B recovery, loader and NFC new-boot runtime gates verified. LOCAL_BUILD_PRIMARY + CI_AUDIT_ONLY.",
+  "last_checked_commit": "691d205f004aaae4f43e183449ded02e81b86fe0",
+  "last_checked_run": 38201455001,
+  "blocker": "ORIGINAL_BOOT_STRONG_QGKI_SET_NOT_NEW_BOOT; CAPTURED_BLOCKLIST_MISSING_MARKERS_BOTH_TREES_BUT_DEVICE_REAL_FILE_STATE_UNKNOWN; OEM_FIRST_MODPROBE_L_CANDIDATE_AND_EXIT_UNKNOWN; ALIAS_SOFTDEP_UNKNOWN; NEW_BUILTIN_NFC_BLACKLIST_BOOT_CMDLINE_AND_ROUTE_UNKNOWN; OEM_AVB_ROLLBACK_DUAL_SLOT_RECOVERY_UNKNOWN; DEVICE_NFC_FIX_UNVERIFIED",
+  "next_action": "2026-10-12 manual-turn update: prior state GitHub upload succeeded commit 691d205 and audit-only Action 38201455001 SUCCESS. Rechecked original private ZIPs: both vendor modules.blocklist filenames are explicitly MISSING in archive capture notes (not proof absent in running system); OEM loader cat|grep would treat candidates unblocked IF file actually absent, but first modprobe -l stdout, first sync probe status, module alias/softdep and loaded NFC ELF route stay UNKNOWN. Continue with existing lawful read-only evidence; do not infer first probe from modules.load line order, first-stage hwkm or audio exec. Maintain 5.4.302 NFC built-in Guard Boot NOT_FLASHABLE and no new duplicate kernel compile/flash/vendor/AVB change. Check OEM rollback, true A/B recovery, boot cmdline forwarding before any physical testing; preserve C0059 freeze/A16 baseline/A17-BPF hold.",
   "next_expected_evidence": [
     "Authentic vendor modprobe -l first synchronous non-blocklisted QGKI probe and status on device; actual modules.alias and modules.blocklist to evaluate NEW blacklist boot fallback, not original QGKI loaded-set",
     "Effective Android kernel cmdline/boot v3/vendor_boot parameter forwarding on handset; target blacklist applied to LKM but guarded NFC built-in initcall still functions",
@@ -681,7 +681,8 @@
     "Captured 2026-10-11T171650Z VBMeta compared with stock 3.09 LFS exact reference: system vbmeta first4096 already matches, root vbmeta first8192 matches only with flags3=>0 memory-only comparison; never wrote phone or packaged this hypothetical.",
     "2026-10-12 read-only vendor RC control-flow: init.qcom.rc imports init.target.rc; static early-init blocking vendor_modprobe.sh and audio modules, early-fs async cnss2/icnss2 both QGKI and GKI, boot async qca_cld3_wlan/qca_cld3_qca6390 both paths; QCA6390 has no direct modules.dep/load entry in supplied QGKI/GKI manifests and module aliases are unknown. Static only, not C0061 runtime.",
     "2026-10-12 authentic original C0061 OEM Oops: 41 QGKI-only vs 0 GKI-only modules at panic; 42 vs 0 load markers; NFC probe success +15.57s then panic +41.80s. Fail-closed per-record/clock segment offline parser and audit-only CI 38199585068 synthetic self-test PASS. New built-in blacklist Boot remains NOT FLASHABLE.",
-    "2026-10-12 manual-user continuation: authentic TWRP readonly sha256sum transcript identifies two different vendor nfc_i2c.ko files (QGKI b37dae41...; GKI bb1e8994...), no ELF bytes included, no actual runtime NFC path proof; 4 potential unanchored blocklist grep lexical collisions, actual blocklist absent, no observed false positives. Library report/JSON/tool saved; new Boot stays NOT_FLASHABLE. Latest audit-only Action 38200844732 SUCCESS. Prior state write safety-blocked, legitimately retried on explicit user message."
+    "2026-10-12 manual-user continuation: authentic TWRP readonly sha256sum transcript identifies two different vendor nfc_i2c.ko files (QGKI b37dae41...; GKI bb1e8994...), no ELF bytes included, no actual runtime NFC path proof; 4 potential unanchored blocklist grep lexical collisions, actual blocklist absent, no observed false positives. Library report/JSON/tool saved; new Boot stays NOT_FLASHABLE. Latest audit-only Action 38200844732 SUCCESS. Prior state write safety-blocked, legitimately retried on explicit user message.",
+    "2026-10-12 read-only original user archive revalidation: both modules.blocklist paths explicitly marked MISSING in captured manifest ZIP, conditional OEM cat|grep loop would treat first enumerated module as unblocked if truly absent; this is NOT device absence attestation, first real modprobe -l probe still UNKNOWN. ZIP SHA/CRC verified, static 7/7 and 6/6 synthetic checks PASS; three output artifacts saved in Library; no kernel/boot/device write. GitHub manual-trigger state write 691d205 and audit-only run 38201455001 SUCCESS."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -912,6 +913,30 @@
     "library_json": "/Lisa-C0061-Engineering/c0061_nfc_vendor_elf_provenance_20261012.json",
     "library_readonly_tool": "/Lisa-C0061-Engineering/c0061_nfc_vendor_elf_provenance_gate_20261012.py",
     "new_kernel_build": false,
+    "flash_authorized": false
+  },
+  "vendor_blocklist_capture_scope_review_20261012": {
+    "source_module_manifest_zip_sha256": "3a8717640a28b8facbd46e59bf796a577b462bbce1cc7d521d768e7218b6ac0b",
+    "source_oem_loader_zip_sha256": "3a39c7aa9ec83900de764064dde663b56c269c593277419d16e53e941d4d8f79",
+    "original_zip_crc": "PASS_BOTH",
+    "modules_blocklist_capture_qgki": "EXPLICIT_MISSING_MARKER_IN_ZIP_NOT_DEVICE_ABSENCE_ATTESTATION",
+    "modules_blocklist_capture_gki": "EXPLICIT_MISSING_MARKER_IN_ZIP_NOT_DEVICE_ABSENCE_ATTESTATION",
+    "modules_alias_and_softdep": "NOT_CAPTURED_EITHER_TREE",
+    "observed_shell_structure": "MISSING_BLOCKLIST_WOULD_CAUSE_NONZERO_CAT_PIPE_GREP_AND_TREAT_FIRST_ENUMERATED_AS_UNBLOCKED_CONDITIONAL",
+    "first_runtime_modprobe_dash_l_stdout": "UNKNOWN",
+    "first_sync_probe_exit_status": "UNKNOWN",
+    "actual_device_blocklist_presence": "UNKNOWN",
+    "original_boot_qgki_loaded_set": "STRONGLY_CORRELATED_PRIOR_PANIC",
+    "new_boot_runtime": "UNVERIFIED",
+    "static_structural_checks": "PASS_7",
+    "synthetic_logic_tests": "PASS_6",
+    "script_sha256": "bd19ef60129d59ecef66daa1be6284bf5abbe2fd89d511ee05aac05338901456",
+    "evidence_json_sha256": "97769809e86fe42542faff14bdfcfa391e16855255a24152620ab62ad79a61ac",
+    "library_report": "/Lisa-C0061-Engineering/lisa_c0061_vendor_blocklist_capture_bound_20261012.md",
+    "library_json": "/Lisa-C0061-Engineering/c0061_vendor_blocklist_capture_20261012.json",
+    "library_readonly_script": "/Lisa-C0061-Engineering/c0061_vendor_blocklist_capture_gate_20261012.py",
+    "code_source_private_OEM_text_uploaded": false,
+    "boot_readiness": "NOT_FLASHABLE",
     "flash_authorized": false
   }
 }
