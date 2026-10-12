@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-12",
+  "updated_at": "2026-10-12T02:46:00.300Z",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -815,7 +815,7 @@
     "local_repacked_boot_sha256": "a4918b11c1f7ad2ae8df7444c587a3613afade2c91d800e494f06b331cb989c8",
     "local_zip_sha256": "c4181a81973f98c499482525fa08172ab896bd42f1b986db1a973ebee085f6c5",
     "local_zip_file": "C0061_NFC_GuardedBuiltin_Diagnostic_NOT_FLASHABLE.zip",
-    "local_zip_lib_save": "FAILED_container_session_unavailable",
+    "local_zip_lib_save": "SUCCEEDED",
     "only_boot_header_cmdline_modified": true,
     "kernel_image_unchanged": true,
     "vendor_erofs_unchanged": true,
@@ -826,6 +826,8 @@
     "qgki_gki_fallback": "UNKNOWN",
     "avb_match": "UNVERIFIED_HEADER_MODIFIED",
     "rpm_log_sink": "INHERITED_OEM_OOPS_HISTORICALLY_VERIFIED",
-    "read_only_triage_repo_commit": "178c0acde72763ecb8ad68952edcf3752b6533e0"
+    "read_only_triage_repo_commit": "178c0acde72763ecb8ad68952edcf3752b6533e0",
+    "library_path": "/Lisa-C0061-Engineering/C0061_NFC_GuardedBuiltin_Diagnostic_NOT_FLASHABLE.zip",
+    "library_file_id": "libfile_8166aea22dd481919129f58132601164"
   }
 }
