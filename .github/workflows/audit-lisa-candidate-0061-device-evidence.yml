@@ -139,6 +139,23 @@ jobs:
               raise SystemExit("STATE_SCHEMA_MISSING=" + ",".join(missing))
           if not isinstance(s["completed_steps"], list) or not isinstance(s["next_expected_evidence"], list):
               raise SystemExit("STATE_SCHEMA_BAD_LIST")
+          # Immutable HISTORICAL capture: missing ZIP entries are not evidence
+          # of absent files on the device. Fresh runtime evidence belongs in a
+          # separate record, not a retrospective rewrite of this archive.
+          blocklist = s.get("vendor_blocklist_capture_scope_review_20261012")
+          diagnostic = s.get("nfc_builtin_blacklist_experiment_20261012")
+          if not isinstance(blocklist, dict) or not isinstance(diagnostic, dict):
+              raise SystemExit("C0061_NFC_CAPTURE_BOUNDARY_SCHEMA_MISSING")
+          if (blocklist.get("actual_device_blocklist_presence") != "UNKNOWN"
+                  or blocklist.get("first_runtime_modprobe_dash_l_stdout") != "UNKNOWN"
+                  or blocklist.get("first_sync_probe_exit_status") != "UNKNOWN"):
+              raise SystemExit("C0061_FIRST_PROBE_UNATTESTED_CANNOT_PROMOTE")
+          if blocklist.get("new_boot_runtime") != "UNVERIFIED":
+              raise SystemExit("C0061_NEW_BOOT_RUNTIME_NOT_ATTESTED")
+          if blocklist.get("flash_authorized") is not False or diagnostic.get("flash_authorized") is not False:
+              raise SystemExit("C0061_NFC_RELEASE_MUST_STAY_BLOCKED")
+          if diagnostic.get("actual_device_test") is not False:
+              raise SystemExit("C0061_NO_AUTHENTIC_NEW_BOOT_TEST")
           run_id = int(s["last_verified_static_ci_run"])
           static_head = str(s["last_verified_static_ci_sha"]).strip()
           if len(static_head) != 40:
@@ -206,6 +223,7 @@ jobs:
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write(report)
           print("STATE_SCHEMA=PASS")
+          print("C0061_NFC_CAPTURE_BOUNDARY=FAIL_CLOSED_PASS")
           print("VERIFIED_STATIC_CI=SUCCESS")
           print("DEVICE_RUNTIME=UNVERIFIED")
           print("C0061_DEVICE_EVIDENCE_AUDIT=RUNTIME_EVIDENCE_PENDING")
