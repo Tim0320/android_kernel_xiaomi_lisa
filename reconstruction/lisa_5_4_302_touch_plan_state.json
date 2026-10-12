@@ -1,6 +1,6 @@
 {
   "plan_version": "1.1",
-  "updated_at": "2026-10-12T02:46:00.300Z",
+  "updated_at": "2026-10-12",
   "canonical_plan": "reconstruction/lisa_5_4_302_touch_jank_execution_plan_20261005.md",
   "active_device_baseline": {
     "system": "HyperOS 3.0.9",
@@ -39,7 +39,7 @@
       "Lisa SM7325/Yupik + Candidate0059 KMI/device contract final adaptation gate"
     ]
   },
-  "current_phase": "PHASE_6_NFC_BUILTIN_BLACKLIST_DIAGNOSTIC_BOOT_PACKAGED_NOT_FLASHABLE",
+  "current_phase": "PHASE_6_AUTHENTIC_OEM_OOPS_QGKI_SET_CORRELATED_NEW_DIAGNOSTIC_BOOT_NOT_FLASHABLE",
   "phase_status": {
     "phase_0_baseline_freeze": "DONE",
     "phase_1_uplift_inventory": "DONE",
@@ -114,15 +114,15 @@
     "vendor_modprobe_exit_observability_gate": "BASIC_SCRIPT_ZERO_EXIT_MASKS_BACKGROUND_FAILURES_NO_PID_WAIT",
     "vendor_wlan_qca6390_alias_gate": "UNVERIFIED_NO_DIRECT_MODULES_LOAD_OR_DEP_ENTRY_BOTH_TREES_ALIAS_UNKNOWN"
   },
-  "last_checked_commit": "98d60a1d1a7c3f8c60be4d9f2ac9cc7a9b753982",
-  "last_checked_run": 38193835050,
-  "blocker": "DIAGNOSTIC_BOOT_STATIC_PACKAGED_BUT_UNFLASHABLE; OEM_FIRST_QGKI_PROBE_UNKNOWN; GKI_FALLBACK_RISK; BOOT_HEADER_AVB_SIGNED_MATCH_NOT_RESTORED; OEM_ROLLBACK_UNVERIFIED; DEVICE_NFC_FIX_UNPROVEN",
-  "next_action": "New locally repacked C0061 boot from previously successful NFC=y guarded build exists, NOT FLASHABLE. Before a controlled device test, use authentic OEM vendor modprobe -l enumeration and modules.blocklist/alias evidence to identify first QGKI probe and whether module_blacklist=nfc_i2c triggers global GKI fallback; verify bootloader actually composes Android boot v3 cmdline and A/B recovery/rollback, and account for header-signature mismatch. Current compiled guard is in vmlinux, OEM LKM blocked only hypothetically. Keep OEM Oops as first-fault capture. Do not repeat Kernel build; no flash.",
+  "last_checked_commit": "d520ff1fdb47548c4d27b1d40feb6d9e8f9727c1",
+  "last_checked_run": 38199585068,
+  "blocker": "ORIGINAL_BOOT_QGKI_SET_STRONGLY_SUPPORTED_BUT_NEW_BOOT_UNTESTED; OEM_FIRST_QGKI_PROBE_UNKNOWN; BUILTIN_NFC_PLUS_MODULE_BLACKLIST_MAY_TRIGGER_GKI_FALLBACK; OEM_AVB_ROLLBACK_DUAL_SLOT_RECOVERY_NOT_VERIFIED; DEVICE_FIX_UNPROVEN",
+  "next_action": "New authenticated device evidence in reconstruction/c0061_oem_oops_qgki_loaded_set_20261012.md: in same OEM mtdoops record/clock segment, 41 panic-time QGKI-only modules and 0 GKI-only; 42 QGKI-only module load markers and 0 GKI-only. Original failing boot strongly used QGKI set, had NFC probe success +15.57s then nqnfcinfo NFC panic +41.80s. Initial vendor modprobe -l candidate STILL UNKNOWN. Separate first-stage GKI hwkm CRC rejection +10.58s and audio/DSP explicit exec exit 1 +17.04s are NOT evidence of proprietary QGKI-to-GKI fallback. Prioritize actual NFC guarded built-in/LKM compatibility and conditional first-probe risk; keep existing blacklist variant NOT FLASHABLE until effective boot cmdline, OEM AVB/rollback and truly reversible A/B backup established. Existing OEM Oops, not recovery pstore, supplies real first fault. No repeat build/flash.",
   "next_expected_evidence": [
-    "True OEM proprietary modprobe -l enumeration, actual first non-blocklisted QGKI module, and whether -EPERM for nfc_i2c causes all-GKI fallback",
-    "Vendor modules.alias/modules.blocklist provenance; no assumptions from modules.load first entry",
-    "Android boot v3 command-line acceptance and independent rollback/AVB enforcement assessment for new header-modified payload",
-    "Controlled runtime after user authorization, OEM Oops first fault and module branch, boot_completed, NFC/WLAN/battery/touch"
+    "Authentic vendor modprobe -l first synchronous non-blocklisted QGKI probe and status on device; actual modules.alias and modules.blocklist to evaluate NEW blacklist boot fallback, not original QGKI loaded-set",
+    "Effective Android kernel cmdline/boot v3/vendor_boot parameter forwarding on handset; target blacklist applied to LKM but guarded NFC built-in initcall still functions",
+    "OEM AVB/rollback and verified full dual-slot boot/vendor_boot/dtbo/vbmeta recovery coverage before controlled physical test",
+    "User-authorized, safely reversible real device boot with new variant plus same-boot OEM Oops; verify nfc panic absent, Android boot completion and hardware NFC/WLAN/charging/touch; do not claim any current success"
   ],
   "forbidden": [
     "global frequency pin",
@@ -679,7 +679,8 @@
     "2026-10-10 TWRP ZIP read-only reinspection established slot _a, orange state, boot/vbmeta A/B, super (not super_a/b), EROFS vendor_a",
     "2026-10-12 read-only OEM AVB ZIP proved top-level vbmeta A/B flags3 and invalid signature; in-memory flags0 restores self-contained validation; system vbmeta A/B flags0 valid; hardware rollback unverified; no flash.",
     "Captured 2026-10-11T171650Z VBMeta compared with stock 3.09 LFS exact reference: system vbmeta first4096 already matches, root vbmeta first8192 matches only with flags3=>0 memory-only comparison; never wrote phone or packaged this hypothetical.",
-    "2026-10-12 read-only vendor RC control-flow: init.qcom.rc imports init.target.rc; static early-init blocking vendor_modprobe.sh and audio modules, early-fs async cnss2/icnss2 both QGKI and GKI, boot async qca_cld3_wlan/qca_cld3_qca6390 both paths; QCA6390 has no direct modules.dep/load entry in supplied QGKI/GKI manifests and module aliases are unknown. Static only, not C0061 runtime."
+    "2026-10-12 read-only vendor RC control-flow: init.qcom.rc imports init.target.rc; static early-init blocking vendor_modprobe.sh and audio modules, early-fs async cnss2/icnss2 both QGKI and GKI, boot async qca_cld3_wlan/qca_cld3_qca6390 both paths; QCA6390 has no direct modules.dep/load entry in supplied QGKI/GKI manifests and module aliases are unknown. Static only, not C0061 runtime.",
+    "2026-10-12 authentic original C0061 OEM Oops: 41 QGKI-only vs 0 GKI-only modules at panic; 42 vs 0 load markers; NFC probe success +15.57s then panic +41.80s. Fail-closed per-record/clock segment offline parser and audit-only CI 38199585068 synthetic self-test PASS. New built-in blacklist Boot remains NOT FLASHABLE."
   ],
   "research_sources": [
     "https://perfetto.dev/docs/data-sources/frametimeline",
@@ -829,5 +830,39 @@
     "read_only_triage_repo_commit": "178c0acde72763ecb8ad68952edcf3752b6533e0",
     "library_path": "/Lisa-C0061-Engineering/C0061_NFC_GuardedBuiltin_Diagnostic_NOT_FLASHABLE.zip",
     "library_file_id": "libfile_8166aea22dd481919129f58132601164"
+  },
+  "original_failed_boot_oem_oops_route_correlation_20261012": {
+    "original_oops_zip_sha256": "1c27309687fe176744f98353fc77900837c7d95590c8b3e96f5db0483e898e43",
+    "original_oops_raw_sha256": "0e034b59946d562344dfb0295ce3cd0e6141f31bf4b685829ff2224f5b277e47",
+    "manifest_zip_sha256": "3a8717640a28b8facbd46e59bf796a577b462bbce1cc7d521d768e7218b6ac0b",
+    "record_headers_verified": 8,
+    "record_size_bytes": 2097152,
+    "panic_record_index_zero_based": 1,
+    "clock_segments_in_panic_record": 2,
+    "panic_clock_segment_index_zero_based": 1,
+    "panic_kernel_release": "5.4.302-qgki-lisa-c0061-rfb3b3c2-by-Tim0320",
+    "panic_loaded_module_count": 59,
+    "panic_qgki_only_loaded_modules": 41,
+    "panic_gki_only_loaded_modules": 0,
+    "kernel_module_load_marker_names": 62,
+    "qgki_only_load_markers": 42,
+    "gki_only_load_markers": 0,
+    "nfc_load_marker_boot_seconds": 15.372057,
+    "nfc_probe_success_boot_seconds": 15.570856,
+    "nfc_panic_boot_seconds": 41.797828,
+    "first_stage_gki_hwkm_abi_mismatch_at_seconds": 10.584225,
+    "separate_audio_dsp_init_modprobe_exit_1_at_seconds": 17.041321,
+    "classification": "STRONG_QGKI_LOADED_SET_CORRELATION_NOT_LOADER_ATTESTATION",
+    "oem_modprobe_first_probe": "UNKNOWN",
+    "new_builtin_blacklist_boot_loader_branch": "UNKNOWN",
+    "nfc_loaded_elf_sha256": "UNKNOWN",
+    "user_runtime_boot_complete": false,
+    "code": "reconstruction/scripts/c0061_oem_oops_module_route_gate.py",
+    "report": "reconstruction/c0061_oem_oops_qgki_loaded_set_20261012.md",
+    "code_self_test_ci_run": 38199585068,
+    "code_self_test_ci_job": 114649786929,
+    "library_report": "/Lisa-C0061-Engineering/lisa_c0061_oem_oops_qgki_runtime_correlation_20261012.md",
+    "library_parser": "/Lisa-C0061-Engineering/c0061_oem_oops_module_route_gate.py",
+    "flash_authorized": false
   }
 }
