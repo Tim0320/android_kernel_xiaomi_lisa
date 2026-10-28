@@ -29,6 +29,14 @@ def main():
         power.apply(root,kernel)
 
     c46.ROOT=root; c46.KERNEL=kernel; c46.OUT=kernel/"out"
+    # Restore the C0059 stock runtime rwsem reserve BEFORE genksyms-only
+    # QGKI symbol compatibility changes. A CRC pass does not validate
+    # struct inode member offsets; compiled DWARF ABI still needs a gate.
+    c46.patch_stock_rwsem()
+    rwsem_text=(kernel/"include/linux/rwsem.h").read_text()
+    if rwsem_text.count("ANDROID_VENDOR_DATA(1);") != 1:
+        raise RuntimeError("C0061 stock rwsem source reserve not preserved")
+    print("C0061_STOCK_RWSEM_SOURCE_RESTORED=PASS; RUNTIME_ABI=UNVERIFIED")
     c46.patch_qgki_module_abi()
 
     # Real Candidate0059 inherits the Candidate0020->0046 Lisa/Yupik
